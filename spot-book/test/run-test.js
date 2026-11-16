@@ -4,6 +4,8 @@ const { makeEnv } = require('./gasmock');
 const REPO = path.join(__dirname, '..');
 const CSV = process.argv[2];
 const OUT = path.join(require('os').tmpdir(), 'spotbook-test-out'); fs.mkdirSync(OUT, { recursive: true });
+const VER = process.env.SPOT_VER || '2.0';   // 検証する版（index-v◯.html／gas-v◯.gs）
+const V2 = Number(VER.split('.')[0]) >= 2;
 const PIN = 'Ab-123xy!'; // v1.0.1：英字＋記号混じりのパスワード
 
 function parseCsv(text) { text = text.replace(/^﻿/, ''); const rows = []; let row = [], f = '', q = false;
@@ -31,19 +33,190 @@ const fetchMock = (url, o) => {
   }
   return resp(404, {});
 };
-const env = makeEnv({ gasPath: path.join(REPO, 'gas-v1.0.gs'), pin: PIN, fetch: fetchMock });
+const env = makeEnv({ gasPath: path.join(REPO, 'gas-v' + VER + '.gs'), pin: PIN, fetch: fetchMock });
 // setConfig でAPIキーはアプリから入れる
 
-const html = fs.readFileSync(path.join(REPO, 'index-v1.0.html'));
+const html = fs.readFileSync(path.join(REPO, 'index-v' + VER + '.html'));
 const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url.startsWith('/exec')) {
-    let b = ''; req.on('data', c => b += c); req.on('end', () => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(env.doPost(b))); });
+    const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(env.doPost(Buffer.concat(chunks).toString('utf8')))); });  // 多バイト文字がチャンク境界で割れないよう Buffer で結合
     return;
   }
   res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html);
 });
 const results = [];
 const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail ? ' :: ' + detail : '')); };
+
+// JPEG の幅・高さ（SOF マーカー）を読む
+function jpegSize(buf) {
+  if (buf[0] !== 0xFF || buf[1] !== 0xD8) return null;
+  let i = 2;
+  while (i < buf.length) {
+    if (buf[i] !== 0xFF) return null;
+    const m = buf[i + 1], len = buf.readUInt16BE(i + 2);
+    if (m >= 0xC0 && m <= 0xC3) return { h: buf.readUInt16BE(i + 5), w: buf.readUInt16BE(i + 7) };
+    i += 2 + len;
+  }
+  return null;
+}
+
+// ==================== v2.0：訪問記録・思い出ノート・写真 ====================
+async function testV2(page, env, dialogs, browser) {
+  const { makeEnv } = require('./gasmock');
+  const visitsSheet = () => env.ss.getSheetByName('visits')._data;
+  const spotRow = id => env.ss.getSheetByName('spots')._data.find(r => r[0] === id);
+  const call = o => env.doPost(JSON.stringify(Object.assign({ pin: PIN }, o)));
+
+  // W0 v1.0 のDBに v2.0 GAS を載せ替えると visits タブが自動で作られる（移行）
+  const v1 = makeEnv({ gasPath: path.join(REPO, 'gas-v1.0.gs'), pin: PIN, fetch: () => {} });
+  v1.doPost(JSON.stringify({ action: 'importSpots', pin: PIN, rows: csvSpots.slice(0, 3) }));
+  const hadVisits = !!v1.ss.getSheetByName('visits');
+  const v2 = makeEnv({ gasPath: path.join(REPO, 'gas-v2.0.gs'), pin: PIN, fetch: () => {}, ss: v1.ss, props: v1.props });
+  const g = JSON.parse(JSON.stringify(v2.doPost(JSON.stringify({ action: 'getAll', pin: PIN }))));
+  check('W0 v1.0のDBに v2.0 GAS を載せると visits タブを自動作成・既存スポットはそのまま', !hadVisits && g.spots.length === 3 && Array.isArray(g.visits) && g.visits.length === 0 && v1.ss.getSheetByName('visits')._data[0][0] === 'visit_id');
+
+  // 大きい写真（2400×1200）を用意
+  const big = await browser.newPage({ viewport: { width: 2400, height: 1200 } });
+  await big.setContent('<body style="margin:0;background:linear-gradient(90deg,#f59e0b,#6366f1)"><h1 style="font-size:200px">PHOTO</h1></body>');
+  const bigPng = await big.screenshot(); await big.close();
+
+  // W1 詳細画面 →［訪問を記録］フル入力
+  await page.evaluate(() => { closeAllViews(); openDetail('SP0190'); });
+  await page.click('.view .bVisit');
+  await page.waitForSelector('.view .vSave');
+  dialogs.length = 0;
+  await page.click('.view .vSave');
+  await page.waitForTimeout(200);
+  check('W1a 評価なしで保存するとエラー（必須＝日付と評価）', /評価/.test(dialogs[0] || '') && visitsSheet().length === 1, dialogs[0]);
+  await page.click('.view .emoji-rate button[data-n="4"]');
+  await page.fill('.view .vMenu', '抹茶ラテとチーズケーキ');
+  await page.fill('.view .vPrice', '3,000');
+  await page.fill('.view .vPeople', '2');
+  const pp = await page.textContent('.view .vPP');
+  await page.fill('.view .vComp', '妻');
+  await page.fill('.view .vComment', '窓際の席が最高。また来たい');
+  await page.click('.view .seg button[data-r="◎"]');
+  await page.setInputFiles('.view .vFile', { name: 'big.png', mimeType: 'image/png', buffer: bigPng });
+  await page.waitForSelector('.view .photo-grid .ph .new');
+  await page.screenshot({ path: path.join(OUT, '20-visit-form.png'), fullPage: false });
+  await page.click('.view .vSave');
+  await page.waitForFunction(() => state.visits.length === 1);
+  check('W1b 1人あたり表示（3,000円÷2人）', /1人あたり約1,500円/.test(pp), pp);
+  const vr = visitsSheet()[1];
+  check('W1c visits に1行（V0001・SP0190・評価4・金額3000・人数2・◎）', vr[0] === 'V0001' && vr[1] === 'SP0190' && vr[3] === '4' && vr[5] === '3000' && vr[7] === '2' && vr[10] === '◎' && vr[4] === '抹茶ラテとチーズケーキ', vr.join(','));
+  const f1 = env.DriveApp._files[vr[9]];
+  const dim = f1 && jpegSize(f1._blob.bytes);
+  check('W1d 写真：Drive「スポット帳 写真」に JPEG・長辺1600px・リンク共有（閲覧）', f1 && f1._blob.type === 'image/jpeg' && dim && dim.w === 1600 && dim.h === 800 && f1._sharing[0] === 'ANYONE_WITH_LINK' && f1._sharing[1] === 'VIEW' &&
+    env.DriveApp._folders[f1._parents[0]]._name === 'スポット帳 写真', JSON.stringify({ dim, sharing: f1 && f1._sharing, kb: f1 && Math.round(f1._blob.bytes.length / 1024) }));
+  check('W1e スポットの status が自動で「行った」', spotRow('SP0190')[13] === '行った');
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(OUT, '21-detail-visited.png'), fullPage: false });
+
+  // W2 一覧のバッジ・県の達成率・訪問フィルタ
+  await page.evaluate(() => { closeAllViews(); openPref('京都府'); });
+  await page.click('.view .cat-tab[data-cat="カフェ"]');
+  const rowTxt = await page.$eval('.view .spot-row[data-id="SP0190"]', e => e.textContent);
+  const ach = await page.$eval('.view .view-body', e => e.textContent.match(/訪問済[^件]*件/)[0]);
+  check('W2a 一覧に「✅ 訪問済」＋直近日＋評価絵文字', /✅ 訪問済/.test(rowTxt) && /😋/.test(rowTxt), rowTxt.slice(0, 80));
+  check('W2b 県ページの達成率（京都 カフェ 訪問済 1／11）', /1／11/.test(ach), ach);
+  await page.screenshot({ path: path.join(OUT, '22-pref-progress.png') });
+  await page.selectOption('.view .vfSel', 'visited');
+  const nV = await page.$$eval('.view .listHost .spot-row', r => r.length);
+  await page.selectOption('.view .vfSel', 'unvisited');
+  const nU = await page.$$eval('.view .listHost .spot-row', r => r.length);
+  check('W2c 絞り込み：訪問済だけ 1／未訪問だけ 10', nV === 1 && nU === 10, nV + '/' + nU);
+
+  // W3 地図：訪問済マーカー・絞り込み
+  await page.evaluate(() => openMapWith({ pref: '京都府', cat: 'カフェ' }));
+  await page.waitForTimeout(500);
+  const mk = await page.evaluate(() => ({ html: state.markerById['SP0190'].options.icon.options.html, other: state.markerById[mapFilteredSpots().find(s => s.id !== 'SP0190').id].options.icon.options.html }));
+  await page.selectOption('#mapStatus', 'visited');
+  const mv = await page.evaluate(() => mapFilteredSpots().map(s => s.id));
+  await page.selectOption('#mapStatus', 'unvisited');
+  const mu = await page.evaluate(() => mapFilteredSpots().length);
+  check('W3a 地図：訪問済マーカーは金縁＋✓（visited クラス）、未訪問は白丸のまま', /emoji-marker visited/.test(mk.html) && !/visited/.test(mk.other), mk.html);
+  check('W3b 地図の絞り込み：訪問済だけ 1／未訪問だけ 10', mv.length === 1 && mv[0] === 'SP0190' && mu === 10, mv.join(',') + ' / ' + mu);
+  await page.selectOption('#mapStatus', 'visited');
+  await page.evaluate(() => { const s = getSpot('SP0190'); state.map.setView([+s.lat, +s.lng], 17); selectMarker('SP0190'); });
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: path.join(OUT, '23-map-visited.png') });
+  await page.selectOption('#mapStatus', '');
+
+  // W4 クイック記録（地図カード・一覧の「行った！」）
+  await page.click('#mapCard .cQuick');
+  await page.click('.view .emoji-rate button[data-n="3"]');
+  await page.waitForFunction(() => state.visits.length === 2);
+  const ramenId = await page.evaluate(() => state.spots.find(s => s.rep_tag === 'ラーメン' && s.prefecture === '三重県').id);
+  await page.evaluate(() => { switchTab('genre'); });
+  await page.click('#genreTags .pref-btn[data-name="ラーメン"]');
+  await page.click(`.view .spot-row[data-id="${ramenId}"] .quick-btn`);
+  await page.waitForSelector('.view .emoji-rate');
+  await page.screenshot({ path: path.join(OUT, '24-quick.png') });
+  await page.click('.view .emoji-rate button[data-n="5"]');
+  await page.waitForFunction(() => state.visits.length === 3);
+  const qv = visitsSheet().slice(1).map(r => r[0] + ':' + r[1] + ':' + r[3] + ':' + (r[9] || '-'));
+  check('W4a クイック記録：日付＋評価だけで保存（地図カード／一覧の「行った！」）', qv.length === 3 && qv[1] === 'V0002:SP0190:3:-' && qv[2] === 'V0003:' + ramenId + ':5:-', qv.join(' '));
+  check('W4b クイック記録したスポットも status＝行った', spotRow(ramenId)[13] === '行った');
+  await page.evaluate(() => { closeAllViews(); openDetail('SP0190'); });
+  const det = await page.$eval('.view .view-body', e => e.textContent);
+  check('W4c 詳細に「2回訪問」・評価は直近の訪問（😐）', /2回訪問/.test(det) && /😐/.test(det.split('評価')[1] || ''), det.match(/評価.{0,30}/) && det.match(/評価.{0,30}/)[0]);
+
+  // W5 評価順＝直近の訪問評価→訪問回数
+  const order = await page.evaluate(id => sortSpots([getSpot('SP0001'), getSpot('SP0190'), getSpot(id)], 'rating').map(s => s.id), ramenId);
+  check('W5 並び替え「評価順」＝直近の訪問評価→訪問回数（未訪問は後ろ）', order[0] === ramenId && order[1] === 'SP0190' && order[2] === 'SP0001', order.join(','));
+
+  // W6 思い出ノート
+  await page.evaluate(() => { closeAllViews(); switchTab('home'); });
+  const homeCard = await page.textContent('#memoriesSummary');
+  await page.click('#memoriesCard .btn');
+  const sum = await page.$$eval('.view .summary-grid .sv b', b => b.map(x => x.textContent));
+  const tl = await page.$$eval('.view .tl-item', r => r.map(x => x.dataset.vid));
+  const thumb = await page.$$eval('.view .tl-item[data-vid="V0001"] img', i => i.map(x => x.src));
+  check('W6a サマリー：スポット2／のべ3回／2都道府県／合計3,000円', JSON.stringify(sum) === JSON.stringify(['2', '3', '2', '3,000円']), JSON.stringify(sum) + ' / home:' + homeCard.slice(0, 40));
+  check('W6b タイムラインは新しい順・写真サムネイル（Drive thumbnail）', tl.join(',') === 'V0003,V0002,V0001' && /drive\.google\.com\/thumbnail\?id=FILE/.test(thumb[0] || ''), tl.join(',') + ' ' + thumb[0]);
+  await page.screenshot({ path: path.join(OUT, '25-memories.png') });
+
+  // W7 訪問の詳細 → 編集で写真を外す → Drive のファイルがゴミ箱へ
+  await page.click('.view .tl-item[data-vid="V0001"]');
+  await page.waitForSelector('.view .vEdit');
+  const vd = await page.$eval('.view:last-child .view-body', e => e.textContent);
+  check('W7a 訪問の詳細：何を・金額（1人あたり）・誰と・人数・また行きたい・コメント', /抹茶ラテ/.test(vd) && /3,000円/.test(vd) && /1人あたり約1,500円/.test(vd) && /妻（2人）/.test(vd) && /◎/.test(vd) && /窓際/.test(vd), vd.slice(0, 120));
+  await page.screenshot({ path: path.join(OUT, '26-visit-detail.png') });
+  await page.click('.view:last-child .vEdit');
+  await page.click('.view:last-child .photo-grid [data-rm]');
+  await page.click('.view:last-child .vSave');
+  await page.waitForFunction(() => getVisit('V0001').photos === '');
+  await page.waitForTimeout(300);
+  check('W7b 写真を外して更新 → visits.photos 空・Drive のファイルはゴミ箱', visitsSheet()[1][9] === '' && f1._trashed === true);
+
+  // W8 GAS 側の入力チェック・安全装置
+  const bad = [
+    call({ action: 'addVisit', visit: { spot_id: 'SP0190', date: '2026-11-17', rating: '6' } }).code,
+    call({ action: 'addVisit', visit: { spot_id: 'SP0190', date: '2026/11/17', rating: '3' } }).code,
+    call({ action: 'addVisit', visit: { spot_id: 'SP0190', date: '2026-11-17', rating: '3', price: '3千' } }).code,
+    call({ action: 'addVisit', visit: { spot_id: 'SP0190', date: '2026-11-17', rating: '3', photos: 'a/b/c/d/e/f' } }).code,
+    call({ action: 'addVisit', visit: { spot_id: 'SP9999', date: '2026-11-17', rating: '3' } }).code
+  ];
+  check('W8a addVisit の入力チェック（評価6・日付形式・金額・写真6枚・存在しないスポット）', bad.every(c => c === 'VALIDATION'), bad.join(','));
+  const outside = env.DriveApp._mkFolder('別フォルダ').createFile({ bytes: Buffer.from('x'), type: 'text/plain', name: 'x.txt' });
+  check('W8b deletePhoto は写真フォルダ外のファイルを消さない', call({ action: 'deletePhoto', fileId: outside.getId() }).code === 'FORBIDDEN' && !outside._trashed);
+  const del = call({ action: 'deleteSpot', id: 'SP0190' });
+  check('W8c 訪問記録があるスポットは削除不可（HAS_VISITS）', del.code === 'HAS_VISITS' && del.count === 2, del.message);
+  const sp = Object.fromEntries(H.map((h, i) => [h, String(spotRow('SP0001')[i])]));
+  call({ action: 'updateSpot', spot: Object.assign(sp, { status: '行った' }) });
+  check('W8d updateSpot で status を手で変えても訪問ログに従う（未訪問は行きたい）', spotRow('SP0001')[13] === '行きたい');
+
+  // W9 訪問記録を全部消すと「行きたい」に戻る
+  await page.evaluate(() => { closeAllViews(); openDetail('SP0190'); });
+  for (const vid of ['V0002', 'V0001']) {
+    await page.click(`.view .visit-row[data-vid="${vid}"]`);
+    await page.click('.view:last-child .vDel');
+    await page.waitForFunction(id => !getVisit(id), vid);
+  }
+  const rowAfter = await page.evaluate(() => spotRowHtml(getSpot('SP0190')));
+  check('W9 SP0190 の訪問記録を全削除 → status＝行きたい・バッジ消える', spotRow('SP0190')[13] === '行きたい' && !/訪問済/.test(rowAfter) && visitsSheet().length === 2, spotRow('SP0190')[13]);
+  await page.evaluate(() => { closeAllViews(); switchTab('settings'); });
+}
 
 (async () => {
   await new Promise(r => server.listen(0, r));
@@ -63,7 +236,7 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); 
     r.fulfill({ path: p });
   });
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
-  await ctx.route(/tile\.openstreetmap\.org|arcgisonline\.com/, r => r.fulfill({ body: png, contentType: 'image/png' }));
+  await ctx.route(/tile\.openstreetmap\.org|arcgisonline\.com|drive\.google\.com/, r => r.fulfill({ body: png, contentType: 'image/png' }));
 
   await page.goto(base + '/');
   // ---- v1.0.1 パスワード形式（P1〜P4） ----
@@ -135,7 +308,7 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); 
   // V1
   const sheetRows = env.ss.getSheetByName('spots')._data.slice(1);
   let cellDiff = 0;
-  sheetRows.forEach((r, i) => H.forEach((h, j) => { if (String(r[j]) !== String(csvSpots[i][h])) cellDiff++; }));
+  sheetRows.forEach((r, i) => H.forEach((h, j) => { if (String(r[j]) !== String(csvSpots[i][h])) { cellDiff++; console.log('DIFF', i, h, JSON.stringify(r[j]), JSON.stringify(csvSpots[i][h])); } }));
   check('V1a 取り込み後 529 件（シート行数）', sheetRows.length === 529, String(sheetRows.length));
   check('V1b 全セルが CSV と一致（内容不変）', cellDiff === 0, 'diff cells=' + cellDiff);
   const appAgg = await page.evaluate(() => { const m = {}; state.spots.forEach(s => splitList(s.categories).forEach(c => { const k = s.prefecture + '×' + c; m[k] = (m[k] || 0) + 1; })); return m; });
@@ -309,6 +482,8 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); 
   await page.reload();
   await page.waitForSelector('#lockScreen.hidden', { state: 'attached' });
   check('同一セッションの再読込ではPIN不要', true);
+
+  if (V2) await testV2(page, env, dialogs, browser);
 
   // パスワード変更（設定タブ）：空白・短すぎはエラー、変更後は GAS と不一致で AUTH 表示
   await page.click('.nav-item[data-tab="settings"]');

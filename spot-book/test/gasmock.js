@@ -27,16 +27,44 @@ function makeSheet(name) {
   };
   return sh;
 }
+// Google Drive の簡易モック（v2.0 写真用）
+function makeDrive() {
+  let seq = 0;
+  const folders = {}, files = {};
+  const iter = a => { let i = 0; return { hasNext: () => i < a.length, next: () => a[i++] }; };
+  const mkFolder = name => {
+    const id = 'FOLDER' + (++seq);
+    const f = { _name: name, getId: () => id, getName: () => name, getUrl: () => 'https://drive.google.com/drive/folders/' + id,
+      createFile: blob => {
+        const fid = 'FILE' + (++seq);
+        const file = { _blob: blob, _parents: [id], _trashed: false, _sharing: null,
+          getId: () => fid, getName: () => blob.name, getParents: () => iter(file._parents.map(p => folders[p])),
+          setSharing: (a, p) => { file._sharing = [a, p]; return file; }, setTrashed: t => { file._trashed = t; return file; } };
+        files[fid] = file; return file;
+      } };
+    folders[id] = f; return f;
+  };
+  const DriveApp = {
+    _folders: folders, _files: files, _mkFolder: mkFolder,
+    Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' }, Permission: { VIEW: 'VIEW' },
+    getFolderById: id => { if (!folders[id]) throw new Error('no folder'); return folders[id]; },
+    getFoldersByName: n => iter(Object.values(folders).filter(f => f._name === n)),
+    createFolder: n => mkFolder(n),
+    getFileById: id => { if (!files[id]) throw new Error('no file'); return files[id]; }
+  };
+  return DriveApp;
+}
 function makeEnv(opts) {
-  const sheets = [makeSheet('シート1')];
-  const ss = {
+  const sheets = opts.ss ? null : [makeSheet('シート1')];
+  const ss = opts.ss || {
     getSheetByName: n => sheets.find(s => s.getName() === n) || null,
     insertSheet: n => { const s = makeSheet(n); sheets.push(s); return s; },
     getSheets: () => sheets.slice(),
     deleteSheet: s => sheets.splice(sheets.indexOf(s), 1),
     getUrl: () => 'https://docs.google.com/mock', getId: () => 'MOCKID'
   };
-  const props = {};
+  const props = opts.props || {};
+  const DriveApp = opts.drive || makeDrive();
   const fetchLog = [];
   const ctx = {
     console,
@@ -44,13 +72,18 @@ function makeEnv(opts) {
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
     ContentService: { createTextOutput: s => ({ content: s, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-    Utilities: { formatDate: (d, tz, f) => { const x = new Date(d.getTime() + 9 * 3600e3); return x.toISOString().slice(0, 10); } },
+    Utilities: {
+      formatDate: (d, tz, f) => { const x = new Date(d.getTime() + 9 * 3600e3); return f === 'yyyy-MM-dd' ? x.toISOString().slice(0, 10) : x.toISOString().replace(/\D/g, '').slice(0, 14); },
+      base64Decode: b => Array.from(Buffer.from(b, 'base64')),
+      newBlob: (bytes, type, name) => ({ bytes: Buffer.from(bytes), type, name })
+    },
+    DriveApp,
     Logger: { log: () => {} },
     UrlFetchApp: { fetch: (url, o) => { fetchLog.push({ url, o }); return opts.fetch(url, o); } }
   };
   vm.createContext(ctx);
   let src = fs.readFileSync(opts.gasPath, 'utf8').replace("const SECRET_PIN = '0000'", "const SECRET_PIN = '" + opts.pin + "'");
   vm.runInContext(src + '\n;this.__doPost = doPost; this.__setup = setup;', ctx);
-  return { ss, ctx, fetchLog, doPost: body => JSON.parse(ctx.__doPost({ postData: { contents: body } }).content) };
+  return { ss, ctx, fetchLog, props, DriveApp, doPost: body => JSON.parse(ctx.__doPost({ postData: { contents: body } }).content) };
 }
 module.exports = { makeEnv };
