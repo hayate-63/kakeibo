@@ -4,7 +4,7 @@ const { makeEnv } = require('./gasmock');
 const REPO = path.join(__dirname, '..');
 const CSV = process.argv[2];
 const OUT = path.join(require('os').tmpdir(), 'spotbook-test-out'); fs.mkdirSync(OUT, { recursive: true });
-const PIN = '1234';
+const PIN = 'Ab-123xy!'; // v1.0.1：英字＋記号混じりのパスワード
 
 function parseCsv(text) { text = text.replace(/^﻿/, ''); const rows = []; let row = [], f = '', q = false;
   for (let i = 0; i < text.length; i++) { const c = text[i];
@@ -66,13 +66,43 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); 
   await ctx.route(/tile\.openstreetmap\.org|arcgisonline\.com/, r => r.fulfill({ body: png, contentType: 'image/png' }));
 
   await page.goto(base + '/');
-  // PIN 設定（2回入力）
-  for (const k of '1234') await page.click(`#keypad button[data-k="${k}"]`);
-  await page.click('#keypad button[data-k="ok"]');
-  for (const k of '1234') await page.click(`#keypad button[data-k="${k}"]`);
-  await page.click('#keypad button[data-k="ok"]');
+  // ---- v1.0.1 パスワード形式（P1〜P4） ----
+  const lockUi = await page.evaluate(() => ({
+    keypad: !!document.querySelector('#keypad, .keypad, .pin-dots'),
+    type: document.getElementById('lockPass').type, inputmode: document.getElementById('lockPass').getAttribute('inputmode'),
+    ac: document.getElementById('lockPass').getAttribute('autocomplete'), cap: document.getElementById('lockPass').getAttribute('autocapitalize'),
+    corr: document.getElementById('lockPass').getAttribute('autocorrect'), spell: document.getElementById('lockPass').getAttribute('spellcheck'),
+    confirmShown: !document.getElementById('lockPass2').hidden
+  }));
+  check('P4 自作キーパッドなし・type=password・inputmode無し・autocapitalize/autocorrect/spellcheck off・初期設定は new-password＋確認欄',
+    !lockUi.keypad && lockUi.type === 'password' && lockUi.inputmode === null && lockUi.ac === 'new-password' && lockUi.cap === 'off' && lockUi.corr === 'off' && lockUi.spell === 'false' && lockUi.confirmShown, JSON.stringify(lockUi));
+  const trySetup = async (a, b) => { await page.fill('#lockPass', a); await page.fill('#lockPass2', b); await page.press('#lockPass2', 'Enter'); await page.waitForTimeout(150);
+    return { msg: await page.textContent('#lockMsg'), locked: await page.$eval('#lockScreen', e => !e.classList.contains('hidden')) }; };
+  let r = await trySetup('Ab1', 'Ab1');
+  check('P2a 3文字はエラー', r.locked && /4文字以上/.test(r.msg), r.msg);
+  r = await trySetup('a'.repeat(65), 'a'.repeat(65));
+  check('P2b 65文字はエラー', r.locked && /64文字以内/.test(r.msg), r.msg);
+  r = await trySetup('Ab 123xy!', 'Ab 123xy!');
+  check('P3 空白を含むとエラー', r.locked && /空白/.test(r.msg), r.msg);
+  r = await trySetup(PIN, 'Ab-123xy?');
+  check('初期設定：確認用が不一致ならエラー', r.locked && /一致しません/.test(r.msg), r.msg);
+  r = await trySetup('a'.repeat(64), 'a'.repeat(64));
+  const ok64 = !r.locked;
+  await page.evaluate(() => { localStorage.removeItem('spotbook_pin_hash'); sessionStorage.clear(); });
+  await page.reload();
+  r = await trySetup(PIN, PIN);  // Enter キーで確定
+  check('P1a 英字＋記号（Ab-123xy!）で初期設定（Enterで確定）', !r.locked, r.msg);
+  check('64文字ちょうどは設定できる', ok64);
+  // ロック解除（新しいセッション＝別タブ相当）
+  await page.evaluate(() => sessionStorage.clear()); await page.reload();
+  const unlockAc = await page.getAttribute('#lockPass', 'autocomplete');
+  const p2hidden = await page.$eval('#lockPass2', e => e.hidden);
+  await page.fill('#lockPass', 'Ab-123xy?'); await page.press('#lockPass', 'Enter'); await page.waitForTimeout(150);
+  const wrongMsg = await page.textContent('#lockMsg');
+  check('違うパスワードは「パスワードが違います」', /違います/.test(wrongMsg) && await page.$eval('#lockScreen', e => !e.classList.contains('hidden')), wrongMsg);
+  await page.fill('#lockPass', PIN); await page.click('#lockBtn');
   await page.waitForSelector('#lockScreen.hidden', { state: 'attached' });
-  check('PIN設定でロック解除', true);
+  check('P1b ロック解除できる（autocomplete=current-password・確認欄なし）', unlockAc === 'current-password' && p2hidden, unlockAc);
 
   // 4桁目で即判定されないこと（設定時）→ OK。GAS 接続
   await page.click('.nav-item[data-tab="settings"]');
@@ -92,7 +122,8 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); 
   await page.waitForFunction(() => document.getElementById('apiKeyState').textContent.includes('設定済み'));
   const ga = env.doPost(JSON.stringify({ action: 'getAll', pin: PIN }));
   check('getAll は APIキーを返さない', !('places_api_key' in ga.config) && ga.config.places_api_key_set === '1');
-  check('PIN不一致は拒否', env.doPost(JSON.stringify({ action: 'getAll', pin: '9999' })).code === 'AUTH');
+  check('P5a GAS：同じ文字列なら getAll 成功', env.doPost(JSON.stringify({ action: 'getAll', pin: PIN })).status === 'ok');
+  check('P5b GAS：違う文字列（大小・記号違い含む）は AUTH', ['Ab-123xy?', 'ab-123xy!', 'Ab-123xy', ' Ab-123xy!'].every(p => env.doPost(JSON.stringify({ action: 'getAll', pin: p })).code === 'AUTH'));
 
   // CSV 取り込み
   await page.setInputFiles('#csvInput', CSV);
@@ -278,6 +309,19 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); 
   await page.reload();
   await page.waitForSelector('#lockScreen.hidden', { state: 'attached' });
   check('同一セッションの再読込ではPIN不要', true);
+
+  // パスワード変更（設定タブ）：空白・短すぎはエラー、変更後は GAS と不一致で AUTH 表示
+  await page.click('.nav-item[data-tab="settings"]');
+  const pinNewAttr = await page.evaluate(() => [document.getElementById('pinOld').getAttribute('inputmode'), document.getElementById('pinNew').getAttribute('inputmode'), document.querySelector('label[for], #pinNew').closest('.form-row').textContent]);
+  check('設定：inputmode=numeric 撤去・ラベル「新しいパスワード（4文字以上）」', pinNewAttr[0] === null && pinNewAttr[1] === null && /新しいパスワード（4文字以上）/.test(pinNewAttr[2]), JSON.stringify(pinNewAttr));
+  dialogs.length = 0;
+  await page.fill('#pinOld', PIN); await page.fill('#pinNew', 'ab c1234'); await page.click('button:has-text("パスワードを変更")');
+  await page.fill('#pinOld', PIN); await page.fill('#pinNew', 'abc'); await page.click('button:has-text("パスワードを変更")');
+  check('設定：空白入り・3文字は変更エラー', /空白/.test(dialogs[0] || '') && /4文字以上/.test(dialogs[1] || ''), dialogs.join(' | '));
+  await page.fill('#pinOld', PIN); await page.fill('#pinNew', 'Zz#9876_new'); await page.click('button:has-text("パスワードを変更")');
+  await page.evaluate(() => syncFromCloud(false)); await page.waitForTimeout(300);
+  const badge = await page.textContent('#syncBadge');
+  check('P5c アプリ側だけ変更すると GAS と不一致で同期不可（AUTH）', /パスワード不一致/.test(badge), badge);
 
   check('コンソールエラーなし', errors.length === 0, errors.join(' | '));
   fs.writeFileSync(path.join(OUT, 'results.json'), JSON.stringify(results, null, 1));

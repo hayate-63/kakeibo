@@ -196,12 +196,9 @@
   #lockScreen.hidden { display: none; }
   #lockScreen h2 { font-size: 18px; }
   #lockScreen p { font-size: 12px; opacity: .8; text-align: center; line-height: 1.6; max-width: 320px; }
-  .pin-dots { display: flex; gap: 12px; height: 18px; }
-  .pin-dots span { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; }
-  .pin-dots span.f { background: #fff; }
-  .keypad { display: grid; grid-template-columns: repeat(3, 72px); gap: 12px; }
-  .keypad button { height: 60px; border-radius: 50%; border: none; background: rgba(255,255,255,.12); color: #fff; font-size: 22px; font-weight: 600; }
-  .keypad button.fn { font-size: 13px; background: transparent; }
+  #lockForm { width: 100%; max-width: 320px; display: flex; flex-direction: column; gap: 10px; }
+  #lockForm input { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.95); color: var(--text); font-size: 16px; }
+  #lockForm button { padding: 12px; border-radius: 10px; border: none; background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; }
   .lock-msg { min-height: 18px; font-size: 13px; color: #fca5a5; font-weight: 700; }
 
   .toast { position: fixed; left: 50%; bottom: calc(var(--nav-h) + 20px); transform: translateX(-50%); background: rgba(15,23,42,.92); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; z-index: 6000; max-width: 90%; text-align: center; pointer-events: none; opacity: 0; transition: opacity .2s; }
@@ -217,9 +214,13 @@
 <div id="lockScreen">
   <h2 id="lockTitle">🔒 スポット帳</h2>
   <p id="lockDesc">PINを入力してください</p>
-  <div class="pin-dots" id="pinDots"></div>
+  <form id="lockForm" autocomplete="on">
+    <input type="text" name="username" value="spotbook" autocomplete="username" hidden>
+    <input type="password" id="lockPass" placeholder="パスワード" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <input type="password" id="lockPass2" placeholder="確認のためもう一度" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" hidden>
+    <button type="submit" id="lockBtn">ロック解除</button>
+  </form>
   <div class="lock-msg" id="lockMsg"></div>
-  <div class="keypad" id="keypad"></div>
 </div>
 
 <header>
@@ -369,13 +370,13 @@
     </div>
 
     <div class="card">
-      <div class="card-title"><span>🔒 PIN変更</span></div>
-      <p class="muted" style="margin-bottom:8px;">アプリ側のPINを変更します。GAS 側の <code>SECRET_PIN</code> も同じ値に書き換えて再デプロイしてください（一致しないと同期できません）。</p>
+      <div class="card-title"><span>🔒 パスワード（PIN）変更</span></div>
+      <p class="muted" style="margin-bottom:8px;">アプリ側のパスワードを変更します（英数字・記号OK、4〜64文字、空白不可）。GAS 側の <code>SECRET_PIN</code> も同じ値に書き換えて再デプロイしてください（一致しないと同期できません）。</p>
       <div class="two-col">
-        <div class="form-row"><label class="lbl">現在のPIN</label><input type="password" inputmode="numeric" id="pinOld"></div>
-        <div class="form-row"><label class="lbl">新しいPIN（4〜8桁）</label><input type="password" inputmode="numeric" id="pinNew"></div>
+        <div class="form-row"><label class="lbl">現在のパスワード</label><input type="password" id="pinOld" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+        <div class="form-row"><label class="lbl">新しいパスワード（4文字以上）</label><input type="password" id="pinNew" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
       </div>
-      <button class="btn dark" onclick="changePin()">PINを変更</button>
+      <button class="btn dark" onclick="changePin()">パスワードを変更</button>
     </div>
 
     <div class="card">
@@ -615,7 +616,7 @@ async function syncFromCloud(showAlert) {
     renderAll();
     if (showAlert) toast("同期しました（" + state.spots.length + "件）");
   } catch (e) {
-    setBadge(e.code === "AUTH" ? "⚠️ PIN不一致" : "⚠️ 同期エラー", "error");
+    setBadge(e.code === "AUTH" ? "⚠️ パスワード不一致" : "⚠️ 同期エラー", "error");
     if (showAlert) alert(e.message);
   }
 }
@@ -628,17 +629,18 @@ function replaceSpotLocal(spot) {
 // ======================================================================
 // PIN ロック（アプリ側でロック＋GAS 側でも SECRET_PIN と照合）
 // ======================================================================
-const lock = { buf: "", mode: "unlock", first: "" };
+const lock = { mode: "unlock" };
+const PIN_MIN = 4, PIN_MAX = 64;
+/** パスワード形式チェック：4〜64文字・空白なし（文字種は制限しない）。OKなら空文字 */
+function pinFormatError(p) {
+  if (p.length < PIN_MIN) return PIN_MIN + "文字以上にしてください";
+  if (p.length > PIN_MAX) return PIN_MAX + "文字以内にしてください";
+  if (/\s/.test(p)) return "空白（スペース）は使えません";
+  return "";
+}
 function initLock() {
-  const kp = document.getElementById("keypad");
-  const keys = ["1","2","3","4","5","6","7","8","9","clear","0","ok"];
-  kp.innerHTML = keys.map(k => k === "clear" ? '<button class="fn" data-k="clear">消す</button>'
-    : k === "ok" ? '<button class="fn" data-k="ok">OK</button>' : '<button data-k="' + k + '">' + k + "</button>").join("");
-  kp.addEventListener("click", e => { const b = e.target.closest("button"); if (b) pinKey(b.dataset.k); });
-  document.addEventListener("keydown", e => {
-    if (document.getElementById("lockScreen").classList.contains("hidden")) return;
-    if (/^\d$/.test(e.key)) pinKey(e.key); else if (e.key === "Backspace") pinKey("clear"); else if (e.key === "Enter") pinKey("ok");
-  });
+  // Enter キー（キーボードの「開く／実行」）でも確定できるよう form の submit で受ける
+  document.getElementById("lockForm").addEventListener("submit", e => { e.preventDefault(); submitLock(); });
   // 同じタブ内の再読み込みでは再入力を求めない（タブ／アプリを閉じると再ロック）
   const sessionPin = sessionStorage.getItem(LS.pinSession);
   const hash = localStorage.getItem(LS.pinHash);
@@ -649,39 +651,39 @@ function initLock() {
   showLock(hash ? "unlock" : "setup");
 }
 function showLock(mode) {
-  lock.mode = mode; lock.buf = ""; lock.first = "";
+  lock.mode = mode;
+  const setup = mode === "setup";
+  const p1 = document.getElementById("lockPass"), p2 = document.getElementById("lockPass2");
   document.getElementById("lockScreen").classList.remove("hidden");
-  document.getElementById("lockTitle").textContent = mode === "setup" ? "🔐 PINを設定" : "🔒 スポット帳";
-  document.getElementById("lockDesc").innerHTML = mode === "setup"
-    ? "4〜8桁のPINを決めてください。<br>GAS の SECRET_PIN と同じ数字にします（家計簿と同じ方式）。"
-    : "PINを入力してください";
+  document.getElementById("lockTitle").textContent = setup ? "🔐 パスワードを設定" : "🔒 スポット帳";
+  document.getElementById("lockDesc").innerHTML = setup
+    ? "4文字以上のパスワードを決めてください（英数字・記号OK、空白不可）。<br>GAS の SECRET_PIN と同じ文字列にします。"
+    : "パスワードを入力してください";
+  p1.value = ""; p2.value = "";
+  p1.placeholder = setup ? "新しいパスワード" : "パスワード";
+  p1.setAttribute("autocomplete", setup ? "new-password" : "current-password");
+  p2.hidden = !setup;
+  document.getElementById("lockBtn").textContent = setup ? "設定する" : "ロック解除";
   document.getElementById("lockMsg").textContent = "";
-  drawDots();
+  setTimeout(() => p1.focus(), 50);
 }
-function drawDots() {
-  const n = Math.max(4, lock.buf.length);
-  document.getElementById("pinDots").innerHTML = Array.from({ length: n }, (_, i) => '<span class="' + (i < lock.buf.length ? "f" : "") + '"></span>').join("");
-}
-async function pinKey(k) {
+async function submitLock() {
   const msg = document.getElementById("lockMsg");
-  if (k === "clear") { lock.buf = lock.buf.slice(0, -1); drawDots(); return; }
-  if (k !== "ok") { if (lock.buf.length < 8) lock.buf += k; drawDots(); if (lock.mode === "unlock" && lock.buf.length >= 4) tryUnlock(false); return; }
-  if (lock.buf.length < 4) { msg.textContent = "4桁以上で入力してください"; return; }
+  const p1 = document.getElementById("lockPass"), p2 = document.getElementById("lockPass2");
+  const v = p1.value;
   if (lock.mode === "setup") {
-    if (!lock.first) { lock.first = lock.buf; lock.buf = ""; document.getElementById("lockDesc").textContent = "確認のため、もう一度入力してください"; drawDots(); return; }
-    if (lock.first !== lock.buf) { msg.textContent = "一致しません。最初からやり直してください"; lock.first = ""; lock.buf = ""; showLock("setup"); msg.textContent = "一致しませんでした"; return; }
-    localStorage.setItem(LS.pinHash, await sha256(lock.buf));
-    state.pin = lock.buf; sessionStorage.setItem(LS.pinSession, lock.buf); unlock();
+    const err = pinFormatError(v);
+    if (err) { msg.textContent = err; return; }
+    if (v !== p2.value) { msg.textContent = "確認用と一致しません"; p2.value = ""; p2.focus(); return; }
+    localStorage.setItem(LS.pinHash, await sha256(v));
+    state.pin = v; sessionStorage.setItem(LS.pinSession, v); unlock();
     return;
   }
-  tryUnlock(true);
-}
-async function tryUnlock(showErr) {
-  const h = await sha256(lock.buf);
-  if (h === localStorage.getItem(LS.pinHash)) {
-    state.pin = lock.buf; sessionStorage.setItem(LS.pinSession, lock.buf); unlock();
-  } else if (showErr || lock.buf.length >= 8) {
-    document.getElementById("lockMsg").textContent = "PINが違います"; lock.buf = ""; drawDots();
+  if (!v) { msg.textContent = "パスワードを入力してください"; return; }
+  if ((await sha256(v)) === localStorage.getItem(LS.pinHash)) {
+    state.pin = v; sessionStorage.setItem(LS.pinSession, v); unlock();
+  } else {
+    msg.textContent = "パスワードが違います"; p1.value = ""; p1.focus();
   }
 }
 let unlocked = false;
@@ -697,13 +699,14 @@ function lockNow() {
   location.reload();
 }
 async function changePin() {
-  const o = document.getElementById("pinOld").value.trim(), n = document.getElementById("pinNew").value.trim();
-  if ((await sha256(o)) !== localStorage.getItem(LS.pinHash)) { alert("現在のPINが違います"); return; }
-  if (!/^\d{4,8}$/.test(n)) { alert("新しいPINは4〜8桁の数字にしてください"); return; }
+  const o = document.getElementById("pinOld").value, n = document.getElementById("pinNew").value;
+  if ((await sha256(o)) !== localStorage.getItem(LS.pinHash)) { alert("現在のパスワードが違います"); return; }
+  const err = pinFormatError(n);
+  if (err) { alert("新しいパスワード：" + err); return; }
   localStorage.setItem(LS.pinHash, await sha256(n));
   state.pin = n; sessionStorage.setItem(LS.pinSession, n);
   document.getElementById("pinOld").value = ""; document.getElementById("pinNew").value = "";
-  alert("アプリ側のPINを変更しました。\nGAS の SECRET_PIN も同じ値に書き換えて、デプロイを更新してください。");
+  alert("アプリ側のパスワードを変更しました。\nGAS の SECRET_PIN も同じ値に書き換えて、デプロイを更新してください。");
 }
 
 // ======================================================================
