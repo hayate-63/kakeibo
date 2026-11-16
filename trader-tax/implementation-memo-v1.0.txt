@@ -6,7 +6,7 @@
 ━━━━━━━━━━━━━━━━━━━━
 §1　成果物（リポジトリ hayate-63/kakeibo の trader-tax/ 以下）
 ━━━━━━━━━━━━━━━━━━━━
-・index-v1.0.html … 単一HTML（PWA: apple系メタ＋その場で生成する manifest。家計簿と同じく Service Worker なし）
+・index-v1.0.html … 単一HTML（PWA: apple系メタ＋その場で生成する manifest。Service Worker なし）
 ・GAS-v1.0.txt … GAS 全文（メニュー「① 初期化（タブ作成）」「② PIN設定」つき。手順はファイル冒頭）
 ・implementation-memo-v1.0.txt … 本メモ
 ・tests/engine-test.js … 計算エンジンの自己検証（§7 T1〜T6＋追加ケース）。node trader-tax/tests/engine-test.js
@@ -22,9 +22,8 @@
 ・PIN は GAS のスクリプトプロパティ APP_PIN に保存（シートには書かない）。全アクションで照合
 ・GAS URL 未設定時は端末内だけで動く「ローカルモード」（試用・オフライン表示用）。GAS と同じ変更処理（applyLocal）を手元で実行
 
-【Muse確認依頼①】DATA_REV の方式
-　リポジトリにあった家計簿は into.html（v2.0。PIN・DATA_REV なし）のみで、現行の DATA_REV 実装は参照できなかった。
-　本アプリでは次の方式で実装した。現行の家計簿と違う場合は指摘がほしい。
+■ DATA_REV（保存の競合検出）の方式
+　家計簿とは別物として、本アプリ独自の方式で確定（2026-11-16 本人確認）。
 　・スクリプトプロパティ DATA_REV（整数）。getAll で rev を返す
 　・書込み時はクライアントの rev と一致する場合だけ実行し +1。不一致なら {status:'conflict'} を返す
 　・アプリは conflict を受けたら getAll で最新を読み直し、「もう一度操作してください」と表示（自動再送はしない）
@@ -53,7 +52,7 @@ settings: key, value, updatedAt（salaryIncome, deductionsIncome, deductionsResi
 ━━━━━━━━━━━━━━━━━━━━
 メモ指定どおり: getAll／addTrade／bulkAddTrades／deleteTrade／addMarginPosition／bulkAddMarginPositions／addMarginSettlement／bulkAddMarginSettlements／saveAnnualReport／addDividend／deleteDividend／saveCarryover／saveSettings
 
-【Muse確認依頼②】メモの一覧に無いが追加したアクション（いずれも最小限のCRUD）
+【Muse確認依頼①】メモの一覧に無いが追加したアクション（いずれも最小限のCRUD）
 ・saveHoldings … 期首保有（holdings）の保存手段がメモ §4 に無かったため追加（全件置換）
 ・deleteMarginPosition（紐づく決済も削除）／deleteMarginSettlement … 信用の誤登録を訂正する手段が無いと運用できないため追加
 ・addMarginSettlement 等は payload.positionStatuses を受け、建玉の status 列を書き換える（状態の判定はアプリ側。GAS は書くだけ）
@@ -109,13 +108,13 @@ settings: key, value, updatedAt（salaryIncome, deductionsIncome, deductionsResi
 
 (4) 税額
 ・課税対象は 譲渡所得等 と 分離配当 をそれぞれ1,000円未満切捨てして合計
-　（申告書第三表で区分ごとに切り捨てるため。T1〜T6 の範囲では「合計してから切捨て」と結果は同じ）【Muse確認依頼③】
+　（申告書第三表で区分ごとに切り捨てるため。T1〜T6 の範囲では「合計してから切捨て」と結果は同じ）【Muse確認依頼②】
 ・所得税 = 課税対象×15%、復興 = 所得税×2.1%、国税 = (所得税＋復興) の100円未満切捨て
 ・住民税 = 課税対象×5% の100円未満切捨て
 ・精算 = 国税 − 源泉所得税 ＋ 住民税 − 源泉住民税（申告不要を選んだ配当の源泉は精算に使わない）
 　※メモ T2 の期待値（還付 20,372）に合わせ、国税は100円未満を切り捨ててから源泉と精算している。
 　　実際の申告書は「所得税及び復興特別所得税の額 − 源泉徴収税額」を出してから納付額だけを100円未満切捨て（還付は1円単位）なので、
-　　還付の年は実際の還付額と最大99円ほどずれる。目安として許容と判断した【Muse確認依頼④】
+　　還付の年は実際の還付額と最大99円ほどずれる。目安として許容と判断した【Muse確認依頼③】
 ・配当の源泉（台帳入力時の目安）: 所得税 = 配当×15.315% の円未満切捨て、住民税 = 配当×5% の円未満切捨て（計算書の実額で上書き前提）
 
 (5) 配当方式比較
@@ -283,14 +282,13 @@ PASS  positionStatuses で建玉の状態更新: 期待 "一部決済" / 実際 
 ━━━━━━━━━━━━━━━━━━━━
 §8　Muse への確認依頼まとめ
 ━━━━━━━━━━━━━━━━━━━━
-① DATA_REV の方式が家計簿の現行方式と同じか（§2）
-② メモ外で追加した GAS アクション（saveHoldings／deleteMarginPosition／deleteMarginSettlement）の是非（§4）
-③ 課税対象の1,000円未満切捨てを区分（譲渡・分離配当）ごとに行っている点（§6(4)）
-④ 国税を100円未満切捨てしてから源泉と精算する点（T2 期待値に準拠。還付年は実額と最大99円の差）（§6(4)）
-⑤ 課税年を受渡日基準（設定で約定日基準に変更可）にしている点。メモに明記がないため、一般的な原則に合わせた
-⑥ 繰越の連続申告が切れている場合も「警告のみ」で控除計算は行う点（メモ「警告する」に準拠）
-⑦ 現渡の扱い（建値で現物を譲渡＝現物の売却明細に計上）
-⑧ 配当方式を年ごとに1つとして扱う単純化
+① メモ外で追加した GAS アクション（saveHoldings／deleteMarginPosition／deleteMarginSettlement）の是非（§4）
+② 課税対象の1,000円未満切捨てを区分（譲渡・分離配当）ごとに行っている点（§6(4)）
+③ 国税を100円未満切捨てしてから源泉と精算する点（T2 期待値に準拠。還付年は実額と最大99円の差）（§6(4)）
+④ 課税年を受渡日基準（設定で約定日基準に変更可）にしている点。メモに明記がないため、一般的な原則に合わせた
+⑤ 繰越の連続申告が切れている場合も「警告のみ」で控除計算は行う点（メモ「警告する」に準拠）
+⑥ 現渡の扱い（建値で現物を譲渡＝現物の売却明細に計上）
+⑦ 配当方式を年ごとに1つとして扱う単純化
 
 ━━━━━━━━━━━━━━━━━━━━
 §9　本人のデプロイ手順（§9 の 6）
