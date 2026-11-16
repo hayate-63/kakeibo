@@ -1,0 +1,1875 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="税金計算">
+<meta name="theme-color" content="#1e293b">
+<title>トレーダー税金計算 v1.0</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --primary: #1e293b;
+    --accent: #6366f1;
+    --accent-light: #e0e7ff;
+    --loss: #ef4444;
+    --loss-bg: #fee2e2;
+    --gain: #2563eb;
+    --ok: #10b981;
+    --ok-bg: #d1fae5;
+    --warn: #b45309;
+    --warn-bg: #fef3c7;
+    --text: #0f172a;
+    --subtext: #64748b;
+    --border: #e2e8f0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: var(--bg); color: var(--text);
+    padding-bottom: 95px; max-width: 768px; margin: 0 auto;
+  }
+  header {
+    background: var(--primary); color: #fff; padding: 12px 16px;
+    display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; z-index: 50; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  header h1 { font-size: 15px; font-weight: 700; }
+  .sync-badge { font-size: 11px; background: rgba(255,255,255,0.15); padding: 4px 10px; border-radius: 99px; cursor: pointer; font-weight: 600; }
+  .sync-badge.online { background: #059669; }
+  .sync-badge.syncing { background: #d97706; }
+  .sync-badge.error { background: #b91c1c; }
+  .page { display: none; padding: 14px; }
+  .page.active { display: block; }
+  .card { background: var(--card); border-radius: 14px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); border: 1px solid var(--border); }
+  .card-title { font-size: 14px; font-weight: 700; color: var(--primary); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sub { font-size: 11px; color: var(--subtext); line-height: 1.5; }
+  .seg-toggle { display: flex; background: #e2e8f0; border-radius: 99px; padding: 4px; margin-bottom: 14px; gap: 2px; }
+  .seg-btn { flex: 1; border: none; background: transparent; padding: 9px 4px; border-radius: 99px; font-size: 13px; font-weight: 700; color: var(--subtext); cursor: pointer; }
+  .seg-btn.active { background: var(--card); color: var(--primary); box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+  .form-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); gap: 8px; }
+  .form-row:last-child { border-bottom: none; }
+  .form-label { font-size: 13px; font-weight: 600; min-width: 110px; }
+  .form-input, .form-select { flex: 1; min-width: 0; border: none; background: transparent; font-size: 16px; text-align: right; color: var(--text); outline: none; font-weight: 500; }
+  .form-input:focus { background: #f8fafc; }
+  .btn-primary { width: 100%; background: var(--primary); color: #fff; border: none; border-radius: 99px; padding: 14px; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 12px; }
+  .btn-primary:disabled { opacity: 0.5; }
+  .btn { border: 1px solid var(--border); background: #f1f5f9; color: var(--text); border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .btn.blue { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.red { background: var(--loss-bg); color: var(--loss); border-color: #fecaca; }
+  .del-btn { border: none; background: #f1f5f9; color: #94a3b8; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
+  .preview-box { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 10px 12px; margin-top: 10px; font-size: 12px; color: var(--subtext); line-height: 1.6; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+  .kpi-box { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+  .kpi-label { font-size: 11px; color: var(--subtext); font-weight: 600; }
+  .kpi-val { font-size: 18px; font-weight: 800; margin-top: 4px; }
+  .pos { color: var(--gain); }
+  .neg { color: var(--loss); }
+  .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.data-table th, table.data-table td { padding: 7px 5px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+  table.data-table th { color: var(--subtext); font-weight: 600; font-size: 11px; }
+  table.data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.data-table tr.total td { font-weight: 800; border-top: 2px solid var(--primary); }
+  table.data-table tr.muted td { color: #94a3b8; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 6px; font-weight: 700; font-size: 10px; background: var(--accent-light); color: var(--accent); }
+  .tag.warn { background: var(--warn-bg); color: var(--warn); }
+  .tag.red { background: var(--loss-bg); color: var(--loss); }
+  .tag.ok { background: var(--ok-bg); color: #047857; }
+  .tag.gray { background: #f1f5f9; color: var(--subtext); }
+  .alert { border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.6; margin-bottom: 8px; }
+  .alert.warn { background: var(--warn-bg); color: #78350f; }
+  .alert.info { background: #e0f2fe; color: #075985; }
+  .alert.red { background: var(--loss-bg); color: #7f1d1d; }
+  .alert.ok { background: var(--ok-bg); color: #064e3b; }
+  .year-bar { display: flex; justify-content: space-between; align-items: center; background: var(--card); padding: 8px 14px; border-radius: 12px; margin-bottom: 12px; border: 1px solid var(--border); }
+  .year-btn { border: none; background: #f1f5f9; width: 34px; height: 34px; border-radius: 50%; font-size: 15px; cursor: pointer; font-weight: 700; }
+  .year-title { font-size: 16px; font-weight: 800; }
+  .steps { font-size: 12px; line-height: 1.8; padding-left: 18px; }
+  .row-item { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); gap: 8px; }
+  .row-item:last-child { border-bottom: none; }
+  .row-main { font-size: 13px; font-weight: 700; }
+  .row-sub { font-size: 11px; color: var(--subtext); margin-top: 2px; }
+  .row-right { text-align: right; display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 14px; }
+  .mini-input { width: 110px; padding: 5px 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; text-align: right; }
+  textarea.copybox { width: 100%; min-height: 220px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+  nav.bottom-nav {
+    position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+    width: calc(100% - 24px); max-width: 520px; background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(10px); border: 1px solid var(--border); border-radius: 99px;
+    display: flex; justify-content: space-around; padding: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 100;
+  }
+  .nav-item { flex: 1; border: none; background: transparent; padding: 7px 2px; border-radius: 99px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10px; font-weight: 700; color: var(--subtext); cursor: pointer; }
+  .nav-item .icon { font-size: 17px; }
+  .nav-item.active { background: #e2e8f0; color: var(--primary); }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.6); display: none; justify-content: center; align-items: flex-start; padding: 40px 12px; z-index: 200; overflow-y: auto; }
+  .modal-overlay.show { display: flex; }
+  .modal-box { background: #fff; border-radius: 14px; padding: 16px; width: 100%; max-width: 720px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🧮 トレーダー税金計算 <span style="font-weight:400;font-size:11px;opacity:.7">v1.0（仮称）</span></h1>
+  <span class="sync-badge" id="syncBadge" onclick="syncAll(true)">ローカル</span>
+</header>
+
+<!-- ==================== TAB 1: ホーム ==================== -->
+<section id="page-home" class="page active">
+  <div id="homeBody"></div>
+</section>
+
+<!-- ==================== TAB 2: 取引 ==================== -->
+<section id="page-trade" class="page">
+  <div class="seg-toggle">
+    <button class="seg-btn active" data-sub="spot" onclick="switchTradeSub('spot')">現物入力</button>
+    <button class="seg-btn" data-sub="margin" onclick="switchTradeSub('margin')">信用入力</button>
+    <button class="seg-btn" data-sub="csv" onclick="switchTradeSub('csv')">CSV取込</button>
+    <button class="seg-btn" data-sub="hist" onclick="switchTradeSub('hist')">履歴</button>
+  </div>
+
+  <!-- 現物入力 -->
+  <div id="sub-spot">
+    <div class="card">
+      <div class="card-title"><span>📝 現物取引の手入力</span></div>
+      <div class="form-row"><span class="form-label">約定日</span><input type="date" id="spDate" class="form-input" onchange="onSpotDateChange()"></div>
+      <div class="form-row"><span class="form-label">受渡日</span><input type="date" id="spSettle" class="form-input" oninput="updateSpotPreview()"></div>
+      <div class="form-row"><span class="form-label">預り区分</span>
+        <select id="spAccount" class="form-select" onchange="updateSpotPreview()"><option>一般</option><option value="特定">特定（参考登録・計算対象外）</option></select></div>
+      <div class="form-row"><span class="form-label">銘柄コード</span><input type="text" id="spCode" class="form-input" placeholder="7203" oninput="onSpotCodeInput()"></div>
+      <div class="form-row"><span class="form-label">銘柄名</span><input type="text" id="spName" class="form-input" placeholder="トヨタ自動車"></div>
+      <div class="form-row"><span class="form-label">売買</span>
+        <select id="spSide" class="form-select" onchange="onSpotSideChange()"><option>買</option><option>売</option><option value="数量調整">数量調整（分割・併合）</option></select></div>
+      <div class="form-row"><span class="form-label" id="spQtyLabel">数量（株）</span><input type="number" id="spQty" class="form-input" inputmode="numeric" oninput="updateSpotPreview()"></div>
+      <div class="form-row" id="spPriceRow"><span class="form-label">約定単価</span><input type="number" id="spPrice" class="form-input" inputmode="decimal" step="0.1" oninput="updateSpotPreview()"></div>
+      <div class="form-row" id="spFeeRow"><span class="form-label">手数料（税込）</span><input type="number" id="spFee" class="form-input" inputmode="numeric" value="0" oninput="updateSpotPreview()"></div>
+      <div class="form-row"><span class="form-label">メモ</span><input type="text" id="spMemo" class="form-input"></div>
+      <div class="preview-box" id="spPreview">入力すると取得単価・譲渡損益をプレビューします。</div>
+      <button class="btn-primary" onclick="submitSpot()">登録する</button>
+    </div>
+  </div>
+
+  <!-- 信用入力 -->
+  <div id="sub-margin" class="hidden">
+    <div class="card">
+      <div class="card-title"><span>📈 信用 新規建て</span></div>
+      <div class="form-row"><span class="form-label">建日</span><input type="date" id="mpDate" class="form-input"></div>
+      <div class="form-row"><span class="form-label">預り区分</span>
+        <select id="mpAccount" class="form-select"><option>一般</option><option value="特定">特定（参考登録・計算対象外）</option></select></div>
+      <div class="form-row"><span class="form-label">銘柄コード</span><input type="text" id="mpCode" class="form-input"></div>
+      <div class="form-row"><span class="form-label">銘柄名</span><input type="text" id="mpName" class="form-input"></div>
+      <div class="form-row"><span class="form-label">建区分</span><select id="mpSide" class="form-select"><option>買建</option><option>売建</option></select></div>
+      <div class="form-row"><span class="form-label">数量（株）</span><input type="number" id="mpQty" class="form-input" inputmode="numeric"></div>
+      <div class="form-row"><span class="form-label">建単価</span><input type="number" id="mpPrice" class="form-input" inputmode="decimal" step="0.1"></div>
+      <div class="form-row"><span class="form-label">建手数料（税込）</span><input type="number" id="mpFee" class="form-input" inputmode="numeric" value="0"></div>
+      <div class="form-row"><span class="form-label">メモ</span><input type="text" id="mpMemo" class="form-input"></div>
+      <button class="btn-primary" onclick="submitMarginPosition('手入力')">建玉を登録</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>✅ 信用 決済（返済・現引・現渡）</span></div>
+      <div class="form-row"><span class="form-label">対象建玉</span><select id="msPos" class="form-select" onchange="onSettlePosChange()"></select></div>
+      <div class="form-row"><span class="form-label">決済種類</span>
+        <select id="msType" class="form-select" onchange="onSettleTypeChange()"><option>返済</option><option>現引</option><option>現渡</option></select></div>
+      <div class="form-row"><span class="form-label">決済約定日</span><input type="date" id="msDate" class="form-input" onchange="onSettleDateChange()"></div>
+      <div class="form-row"><span class="form-label">受渡日</span><input type="date" id="msDelivery" class="form-input"></div>
+      <div class="form-row"><span class="form-label">数量（株）</span><input type="number" id="msQty" class="form-input" inputmode="numeric" oninput="onSettleQtyInput()"></div>
+      <div class="form-row" id="msPriceRow"><span class="form-label">決済単価</span><input type="number" id="msPrice" class="form-input" inputmode="decimal" step="0.1" oninput="updateSettlePreview()"></div>
+      <div class="form-row"><span class="form-label">建手数料（この決済分）</span><input type="number" id="msOpenFee" class="form-input" oninput="updateSettlePreview()"></div>
+      <div class="form-row"><span class="form-label">返済手数料</span><input type="number" id="msCloseFee" class="form-input" value="0" oninput="updateSettlePreview()"></div>
+      <div class="form-row ms-long"><span class="form-label">買方金利（支払）</span><input type="number" id="msInterestPaid" class="form-input" value="0" oninput="updateSettlePreview()"></div>
+      <div class="form-row ms-short"><span class="form-label">売方金利（受取）</span><input type="number" id="msInterestReceived" class="form-input" value="0" oninput="updateSettlePreview()"></div>
+      <div class="form-row ms-short"><span class="form-label">貸株料</span><input type="number" id="msLendingFee" class="form-input" value="0" oninput="updateSettlePreview()"></div>
+      <div class="form-row"><span class="form-label">逆日歩（受取）</span><input type="number" id="msGyakuR" class="form-input" value="0" oninput="updateSettlePreview()"></div>
+      <div class="form-row"><span class="form-label">逆日歩（支払）</span><input type="number" id="msGyakuP" class="form-input" value="0" oninput="updateSettlePreview()"></div>
+      <div class="form-row"><span class="form-label">配当落調整金（受取）</span><input type="number" id="msDivR" class="form-input" value="0" oninput="updateSettlePreview()"></div>
+      <div class="form-row"><span class="form-label">配当落調整金（支払）</span><input type="number" id="msDivP" class="form-input" value="0" oninput="updateSettlePreview()"></div>
+      <div class="form-row"><span class="form-label">管理費・書換料等</span><input type="number" id="msOther" class="form-input" value="0" oninput="updateSettlePreview()"></div>
+      <div class="form-row"><span class="form-label">メモ</span><input type="text" id="msMemo" class="form-input"></div>
+      <div class="sub" style="margin-top:6px">配当落調整金は配当ではありません（配当台帳には入れず、ここで譲渡損益の中だけで処理します）。</div>
+      <div class="preview-box" id="msPreview">建玉を選ぶと決済損益をプレビューします。</div>
+      <button class="btn-primary" onclick="submitSettlement()">決済を登録</button>
+    </div>
+  </div>
+
+  <!-- CSV取込 -->
+  <div id="sub-csv" class="hidden">
+    <div class="card">
+      <div class="card-title"><span>📥 SBI CSV取込</span><span class="tag warn">列対応表は仮設定</span></div>
+      <div class="alert warn">列名の対応表（CSV_CONFIG）は SBI の実物サンプル受領前の<strong>仮設定</strong>です。読み取り結果の「列の対応」に未検出の列があれば、コード先頭の CSV_CONFIG を差し替えて直します。</div>
+      <div class="form-row"><span class="form-label">CSVの種類</span>
+        <select id="csvType" class="form-select"><option value="spot">約定履歴CSV（現物）</option><option value="margin">信用決済明細CSV（信用）</option></select></div>
+      <div class="form-row"><span class="form-label">ファイル</span><input type="file" id="csvFile" accept=".csv,text/csv" style="flex:1;font-size:12px" onchange="onCsvFile(event)"></div>
+      <div class="sub" style="margin-top:6px">流れ: 読み取り → 確認一覧（行ごとに登録／除外）→ 一括登録。NISA預りは自動で対象外、既存と一致する行は「重複候補」として初期状態で除外します。</div>
+    </div>
+    <div id="csvResult"></div>
+  </div>
+
+  <!-- 履歴 -->
+  <div id="sub-hist" class="hidden">
+    <div class="year-bar">
+      <button class="year-btn" onclick="changeYear('hist',-1)">◀</button>
+      <div class="year-title" id="histYearTitle"></div>
+      <button class="year-btn" onclick="changeYear('hist',1)">▶</button>
+    </div>
+    <div id="histBody"></div>
+  </div>
+</section>
+
+<!-- ==================== TAB 3: 配当・報告書 ==================== -->
+<section id="page-div" class="page">
+  <div class="year-bar">
+    <button class="year-btn" onclick="changeYear('div',-1)">◀</button>
+    <div class="year-title" id="divYearTitle"></div>
+    <button class="year-btn" onclick="changeYear('div',1)">▶</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>💴 配当台帳（一般口座分）</span></div>
+    <div class="alert info">株式数比例配分方式の前提: <strong>特定口座の配当は年間取引報告書の「配当等の額」で拾う</strong>ため、ここには入れません（二重計上防止）。一般口座の配当を配当金計算書／入出金明細から入力します。信用の配当落調整金も入れません。</div>
+    <div class="form-row"><span class="form-label">受取日</span><input type="date" id="dvDate" class="form-input"></div>
+    <div class="form-row"><span class="form-label">銘柄コード</span><input type="text" id="dvCode" class="form-input"></div>
+    <div class="form-row"><span class="form-label">銘柄名</span><input type="text" id="dvName" class="form-input"></div>
+    <div class="form-row"><span class="form-label">配当等の額（税引前）</span><input type="number" id="dvAmount" class="form-input" oninput="suggestDivWithholding()"></div>
+    <div class="form-row"><span class="form-label">源泉 所得税（15.315%）</span><input type="number" id="dvWI" class="form-input"></div>
+    <div class="form-row"><span class="form-label">源泉 住民税（5%）</span><input type="number" id="dvWR" class="form-input"></div>
+    <div class="form-row"><span class="form-label">受取口座</span><select id="dvAccount" class="form-select"><option>一般</option><option value="特定">特定（報告書未入力時のみ計算に使用）</option></select></div>
+    <div class="form-row"><span class="form-label">メモ</span><input type="text" id="dvMemo" class="form-input"></div>
+    <div class="sub" style="margin-top:6px">源泉額は配当額を入れると目安値（円未満切捨て）を自動入力します。計算書の実額で上書きしてください。</div>
+    <button class="btn-primary" onclick="submitDividend()">配当を登録</button>
+  </div>
+  <div class="card"><div class="card-title"><span>📋 配当一覧</span><span id="divListTotal" class="sub"></span></div><div id="divList"></div></div>
+
+  <div class="card">
+    <div class="card-title"><span>📄 特定口座年間取引報告書（モードT）</span></div>
+    <div class="sub" style="margin-bottom:8px">SBIの報告書の項目どおりに勘定区分ごとに入力します（このモードでは損益計算はしません）。差引金額が空欄なら「譲渡の対価 − 取得費等」で補います。マイナスは「-」または「△」で入力可。</div>
+    <div id="reportForms"></div>
+  </div>
+</section>
+
+<!-- ==================== TAB 4: 集計・申告 ==================== -->
+<section id="page-sum" class="page">
+  <div class="year-bar">
+    <button class="year-btn" onclick="changeYear('sum',-1)">◀</button>
+    <div class="year-title" id="sumYearTitle"></div>
+    <button class="year-btn" onclick="changeYear('sum',1)">▶</button>
+  </div>
+  <div id="sumBody"></div>
+</section>
+
+<!-- ==================== TAB 5: 設定 ==================== -->
+<section id="page-set" class="page">
+  <div class="card">
+    <div class="card-title"><span>☁️ 同期（GAS）・PIN</span></div>
+    <div class="form-row"><span class="form-label">GAS ウェブアプリURL</span><input type="url" id="setGasUrl" class="form-input" placeholder="https://script.google.com/macros/s/.../exec" style="font-size:12px"></div>
+    <div class="form-row"><span class="form-label">PIN</span><input type="password" id="setPin" class="form-input" inputmode="numeric" autocomplete="off"></div>
+    <div class="sub" style="margin-top:6px">URLとPINはこの端末のみに保存されます（localStorage）。未設定のときは端末内だけで動く「ローカルモード」です。</div>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button class="btn blue" style="flex:1" onclick="saveConnection()">保存して同期</button>
+      <button class="btn" style="flex:1" onclick="syncAll(true)">今すぐ同期</button>
+    </div>
+    <div class="sub" id="revInfo" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>🏦 口座マスタ</span></div>
+    <div class="form-row"><span class="form-label">証券会社</span><span style="font-weight:700">SBI証券</span></div>
+    <div class="form-row"><span class="form-label">一般口座（モードG）</span><input type="checkbox" id="setAccG"></div>
+    <div class="form-row"><span class="form-label">特定口座・源泉徴収なし（モードT）</span><input type="checkbox" id="setAccT"></div>
+    <div class="sub" style="margin-top:6px">moomoo（ペーパー専用）・NISA・FX/先物/暗号資産は対象外です。</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>🧾 税率・計算の基準</span></div>
+    <div class="form-row"><span class="form-label">所得税（%）</span><input type="number" id="setRateIncome" class="form-input" step="0.001"></div>
+    <div class="form-row"><span class="form-label">復興特別所得税（所得税額の%）</span><input type="number" id="setRateRecon" class="form-input" step="0.001"></div>
+    <div class="form-row"><span class="form-label">住民税（%）</span><input type="number" id="setRateResident" class="form-input" step="0.001"></div>
+    <div class="form-row"><span class="form-label">課税年の判定基準</span><select id="setYearBasis" class="form-select"><option>受渡日</option><option>約定日</option></select></div>
+    <div class="sub" style="margin-top:6px">譲渡の収入すべき時期は原則「受渡日」（約定日基準も選択可）。年末の約定は翌年分になる場合があります。</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>💼 給与所得見込み（配当方式比較・20万円判定用）</span></div>
+    <div class="form-row"><span class="form-label">給与所得（給与所得控除後）</span><input type="number" id="setSalary" class="form-input"></div>
+    <div class="form-row"><span class="form-label">所得控除合計（所得税）</span><input type="number" id="setDedI" class="form-input"></div>
+    <div class="form-row"><span class="form-label">所得控除合計（住民税）</span><input type="number" id="setDedR" class="form-input"></div>
+    <div class="sub" style="margin-top:6px">家計簿側の給与計算とは手入力で揃えてください。総合課税の比較は目安（調整控除等は省略）です。</div>
+    <button class="btn-primary" onclick="saveSettingsForm()">設定を保存</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>📦 期首保有（現物・一般口座）</span></div>
+    <div class="sub" style="margin-bottom:8px">前年からの持越しを「期首日時点の数量と取得費総額」で登録します。期首登録は手入力を正とし、それ以前の取引からの再計算と食い違う場合は警告します。</div>
+    <div id="holdingsList"></div>
+    <div class="form-row"><span class="form-label">期首日</span><input type="date" id="hdDate" class="form-input"></div>
+    <div class="form-row"><span class="form-label">銘柄コード</span><input type="text" id="hdCode" class="form-input"></div>
+    <div class="form-row"><span class="form-label">銘柄名</span><input type="text" id="hdName" class="form-input"></div>
+    <div class="form-row"><span class="form-label">数量（株）</span><input type="number" id="hdQty" class="form-input"></div>
+    <div class="form-row"><span class="form-label">取得費総額（円）</span><input type="number" id="hdCost" class="form-input"></div>
+    <button class="btn-primary" onclick="addHolding()">期首保有を追加して保存</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>📌 期首建玉（信用・前年からの持越し）</span></div>
+    <div class="sub">「取引 → 信用入力 → 新規建て」で建日・建単価・数量を入れて登録してください（建日は実際の建日）。決済したら同じ画面の「決済」で精算します。</div>
+    <button class="btn" style="margin-top:8px" onclick="gotoMarginEntry()">信用入力へ移動</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>⚠️ 配当の受取方法について</span></div>
+    <div class="sub">本アプリは配当の受取方法が<strong>「株式数比例配分方式」（SBI証券口座で受取）</strong>であることを前提にしています。この方式以外（銀行口座受取など）に変えると、特定口座分の配当が年間取引報告書に載らなくなり、配当の拾い方（報告書入力／台帳入力の分担）の前提が崩れます。NISAの配当が非課税になるのもこの方式の場合のみです。</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>🗑️ 端末キャッシュ</span></div>
+    <div class="sub">この端末に保存した表示用キャッシュを消去します（スプレッドシートのデータは消えません）。</div>
+    <button class="btn red" style="margin-top:8px" onclick="clearCache()">キャッシュを消去</button>
+  </div>
+</section>
+
+<nav class="bottom-nav">
+  <button class="nav-item active" data-tab="home" onclick="switchTab('home')"><span class="icon">🏠</span><span>ホーム</span></button>
+  <button class="nav-item" data-tab="trade" onclick="switchTab('trade')"><span class="icon">📝</span><span>取引</span></button>
+  <button class="nav-item" data-tab="div" onclick="switchTab('div')"><span class="icon">💴</span><span>配当・報告書</span></button>
+  <button class="nav-item" data-tab="sum" onclick="switchTab('sum')"><span class="icon">🧮</span><span>集計・申告</span></button>
+  <button class="nav-item" data-tab="set" onclick="switchTab('set')"><span class="icon">⚙️</span><span>設定</span></button>
+</nav>
+
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:flex-end"><button class="btn" onclick="closeModal()">閉じる</button></div>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<!-- ============================================================================
+     計算エンジン（DOM非依存の純関数。tests/engine-test.js から単体検証する）
+     ============================================================================ -->
+<script id="tax-engine">
+/* ---------------------------------------------------------------------------
+ * CSV_CONFIG: SBI CSV の列名対応表（★仮設定★）
+ * 実物サンプル（約定履歴CSV／信用決済明細CSV）受領後、列名・値の表記をここで差し替えて確定する。
+ * aliases は「完全一致 → 部分一致」の順で探す。先頭ほど優先。
+ * ------------------------------------------------------------------------- */
+var CSV_CONFIG = {
+  status: 'PROVISIONAL',   // 実物サンプルで確認したら 'CONFIRMED' に変える
+  spot: {
+    headerMustHave: ['約定日', '銘柄'],          // ヘッダー行の検出に使う
+    columns: {
+      tradeDate:  ['約定日'],
+      settleDate: ['受渡日'],
+      name:       ['銘柄', '銘柄名'],
+      code:       ['銘柄コード', 'コード'],
+      tradeType:  ['取引', '取引区分', '売買区分', '売買'],
+      account:    ['預り', '預り区分', '口座区分'],
+      qty:        ['約定数量', '数量'],
+      price:      ['約定単価', '単価'],
+      fee:        ['手数料/諸経費等', '手数料'],
+      feeTax:     ['税額', '手数料消費税'],
+      settleAmount: ['受渡金額/決済損益', '受渡金額']
+    },
+    tradeTypeWords: {
+      buy:    ['現物買', '買付', '買'],
+      sell:   ['現物売', '売付', '売'],
+      margin: ['信用', '現引', '現渡', '品受', '品渡']   // 約定履歴に信用行が混ざった場合は除外（信用は信用決済明細CSVで取込）
+    },
+    accountWords: {
+      NISA: ['NISA', 'ＮＩＳＡ', 'つみたて', '成長投資', 'ジュニア'],
+      特定: ['特定'],
+      一般: ['一般']
+    }
+  },
+  margin: {
+    headerMustHave: ['銘柄', '建単価'],
+    columns: {
+      settleDate:   ['約定日', '決済日', '返済約定日'],
+      deliveryDate: ['受渡日'],
+      openDate:     ['建日', '建約定日', '新規建日'],
+      name:         ['銘柄', '銘柄名'],
+      code:         ['銘柄コード', 'コード'],
+      tradeType:    ['取引', '取引区分', '売買区分', '決済区分'],
+      account:      ['預り', '預り区分', '口座区分'],
+      qty:          ['数量', '約定数量', '決済数量'],
+      openPrice:    ['建単価', '新規単価'],
+      closePrice:   ['決済単価', '返済単価', '約定単価'],
+      openFee:      ['新規手数料', '建手数料'],
+      closeFee:     ['返済手数料', '決済手数料'],
+      interest:     ['金利', '買方金利', '売方金利'],
+      lendingFee:   ['貸株料', '品貸料'],
+      gyakuhibu:    ['逆日歩'],
+      divAdj:       ['配当落調整金', '配当調整金', '権利処理等手数料'],
+      otherCost:    ['管理費', '名義書換料', '書換料'],
+      pnl:          ['決済損益', '損益', '受渡金額/決済損益']
+    },
+    tradeTypeWords: {
+      closeLong:  ['返済売', '売埋'],
+      closeShort: ['返済買', '買埋'],
+      genbiki:    ['現引', '品受'],
+      genwatashi: ['現渡', '品渡']
+    },
+    // 金利・逆日歩・配当落調整金が「符号なし1列」で出る想定の仮ルール:
+    //   'bySide' … 買建なら 金利=支払／逆日歩=受取／調整金=受取、売建なら 金利=受取／逆日歩=支払／調整金=支払
+    //   'signed' … マイナス＝支払、プラス＝受取
+    costSignMode: 'bySide',
+    accountWords: {
+      NISA: ['NISA', 'ＮＩＳＡ'],
+      特定: ['特定'],
+      一般: ['一般']
+    }
+  }
+};
+
+var TaxEngine = (function () {
+  'use strict';
+  var DIV_CHOICES = ['申告不要', '申告分離', '総合課税'];
+  var DEFAULT_SETTINGS = {
+    rateIncome: '15', rateRecon: '2.1', rateResident: '5', yearBasis: '受渡日',
+    salaryIncome: '', deductionsIncome: '580000', deductionsResident: '430000',
+    accountGeneral: 'TRUE', accountTokutei: 'TRUE'
+  };
+  // 所得税の速算表（総合課税の比較用）
+  var PROGRESSIVE = [
+    [1949000, 0.05, 0], [3299000, 0.10, 97500], [6949000, 0.20, 427500], [8999000, 0.23, 636000],
+    [17999000, 0.33, 1536000], [39999000, 0.40, 2796000], [Infinity, 0.45, 4796000]
+  ];
+
+  /* ---------- 基本ユーティリティ ---------- */
+  function isBlank(v) { return v === null || v === undefined || String(v).trim() === ''; }
+  function toHalfWidth(s) {
+    return String(s).replace(/[０-９．－，]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+  }
+  function num(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : 0;
+    if (isBlank(v)) return 0;
+    var s = toHalfWidth(String(v).trim());
+    var neg = false;
+    if (/^[△▲]/.test(s)) { neg = true; s = s.slice(1); }
+    s = s.replace(/[,円¥￥株\s+]/g, '').replace(/[−‐―]/g, '-');
+    if (s === '' || s === '-' || s === '--') return 0;
+    var n = Number(s);
+    if (!isFinite(n)) return 0;
+    return neg ? -n : n;
+  }
+  function int(v) { return Math.round(num(v)); }
+  function bool(v) { return v === true || String(v).toUpperCase() === 'TRUE'; }
+  // 正の整数どうしの切上げ除算（平均取得単価の円未満切上げ）
+  function ceilDiv(a, b) {
+    a = Math.round(a); b = Math.round(b);
+    if (b <= 0 || a <= 0) return 0;
+    return Math.floor((a + b - 1) / b);
+  }
+  // unit 未満切捨て（0以下は0）
+  function floorUnit(v, unit) { return v > 0 ? Math.floor(v / unit + 1e-9) * unit : 0; }
+  function amountOf(qty, price) { return Math.round(Math.round(num(qty) * num(price) * 100) / 100); }
+  function pad2(x) { return ('0' + x).slice(-2); }
+  function normDate(v) {
+    if (v instanceof Date && !isNaN(v)) return v.getFullYear() + '-' + pad2(v.getMonth() + 1) + '-' + pad2(v.getDate());
+    var s = toHalfWidth(String(v || '').trim());
+    if (!s) return '';
+    var m = s.match(/^(\d{4})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})/);
+    if (!m) { m = s.match(/^(\d{2})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/); if (m) m[1] = '20' + m[1]; }
+    if (!m) m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+    if (!m) return '';
+    return m[1] + '-' + pad2(m[2]) + '-' + pad2(m[3]);
+  }
+  // 受渡日の初期値: 約定日＋n営業日（土日と12/31〜1/3のみ除外。祝日は考慮しないので画面で修正）
+  function addBusinessDays(dateStr, n) {
+    var d = normDate(dateStr); if (!d) return '';
+    var dt = new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)));
+    var added = 0;
+    while (added < n) {
+      dt.setUTCDate(dt.getUTCDate() + 1);
+      var wd = dt.getUTCDay(), mo = dt.getUTCMonth() + 1, da = dt.getUTCDate();
+      if (wd === 0 || wd === 6) continue;
+      if ((mo === 12 && da === 31) || (mo === 1 && da <= 3)) continue;
+      added++;
+    }
+    return dt.getUTCFullYear() + '-' + pad2(dt.getUTCMonth() + 1) + '-' + pad2(dt.getUTCDate());
+  }
+  function yearOf(d) { return Number(String(d || '').slice(0, 4)) || 0; }
+  function taxYearOf(tradeDate, settleDate, basis) {
+    return yearOf(basis === '約定日' ? tradeDate : (settleDate || tradeDate));
+  }
+  function settingsMap(rows) {
+    var m = {};
+    Object.keys(DEFAULT_SETTINGS).forEach(function (k) { m[k] = DEFAULT_SETTINGS[k]; });
+    (rows || []).forEach(function (r) { if (r && !isBlank(r.key)) m[String(r.key)] = r.value; });
+    return m;
+  }
+  function ratesOf(s) {
+    return {
+      income: isBlank(s.rateIncome) ? 15 : num(s.rateIncome),
+      recon: isBlank(s.rateRecon) ? 2.1 : num(s.rateRecon),
+      resident: isBlank(s.rateResident) ? 5 : num(s.rateResident)
+    };
+  }
+  function divChoiceOf(s, y) {
+    var c = s['divChoice_' + y];
+    return DIV_CHOICES.indexOf(c) >= 0 ? c : '申告分離';
+  }
+  function parseJson(v, dflt) {
+    if (v && typeof v === 'object') return v;
+    try { var o = JSON.parse(v); return (o && typeof o === 'object') ? o : dflt; } catch (e) { return dflt; }
+  }
+  function yen(n) { n = Math.round(n || 0); return (n < 0 ? '−' : '') + Math.abs(n).toLocaleString('ja-JP') + '円'; }
+
+  /* ---------- 税額（§6） ---------- */
+  // 課税対象（1,000円未満切捨て済み）から 所得税15%／復興2.1%（国税合計100円未満切捨て）／住民税5%（100円未満切捨て）
+  function computeTax(taxable, rates) {
+    rates = rates || { income: 15, recon: 2.1, resident: 5 };
+    var incomeTax = Math.floor(taxable * rates.income / 100 + 1e-9);
+    var recon = incomeTax * rates.recon / 100;
+    var national = floorUnit(incomeTax + recon, 100);
+    var resident = floorUnit(taxable * rates.resident / 100, 100);
+    return { taxable: taxable, incomeTax: incomeTax, recon: recon, national: national, resident: resident, total: national + resident };
+  }
+  function progressiveTax(taxable) {
+    for (var i = 0; i < PROGRESSIVE.length; i++) {
+      if (taxable <= PROGRESSIVE[i][0]) return Math.max(0, Math.floor(taxable * PROGRESSIVE[i][1] - PROGRESSIVE[i][2]));
+    }
+    return 0;
+  }
+  // 総合課税を選んだ配当による増分税額（目安）。給与所得見込みと所得控除合計を使う。
+  function comprehensiveIncrement(div, s, rates) {
+    var salary = Math.max(0, int(s.salaryIncome));
+    var dI = isBlank(s.deductionsIncome) ? 580000 : int(s.deductionsIncome);
+    var dR = isBlank(s.deductionsResident) ? 430000 : int(s.deductionsResident);
+    var baseT = floorUnit(salary - dI, 1000), withT = floorUnit(salary + div - dI, 1000);
+    var taxBase = progressiveTax(baseT), taxWith = progressiveTax(withT);
+    var aboveI = Math.min(div, Math.max(0, withT - 10000000));
+    var creditI = Math.floor((div - aboveI) * 0.10 + aboveI * 0.05);
+    var incomeInc = Math.max(0, taxWith - creditI) - taxBase;              // 配当控除後の所得税の増分
+    var reconInc = incomeInc * rates.recon / 100;
+    var national = Math.floor(incomeInc + reconInc);
+    var baseR = floorUnit(salary - dR, 1000), withR = floorUnit(salary + div - dR, 1000);
+    var aboveR = Math.min(div, Math.max(0, withR - 10000000));
+    var creditR = Math.floor((div - aboveR) * 0.028 + aboveR * 0.014);
+    var resident = Math.floor(Math.max(0, withR * 0.10 - creditR) - baseR * 0.10);
+    return {
+      national: national, resident: resident, incomeInc: incomeInc, reconInc: reconInc,
+      creditIncome: creditI, creditResident: creditR, baseTaxable: baseT, withTaxable: withT,
+      salarySet: !isBlank(s.salaryIncome)
+    };
+  }
+
+  /* ---------- 現物: 総平均法に準ずる方法（§2） ---------- */
+  function calcSpot(trades, holdings, extraEvents, basis) {
+    var W = [], events = [];
+    (holdings || []).forEach(function (h) {
+      if ((h.account || '一般') !== '一般') return;
+      var d = normDate(h.asOfDate);
+      if (!d) { W.push('期首保有の期首日が不正です: ' + (h.code || '')); return; }
+      events.push({ kind: 'open', date: d, ord: 0, seq: 0, account: '一般', code: String(h.code || '').trim(), name: h.name || '', qty: int(h.qty), cost: int(h.costTotal) });
+    });
+    (trades || []).forEach(function (t) {
+      if ((t.account || '一般') !== '一般') return;           // 特定・NISAはモードG計算の対象外
+      var d = normDate(t.tradeDate);
+      var kind = t.side === '買' ? 'buy' : t.side === '売' ? 'sell' : t.side === '数量調整' ? 'adjust' : null;
+      if (!d || !kind) { W.push('現物取引の日付または売買区分が不正です（id=' + t.id + '）'); return; }
+      var qty = int(t.qty);
+      events.push({
+        kind: kind, date: d, settleDate: normDate(t.settleDate) || d, ord: 1, seq: num(t.seq), id: t.id,
+        account: '一般', code: String(t.code || '').trim(), name: t.name || '', qty: qty, price: num(t.price),
+        amount: isBlank(t.amount) ? amountOf(qty, t.price) : int(t.amount), fee: int(t.fee), origin: '現物'
+      });
+    });
+    (extraEvents || []).forEach(function (e) { if (e.account === '一般') events.push(e); });
+    events.sort(function (a, b) {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      return (a.ord - b.ord) || (a.seq - b.seq);
+    });
+
+    var st = {}, ledgers = {}, sales = [], tradeResults = {};
+    events.forEach(function (e) {
+      var key = e.account + '|' + e.code;
+      var s = st[key];
+      if (!s) { s = st[key] = { key: key, account: e.account, code: e.code, name: e.name, qty: 0, cost: 0, avg: 0, touched: false }; ledgers[key] = []; }
+      if (e.name) s.name = e.name;
+      var L = ledgers[key];
+      var label = s.code + ' ' + s.name;
+      if (e.kind === 'open') {
+        if (s.touched && (s.qty !== e.qty || s.cost !== e.cost)) {
+          W.push('期首保有の不一致: ' + label + '（' + e.date + '時点）再計算 ' + s.qty + '株/' + yen(s.cost) + '、期首登録 ' + e.qty + '株/' + yen(e.cost) + '。期首登録（手入力）を正として採用しました。');
+        }
+        s.qty = e.qty; s.cost = e.cost; s.avg = ceilDiv(e.cost, e.qty); s.touched = true;
+        L.push({ date: e.date, type: '期首', qty: e.qty, price: null, amount: e.cost, fee: null, cogs: null, pnl: null, qtyAfter: s.qty, costAfter: s.cost, avgAfter: s.avg, avgRaw: s.qty ? s.cost / s.qty : 0 });
+      } else if (e.kind === 'buy') {
+        s.qty += e.qty; s.cost += e.amount + e.fee; s.avg = ceilDiv(s.cost, s.qty); s.touched = true;
+        L.push({ id: e.id, date: e.date, type: e.origin === '現引' ? '現引' : '買', qty: e.qty, price: e.price, amount: e.amount, fee: e.fee, cogs: null, pnl: null, qtyAfter: s.qty, costAfter: s.cost, avgAfter: s.avg, avgRaw: s.cost / s.qty });
+        tradeResults[e.id] = { avgAfter: s.avg, pnl: null };
+      } else if (e.kind === 'sell') {
+        var q = e.qty, cogs;
+        if (q > s.qty) W.push('保有不足: ' + label + ' ' + e.date + ' 売却' + q + '株に対し保有' + s.qty + '株。期首保有の登録漏れ／同日内の約定順を確認してください。');
+        if (q >= s.qty) cogs = s.cost;                      // 全量売却は取得費残額をそのまま原価にする（丸め残りを吸収）
+        else cogs = Math.min(s.avg * q, s.cost);
+        var avgUsed = s.avg;
+        var pnl = e.amount - cogs - e.fee;
+        s.qty = Math.max(0, s.qty - q); s.cost -= cogs; s.touched = true;
+        if (s.qty === 0) { s.cost = 0; s.avg = 0; }
+        else if (s.cost <= 0) W.push('取得費残額が0になりました: ' + label + '（' + e.date + '）。端数処理の影響を確認してください。');
+        var sale = {
+          id: e.id, key: key, account: e.account, code: s.code, name: s.name, tradeDate: e.date, settleDate: e.settleDate,
+          taxYear: taxYearOf(e.date, e.settleDate, basis), qty: q, price: e.price, proceeds: e.amount, fee: e.fee,
+          cogs: cogs, avgUsed: avgUsed, pnl: pnl, origin: e.origin
+        };
+        sales.push(sale);
+        L.push({ id: e.id, date: e.date, type: e.origin === '現渡' ? '現渡' : '売', qty: q, price: e.price, amount: e.amount, fee: e.fee, cogs: cogs, pnl: pnl, qtyAfter: s.qty, costAfter: s.cost, avgAfter: s.avg, avgRaw: s.qty ? s.cost / s.qty : 0, taxYear: sale.taxYear });
+        tradeResults[e.id] = { avgAfter: avgUsed, pnl: pnl };
+      } else if (e.kind === 'adjust') {
+        var nq = s.qty + e.qty;
+        if (nq <= 0) { W.push('数量調整後の数量が0以下です: ' + label + '（' + e.date + '）'); return; }
+        s.qty = nq; s.avg = ceilDiv(s.cost, nq); s.touched = true;   // 取得費総額は不変、単価だけ再計算
+        L.push({ id: e.id, date: e.date, type: '数量調整', qty: e.qty, price: null, amount: null, fee: null, cogs: null, pnl: null, qtyAfter: s.qty, costAfter: s.cost, avgAfter: s.avg, avgRaw: s.cost / s.qty });
+        tradeResults[e.id] = { avgAfter: s.avg, pnl: null };
+      }
+    });
+    var positions = Object.keys(st).map(function (k) { return st[k]; }).filter(function (s) { return s.qty > 0; });
+    return { sales: sales, ledgers: ledgers, states: st, positions: positions, tradeResults: tradeResults, warnings: W };
+  }
+
+  /* ---------- 信用: 建玉ごとの精算（§3） ---------- */
+  function marginCosts(s) {
+    return {
+      openFee: int(s.openFee), closeFee: int(s.closeFee), interestPaid: int(s.interestPaid), interestReceived: int(s.interestReceived),
+      lendingFee: int(s.lendingFee), gyakuhibuPaid: int(s.gyakuhibuPaid), gyakuhibuReceived: int(s.gyakuhibuReceived),
+      divAdjPaid: int(s.divAdjPaid), divAdjReceived: int(s.divAdjReceived), otherCost: int(s.otherCost)
+    };
+  }
+  // 買建: 収入=返済売代金(+受取の逆日歩・金利)、取得費等=新規買代金+手数料(両方)+金利等−配当落調整金の受取（取得価額から控除）
+  // 売建: 収入=新規売代金(+受取の逆日歩・金利)−配当落調整金の支払（収入金額から控除）、取得費等=返済買代金+手数料(両方)+貸株料+逆日歩支払 等
+  function marginPnl(side, openAmount, closeAmount, c) {
+    var fees = c.openFee + c.closeFee + c.interestPaid + c.lendingFee + c.gyakuhibuPaid + c.otherCost;
+    var recv = c.gyakuhibuReceived + c.interestReceived;
+    var income, cost;
+    if (side === '売建') {
+      income = openAmount + recv - c.divAdjPaid + c.divAdjReceived;
+      cost = closeAmount + fees;
+    } else {
+      income = closeAmount + recv;
+      cost = openAmount + fees - c.divAdjReceived + c.divAdjPaid;
+    }
+    return { income: income, cost: cost, pnl: income - cost };
+  }
+  function calcMargin(positions, settlements, basis) {
+    var W = [], posMap = {}, details = [], spotEvents = [];
+    (positions || []).forEach(function (p) {
+      posMap[p.id] = {
+        id: p.id, openDate: normDate(p.openDate), account: p.account || '一般', code: String(p.code || '').trim(), name: p.name || '',
+        side: p.side === '売建' ? '売建' : '買建', qty: int(p.qty), openPrice: num(p.openPrice), openAmount: p.openAmount, openFee: int(p.openFee),
+        source: p.source || '', memo: p.memo || '', settledQty: 0, openFeeUsed: 0, settlements: [], lastType: ''
+      };
+    });
+    var sorted = (settlements || []).slice().sort(function (a, b) {
+      var da = normDate(a.settleDate), db = normDate(b.settleDate);
+      if (da !== db) return da < db ? -1 : 1;
+      return num(a.seq) - num(b.seq);
+    });
+    sorted.forEach(function (s) {
+      var p = posMap[s.positionId];
+      if (!p) { W.push('対応する建玉が見つからない決済があります（id=' + s.id + '）'); return; }
+      var qty = int(s.qty);
+      var remainingBefore = p.qty - p.settledQty;
+      if (qty > remainingBefore) W.push('建玉の残数量を超える決済: ' + p.code + ' ' + p.name + '（建日' + p.openDate + '）');
+      var openAmount = (qty === p.qty && !isBlank(p.openAmount)) ? int(p.openAmount) : amountOf(qty, p.openPrice);
+      var c = marginCosts(s);
+      if (isBlank(s.openFee)) {   // 建手数料の按分（空欄時のみ）。最後の決済で端数を吸収
+        c.openFee = qty >= remainingBefore ? p.openFee - p.openFeeUsed : Math.round(p.openFee * qty / p.qty);
+      }
+      p.openFeeUsed += c.openFee; p.settledQty += qty;
+      var type = s.type || '返済';
+      p.lastType = type;
+      var settleDate = normDate(s.settleDate), deliveryDate = normDate(s.deliveryDate) || settleDate;
+      var taxYear = taxYearOf(settleDate, deliveryDate, basis);
+      var base = {
+        id: s.id, positionId: p.id, account: p.account, code: p.code, name: p.name, side: p.side, type: type,
+        openDate: p.openDate, settleDate: settleDate, deliveryDate: deliveryDate, taxYear: taxYear, qty: qty,
+        openPrice: p.openPrice, closePrice: num(s.closePrice), openAmount: openAmount, costs: c
+      };
+      if (type === '返済') {
+        var closeAmount = isBlank(s.closeAmount) ? amountOf(qty, s.closePrice) : int(s.closeAmount);
+        var r = marginPnl(p.side, openAmount, closeAmount, c);
+        base.closeAmount = closeAmount; base.income = r.income; base.cost = r.cost; base.pnl = r.pnl;
+        if (!isBlank(s.csvPnl) && int(s.csvPnl) !== r.pnl) {
+          W.push('CSV決済損益との差異: ' + p.code + ' ' + p.name + ' ' + settleDate + ' CSV=' + yen(int(s.csvPnl)) + ' / アプリ=' + yen(r.pnl) + '（諸経費の入り方を確認）');
+          base.csvMismatch = true;
+        }
+      } else if (type === '現引') {
+        if (p.side !== '買建') W.push('現引は買建のみです: ' + p.code + '（建日' + p.openDate + '）');
+        var gbCost = openAmount + c.openFee + c.closeFee + c.interestPaid + c.lendingFee + c.gyakuhibuPaid + c.otherCost + c.divAdjPaid
+                   - c.gyakuhibuReceived - c.interestReceived - c.divAdjReceived;
+        base.pnl = null; base.spotCost = gbCost;
+        spotEvents.push({ kind: 'buy', date: settleDate, settleDate: deliveryDate, ord: 1, seq: num(s.seq), id: 'GB:' + s.id, account: p.account, code: p.code, name: p.name, qty: qty, price: qty ? gbCost / qty : 0, amount: gbCost, fee: 0, origin: '現引' });
+      } else if (type === '現渡') {
+        if (p.side !== '売建') W.push('現渡は売建のみです: ' + p.code + '（建日' + p.openDate + '）');
+        var gwIncome = openAmount + c.gyakuhibuReceived + c.interestReceived + c.divAdjReceived - c.divAdjPaid;
+        var gwFee = c.openFee + c.closeFee + c.interestPaid + c.lendingFee + c.gyakuhibuPaid + c.otherCost;
+        base.pnl = null; base.spotIncome = gwIncome; base.spotFee = gwFee;
+        spotEvents.push({ kind: 'sell', date: settleDate, settleDate: deliveryDate, ord: 1, seq: num(s.seq), id: 'GW:' + s.id, account: p.account, code: p.code, name: p.name, qty: qty, price: p.openPrice, amount: gwIncome, fee: gwFee, origin: '現渡' });
+      } else {
+        W.push('不明な決済種類: ' + type);
+      }
+      details.push(base); p.settlements.push(base);
+    });
+    var all = Object.keys(posMap).map(function (k) {
+      var p = posMap[k];
+      p.remaining = p.qty - p.settledQty;
+      p.status = p.remaining <= 0 ? (p.lastType === '返済' ? '決済済' : p.lastType) : (p.settledQty > 0 ? '一部決済' : '未決済');
+      return p;
+    });
+    var open = all.filter(function (p) { return p.remaining > 0; });
+    return { details: details, spotEvents: spotEvents, positions: all, openPositions: open, posMap: posMap, warnings: W };
+  }
+
+  /* ---------- 年ごとの入力集計 ---------- */
+  function yearInputs(y, spot, margin, reports, dividends) {
+    var W = [];
+    var gSpot = { pnl: 0, proceeds: 0, cost: 0, count: 0 }, gMargin = { pnl: 0, income: 0, cost: 0, count: 0 };
+    spot.sales.forEach(function (s) {
+      if (s.taxYear !== y) return;
+      gSpot.pnl += s.pnl; gSpot.proceeds += s.proceeds; gSpot.cost += s.cogs + s.fee; gSpot.count++;
+    });
+    margin.details.forEach(function (d) {
+      if (d.taxYear !== y || d.type !== '返済' || d.account !== '一般') return;
+      gMargin.pnl += d.pnl; gMargin.income += d.income; gMargin.cost += d.cost; gMargin.count++;
+    });
+    function rep(kind) {
+      var r = (reports || []).filter(function (x) { return int(x.year) === y && x.kind === kind; })[0];
+      if (!r) return { exists: false, proceeds: 0, cost: 0, net: 0, dividends: 0, wIncome: 0, wResident: 0 };
+      var proceeds = int(r.proceeds), cost = int(r.cost);
+      return {
+        exists: true, proceeds: proceeds, cost: cost, net: isBlank(r.net) ? proceeds - cost : int(r.net),
+        dividends: int(r.dividends), wIncome: int(r.divWithholdIncome), wResident: int(r.divWithholdResident)
+      };
+    }
+    var tListed = rep('上場分'), tMargin = rep('特定信用分');
+    var repDiv = tListed.dividends + tMargin.dividends;
+    var div = { amount: repDiv, wIncome: tListed.wIncome + tMargin.wIncome, wResident: tListed.wResident + tMargin.wResident,
+                fromReport: repDiv, fromLedger: 0, excludedTokutei: 0, ledgerCount: 0 };
+    (dividends || []).forEach(function (d) {
+      if (yearOf(normDate(d.date)) !== y) return;
+      if ((d.account || '一般') === '特定' && repDiv > 0) { div.excludedTokutei += int(d.amount); return; }
+      div.amount += int(d.amount); div.wIncome += int(d.withholdIncome); div.wResident += int(d.withholdResident);
+      div.fromLedger += int(d.amount); div.ledgerCount++;
+    });
+    if (div.excludedTokutei > 0) W.push(y + '年: 配当台帳の「特定」受取分 ' + yen(div.excludedTokutei) + ' は報告書の配当等の額と二重になるため計算から除外しました。');
+    return { gSpot: gSpot, gMargin: gMargin, tListed: tListed, tMargin: tMargin, div: div, warnings: W };
+  }
+
+  /* ---------- 1年分の損益通算・繰越控除・税額（§6） ---------- */
+  function computeYear(y, inp, poolIn, choice, carryCfg, s, rates) {
+    var W = inp.warnings.slice(), steps = [];
+    var cfg = carryCfg[y] || { filed: false, lossOverride: null, alloc: {} };
+    var transferNet = inp.gSpot.pnl + inp.gMargin.pnl + inp.tListed.net + inp.tMargin.net;
+    steps.push('① 譲渡所得等の内部通算: モードG現物 ' + yen(inp.gSpot.pnl) + ' ＋ モードG信用 ' + yen(inp.gMargin.pnl) + ' ＋ モードT上場分 ' + yen(inp.tListed.net) + ' ＋ モードT特定信用分 ' + yen(inp.tMargin.net) + ' ＝ ' + yen(transferNet));
+    var div = inp.div;
+    var divSep = choice === '申告分離' ? div.amount : 0;
+    var divComp = choice === '総合課税' ? div.amount : 0;
+    var transferIncome = Math.max(transferNet, 0), loss = Math.max(-transferNet, 0), offsetWithDiv = 0;
+    if (loss > 0 && divSep > 0) {
+      offsetWithDiv = Math.min(loss, divSep); loss -= offsetWithDiv; divSep -= offsetWithDiv;
+      steps.push('② 譲渡損失を申告分離の配当と通算: ' + yen(offsetWithDiv) + '（配当の残 ' + yen(divSep) + '、譲渡損失の残 ' + yen(loss) + '）');
+    } else if (loss > 0) {
+      steps.push('② 配当との通算: なし（配当の方式が「' + choice + '」' + (div.amount ? '' : '／配当なし') + '）');
+    }
+    // ③ 繰越控除: 古い年から。譲渡所得等 → 分離配当 の順に控除
+    var pool = poolIn.map(function (e) { return { year: e.year, amount: e.amount, remaining: e.remaining, expireYear: e.expireYear }; })
+                     .sort(function (a, b) { return a.year - b.year; });
+    var applied = [], dedT = 0, dedD = 0;
+    pool.forEach(function (e) {
+      if (e.remaining <= 0 || y <= e.year || y > e.expireYear) return;
+      var before = e.remaining, avail = transferIncome + divSep, use = Math.min(before, avail), overridden = false;
+      var ov = cfg.alloc ? cfg.alloc[e.year] : undefined;
+      if (!isBlank(ov)) {
+        var o = Math.max(0, int(ov)); overridden = true;
+        var capped = Math.min(o, before, avail);
+        if (capped !== use) W.push(y + '年: ' + e.year + '年分損失の充当を手修正しています（自動 ' + yen(use) + ' → 手修正 ' + yen(capped) + '）。');
+        use = capped;
+      }
+      var fromT = Math.min(use, transferIncome), fromD = use - fromT;
+      transferIncome -= fromT; divSep -= fromD; dedT += fromT; dedD += fromD; e.remaining -= use;
+      applied.push({ lossYear: e.year, before: before, used: use, after: e.remaining, expireYear: e.expireYear, overridden: overridden, fromTransfer: fromT, fromDiv: fromD });
+      if (use > 0) {
+        var missing = [];
+        for (var yy = e.year; yy < y; yy++) { if (!(carryCfg[yy] && carryCfg[yy].filed)) missing.push(yy); }
+        if (missing.length) W.push(y + '年: ' + e.year + '年分の繰越損失を使っていますが、' + missing.join('・') + '年の「申告済み」チェックがありません。連続申告が要件です（切れていると繰越控除は使えません）。');
+      }
+    });
+    if (applied.length) steps.push('③ 繰越控除（古い年から充当）: 合計 ' + yen(dedT + dedD) + '（譲渡所得等から ' + yen(dedT) + '、分離配当から ' + yen(dedD) + '）');
+    var expiring = pool.filter(function (e) { return e.expireYear === y && e.remaining > 0; });
+    expiring.forEach(function (e) { W.push(y + '年: ' + e.year + '年分の繰越損失 ' + yen(e.remaining) + ' は本年分で控除期限切れ（失効）です。'); });
+    // ④ 新たな繰越損失
+    var newLoss = loss;
+    if (cfg.lossOverride !== null && cfg.lossOverride !== undefined) {
+      if (cfg.lossOverride !== loss) W.push(y + '年: 繰越損失の発生額を手入力値 ' + yen(cfg.lossOverride) + ' で上書きしています（計算値 ' + yen(loss) + '）。');
+      newLoss = cfg.lossOverride;
+    }
+    if (newLoss > 0) {
+      pool.push({ year: y, amount: newLoss, remaining: newLoss, expireYear: y + 3 });
+      steps.push('④ 通算後に残った譲渡損失 ' + yen(newLoss) + ' を繰越損失として発生（' + (y + 1) + '〜' + (y + 3) + '年分で使用可。本年分の申告が必要）');
+      if (!cfg.filed) W.push(y + '年: 繰越損失 ' + yen(newLoss) + ' が発生します。繰り越すには本年分の確定申告（付表の添付）が必要です。');
+    }
+    var poolAfter = pool.filter(function (e) { return e.remaining > 0 && e.expireYear > y; });
+    // ⑤ 税額
+    var taxableTransfer = floorUnit(transferIncome, 1000), taxableDiv = floorUnit(divSep, 1000);
+    var taxable = taxableTransfer + taxableDiv;
+    var tax = computeTax(taxable, rates);
+    steps.push('⑤ 課税対象: 譲渡所得等 ' + yen(taxableTransfer) + ' ＋ 分離配当 ' + yen(taxableDiv) + ' ＝ ' + yen(taxable) + '（各1,000円未満切捨て）');
+    var comp = divComp > 0 ? comprehensiveIncrement(divComp, s, rates) : null;
+    if (comp && !comp.salarySet) W.push(y + '年: 給与所得見込みが未設定のため、総合課税の計算は給与0円として目安を出しています。');
+    var credited = choice === '申告不要' ? { income: 0, resident: 0 } : { income: div.wIncome, resident: div.wResident };
+    var compN = comp ? comp.national : 0, compR = comp ? comp.resident : 0;
+    var settle = {
+      national: tax.national + compN - credited.income,
+      resident: tax.resident + compR - credited.resident
+    };
+    settle.total = settle.national + settle.resident;
+    var burden = tax.total + compN + compR + (choice === '申告不要' ? div.wIncome + div.wResident : 0);
+    return {
+      year: y, choice: choice, inputs: inp, transferNet: transferNet, dividends: div, offsetWithDiv: offsetWithDiv,
+      divSepGross: choice === '申告分離' ? div.amount : 0, divComp: divComp,
+      carryApplied: applied, carryDeducted: dedT + dedD, deductFromTransfer: dedT, deductFromDiv: dedD,
+      transferIncomeFinal: transferIncome, divSepFinal: divSep, taxableTransfer: taxableTransfer, taxableDiv: taxableDiv,
+      tax: tax, comprehensive: comp, credited: credited, settle: settle, burden: burden,
+      newLoss: newLoss, poolAfter: poolAfter, expiring: expiring, filed: !!cfg.filed, steps: steps, warnings: W,
+      carryForwardTotal: poolAfter.reduce(function (a, e) { return a + e.remaining; }, 0),
+      nonSalaryIncome: Math.max(transferNet, 0) + (choice === '申告不要' ? 0 : div.amount)
+    };
+  }
+
+  function recommend(results, transferNet, divAmount) {
+    if (!divAmount) return { choice: null, reason: '配当がないため比較の必要はありません。' };
+    if (transferNet < 0) return { choice: '申告分離', reason: '譲渡損失があるため、申告分離で配当と通算すると源泉税が還付されます（残った損失も繰り越せます）。' };
+    var best = null;
+    var comp = results['総合課税'].comprehensive;
+    var compUsable = comp && comp.salarySet;   // 給与所得見込みが未設定なら総合課税は推奨しない（給与0円前提の目安になるため）
+    DIV_CHOICES.forEach(function (c) {
+      if (c === '総合課税' && !compUsable) return;
+      var r = results[c]; if (!best || r.burden < best.burden - 0.5) best = r;
+    });
+    // 同額なら申告不要（合計所得を増やさない）を優先
+    if (results['申告不要'].burden <= best.burden) best = results['申告不要'];
+    return { choice: best.choice, reason: '本年の税負担（源泉分を含む総額）が最も小さい方式です。' + (compUsable ? '' : '（給与所得見込みが未設定のため、総合課税は推奨の対象外にしています）') };
+  }
+
+  /* ---------- 全年計算 ---------- */
+  function computeAll(db, opt) {
+    opt = opt || {};
+    var s = settingsMap(db.settings);
+    var basis = s.yearBasis === '約定日' ? '約定日' : '受渡日';
+    var rates = ratesOf(s);
+    var margin = calcMargin(db.margin_positions || [], db.margin_settlements || [], basis);
+    var spot = calcSpot(db.trades || [], db.holdings || [], margin.spotEvents, basis);
+    var carryCfg = {};
+    (db.carryover || []).forEach(function (r) {
+      var y = int(r.year); if (!y) return;
+      carryCfg[y] = { filed: bool(r.filed), lossOverride: isBlank(r.lossOverride) ? null : Math.max(0, int(r.lossOverride)), alloc: parseJson(r.allocOverride, {}), memo: r.memo || '' };
+    });
+    var cur = opt.currentYear || new Date().getFullYear();
+    var ys = [cur];
+    spot.sales.forEach(function (x) { ys.push(x.taxYear); });
+    margin.details.forEach(function (x) { ys.push(x.taxYear); });
+    (db.annual_reports || []).forEach(function (r) { ys.push(int(r.year)); });
+    (db.dividends || []).forEach(function (d) { ys.push(yearOf(normDate(d.date))); });
+    Object.keys(carryCfg).forEach(function (y) { ys.push(+y); });
+    ys = ys.filter(function (y) { return y > 1990 && y < 2200; });
+    var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+    var byYear = {}, years = [], pool = [];
+    for (var y = minY; y <= maxY; y++) {
+      var inp = yearInputs(y, spot, margin, db.annual_reports || [], db.dividends || []);
+      var choice = divChoiceOf(s, y);
+      var cmp = {};
+      DIV_CHOICES.forEach(function (c) { cmp[c] = computeYear(y, inp, pool, c, carryCfg, s, rates); });
+      var r = cmp[choice];
+      r.comparison = cmp;
+      r.recommendation = recommend(cmp, r.transferNet, inp.div.amount);
+      byYear[y] = r; years.push(y);
+      pool = r.poolAfter;
+    }
+    return {
+      byYear: byYear, years: years, spot: spot, margin: margin, basis: basis, rates: rates, settings: s, carryCfg: carryCfg,
+      warnings: spot.warnings.concat(margin.warnings)
+    };
+  }
+
+  /* ---------- CSV（§5） ---------- */
+  function decodeBytes(buf) {
+    var u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+    if (u8.length >= 3 && u8[0] === 0xEF && u8[1] === 0xBB && u8[2] === 0xBF) return { text: new TextDecoder('utf-8').decode(u8.subarray(3)), encoding: 'UTF-8（BOM付き）' };
+    try { return { text: new TextDecoder('utf-8', { fatal: true }).decode(u8), encoding: 'UTF-8' }; } catch (e) { /* SJISへ */ }
+    return { text: new TextDecoder('shift_jis').decode(u8), encoding: 'Shift_JIS' };
+  }
+  function parseCsvText(text) {
+    var rows = [], row = [], field = '', inQ = false, i = 0, ch;
+    text = String(text).replace(/^﻿/, '');
+    while (i < text.length) {
+      ch = text[i];
+      if (inQ) {
+        if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+        else field += ch;
+      } else if (ch === '"') inQ = true;
+      else if (ch === ',') { row.push(field); field = ''; }
+      else if (ch === '\r') { /* skip */ }
+      else if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else field += ch;
+      i++;
+    }
+    if (field !== '' || row.length) { row.push(field); rows.push(row); }
+    return rows.map(function (r) { return r.map(function (c) { return String(c).trim(); }); });
+  }
+  function findHeader(rows, must) {
+    for (var i = 0; i < Math.min(rows.length, 60); i++) {
+      var r = rows[i];
+      var ok = must.every(function (m) { return r.some(function (c) { return c === m || c.indexOf(m) >= 0; }); });
+      if (ok) return i;
+    }
+    return -1;
+  }
+  function mapColumns(header, columns) {
+    var idx = {}, missing = [], used = {};
+    Object.keys(columns).forEach(function (f) {
+      var aliases = columns[f], found = -1;
+      aliases.forEach(function (a) { if (found < 0) { var j = header.indexOf(a); if (j >= 0 && !used[j]) found = j; } });
+      if (found < 0) aliases.forEach(function (a) { if (found < 0) { header.forEach(function (h, j) { if (found < 0 && !used[j] && h.indexOf(a) >= 0) found = j; }); } });
+      if (found >= 0) { idx[f] = found; used[found] = true; } else missing.push(f);
+    });
+    return { idx: idx, missing: missing };
+  }
+  function hasWord(v, words) { v = String(v || ''); return words.some(function (w) { return v.indexOf(w) >= 0; }); }
+  function accountOf(v, words) {
+    if (hasWord(v, words.NISA)) return 'NISA';
+    if (hasWord(v, words['特定'])) return '特定';
+    if (hasWord(v, words['一般'])) return '一般';
+    return '';
+  }
+  function spotDupKey(t) { return [normDate(t.tradeDate), String(t.code).trim(), t.side, int(t.qty), num(t.price), t.account].join('|'); }
+  function marginDupKey(p, s) { return [normDate(s.settleDate), String(p.code).trim(), s.type, int(s.qty), num(p.openPrice), num(s.closePrice), p.account].join('|'); }
+
+  function importSpotCsv(text, existingTrades, cfg, seqBase) {
+    cfg = cfg || CSV_CONFIG.spot;
+    var rows = parseCsvText(text);
+    var h = findHeader(rows, cfg.headerMustHave);
+    if (h < 0) return { error: 'ヘッダー行（' + cfg.headerMustHave.join('・') + ' を含む行）が見つかりません。CSVの種類か CSV_CONFIG を確認してください。', rows: [] };
+    var header = rows[h], map = mapColumns(header, cfg.columns), I = map.idx;
+    var get = function (r, f) { return I[f] === undefined ? '' : (r[I[f]] || ''); };
+    var existing = {};
+    (existingTrades || []).forEach(function (t) { existing[spotDupKey(t)] = true; });
+    var out = [];
+    rows.slice(h + 1).forEach(function (r, i) {
+      if (!r.length || r.every(function (c) { return c === ''; })) return;
+      var d = normDate(get(r, 'tradeDate'));
+      if (!d) return;                                         // 合計行・注記行などは読み飛ばし
+      var tt = get(r, 'tradeType'), acc = accountOf(get(r, 'account'), cfg.accountWords);
+      var side = hasWord(tt, cfg.tradeTypeWords.margin) ? 'margin' : hasWord(tt, cfg.tradeTypeWords.sell) ? '売' : hasWord(tt, cfg.tradeTypeWords.buy) ? '買' : '';
+      var qty = int(get(r, 'qty')), price = num(get(r, 'price'));
+      var t = {
+        tradeDate: d, settleDate: normDate(get(r, 'settleDate')) || addBusinessDays(d, 2), account: acc || '一般',
+        code: get(r, 'code'), name: get(r, 'name'), side: side, qty: qty, price: price, amount: amountOf(qty, price),
+        fee: int(get(r, 'fee')) + int(get(r, 'feeTax')), source: 'CSV約定履歴', memo: '', _raw: r.join(','), _line: h + 2 + i
+      };
+      var st, note = '';
+      if (side === 'margin') { st = 'margin'; note = '信用の行（信用決済明細CSVで取込）'; }
+      else if (!side) { st = 'error'; note = '取引種別を判定できません: ' + tt; }
+      else if (acc === 'NISA') { st = 'nisa'; note = 'NISA預り（対象外）'; }
+      else if (!t.code || !qty) { st = 'error'; note = '銘柄コードまたは数量が読めません'; }
+      else if (existing[spotDupKey(t)]) { st = 'dup'; note = '既存と一致（重複候補）'; }
+      else if (acc === '特定') { st = 'tokutei'; note = '特定預り（報告書で計上。登録しても計算対象外）'; }
+      else { st = 'new'; note = acc ? '' : '預り区分不明→一般として扱う'; }
+      t._status = st; t._note = note; t._include = st === 'new';
+      out.push(t);
+    });
+    // SBIのCSVは新しい順で出ることが多い → 古い順に並べ替えてから約定順の seq を振る
+    if (out.length > 1 && out[0].tradeDate > out[out.length - 1].tradeDate) out.reverse();
+    var base = seqBase || Date.now() * 1000;
+    out.forEach(function (t, i) { t.seq = base + i; });
+    return { headerRow: h + 1, header: header, missing: map.missing, rows: out };
+  }
+
+  function importMarginCsv(text, existingPositions, existingSettlements, cfg, seqBase) {
+    cfg = cfg || CSV_CONFIG.margin;
+    var rows = parseCsvText(text);
+    var h = findHeader(rows, cfg.headerMustHave);
+    if (h < 0) return { error: 'ヘッダー行（' + cfg.headerMustHave.join('・') + ' を含む行）が見つかりません。CSVの種類か CSV_CONFIG を確認してください。', rows: [] };
+    var header = rows[h], map = mapColumns(header, cfg.columns), I = map.idx;
+    var get = function (r, f) { return I[f] === undefined ? '' : (r[I[f]] || ''); };
+    var pm = {}; (existingPositions || []).forEach(function (p) { pm[p.id] = p; });
+    var existing = {};
+    (existingSettlements || []).forEach(function (s) { var p = pm[s.positionId]; if (p) existing[marginDupKey(p, s)] = true; });
+    var out = [];
+    rows.slice(h + 1).forEach(function (r, i) {
+      if (!r.length || r.every(function (c) { return c === ''; })) return;
+      var sd = normDate(get(r, 'settleDate'));
+      if (!sd) return;
+      var tt = get(r, 'tradeType'), w = cfg.tradeTypeWords, side = '', type = '';
+      if (hasWord(tt, w.genbiki)) { side = '買建'; type = '現引'; }
+      else if (hasWord(tt, w.genwatashi)) { side = '売建'; type = '現渡'; }
+      else if (hasWord(tt, w.closeLong)) { side = '買建'; type = '返済'; }
+      else if (hasWord(tt, w.closeShort)) { side = '売建'; type = '返済'; }
+      var acc = accountOf(get(r, 'account'), cfg.accountWords);
+      var qty = int(get(r, 'qty')), openPrice = num(get(r, 'openPrice')), closePrice = num(get(r, 'closePrice'));
+      var interest = num(get(r, 'interest')), gyaku = num(get(r, 'gyakuhibu')), divAdj = num(get(r, 'divAdj'));
+      var c = { interestPaid: 0, interestReceived: 0, gyakuhibuPaid: 0, gyakuhibuReceived: 0, divAdjPaid: 0, divAdjReceived: 0 };
+      if (cfg.costSignMode === 'signed') {
+        if (interest < 0) c.interestPaid = -interest; else c.interestReceived = interest;
+        if (gyaku < 0) c.gyakuhibuPaid = -gyaku; else c.gyakuhibuReceived = gyaku;
+        if (divAdj < 0) c.divAdjPaid = -divAdj; else c.divAdjReceived = divAdj;
+      } else if (side === '売建') {
+        c.interestReceived = Math.abs(interest); c.gyakuhibuPaid = Math.abs(gyaku); c.divAdjPaid = Math.abs(divAdj);
+      } else {
+        c.interestPaid = Math.abs(interest); c.gyakuhibuReceived = Math.abs(gyaku); c.divAdjReceived = Math.abs(divAdj);
+      }
+      var od = normDate(get(r, 'openDate'));
+      var pos = {
+        openDate: od, account: acc || '一般', code: get(r, 'code'), name: get(r, 'name'), side: side, qty: qty,
+        openPrice: openPrice, openAmount: amountOf(qty, openPrice), openFee: int(get(r, 'openFee')),
+        status: type === '返済' ? '決済済' : type, source: 'CSV信用決済明細', memo: ''
+      };
+      var set = {
+        settleDate: sd, deliveryDate: normDate(get(r, 'deliveryDate')) || addBusinessDays(sd, 2), type: type, qty: qty,
+        closePrice: closePrice, closeAmount: type === '返済' ? amountOf(qty, closePrice) : '', openFee: int(get(r, 'openFee')),
+        closeFee: int(get(r, 'closeFee')), interestPaid: Math.round(c.interestPaid), interestReceived: Math.round(c.interestReceived),
+        lendingFee: Math.abs(int(get(r, 'lendingFee'))), gyakuhibuPaid: Math.round(c.gyakuhibuPaid), gyakuhibuReceived: Math.round(c.gyakuhibuReceived),
+        divAdjPaid: Math.round(c.divAdjPaid), divAdjReceived: Math.round(c.divAdjReceived), otherCost: Math.abs(int(get(r, 'otherCost'))),
+        csvPnl: I.pnl === undefined || isBlank(get(r, 'pnl')) ? '' : int(get(r, 'pnl')), source: 'CSV信用決済明細', memo: ''
+      };
+      var item = { position: pos, settlement: set, _raw: r.join(','), _line: h + 2 + i };
+      var st, note = '';
+      if (!type) { st = 'error'; note = '取引種別を判定できません: ' + tt; }
+      else if (acc === 'NISA') { st = 'nisa'; note = 'NISA（対象外）'; }
+      else if (!pos.code || !qty || !od) { st = 'error'; note = '銘柄コード・数量・建日のいずれかが読めません'; }
+      else if (existing[marginDupKey(pos, set)]) { st = 'dup'; note = '既存と一致（重複候補）'; }
+      else if (acc === '特定') { st = 'tokutei'; note = '特定預り（報告書の特定信用分で計上。登録しても計算対象外）'; }
+      else {
+        st = 'new'; note = acc ? '' : '預り区分不明→一般として扱う';
+        if (set.csvPnl !== '') {
+          var chk = marginPnl(side, pos.openAmount, set.closeAmount === '' ? 0 : set.closeAmount, marginCosts(set));
+          if (type === '返済' && chk.pnl !== set.csvPnl) note += (note ? '／' : '') + 'CSV損益と差異 ' + yen(set.csvPnl - chk.pnl);
+        }
+      }
+      item._status = st; item._note = note; item._include = st === 'new';
+      out.push(item);
+    });
+    if (out.length > 1 && out[0].settlement.settleDate > out[out.length - 1].settlement.settleDate) out.reverse();
+    var base = seqBase || Date.now() * 1000;
+    out.forEach(function (it, i) { it.position.seq = base + i; it.settlement.seq = base + i; });
+    return { headerRow: h + 1, header: header, missing: map.missing, rows: out };
+  }
+
+  return {
+    DIV_CHOICES: DIV_CHOICES, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
+    isBlank: isBlank, num: num, int: int, bool: bool, ceilDiv: ceilDiv, floorUnit: floorUnit, amountOf: amountOf,
+    normDate: normDate, addBusinessDays: addBusinessDays, taxYearOf: taxYearOf, settingsMap: settingsMap,
+    computeTax: computeTax, comprehensiveIncrement: comprehensiveIncrement, progressiveTax: progressiveTax,
+    calcSpot: calcSpot, calcMargin: calcMargin, marginPnl: marginPnl, marginCosts: marginCosts,
+    yearInputs: yearInputs, computeYear: computeYear, computeAll: computeAll,
+    decodeBytes: decodeBytes, parseCsvText: parseCsvText, importSpotCsv: importSpotCsv, importMarginCsv: importMarginCsv,
+    spotDupKey: spotDupKey, marginDupKey: marginDupKey
+  };
+})();
+if (typeof module !== 'undefined') module.exports = { TaxEngine: TaxEngine, CSV_CONFIG: CSV_CONFIG };
+</script>
+
+<!-- ============================================================================
+     アプリ（画面・同期）
+     ============================================================================ -->
+<script>
+'use strict';
+var E = TaxEngine;
+var LS_KEYS = { url: 'trader_tax_gas_url', pin: 'trader_tax_pin_v1', cache: 'trader_tax_cache_v1' };
+var TABLES = ['trades', 'holdings', 'margin_positions', 'margin_settlements', 'annual_reports', 'dividends', 'carryover', 'settings'];
+var THIS_YEAR = new Date().getFullYear();
+var DB = emptyDb();
+var DATA_REV = 0;
+var RESULT = null;
+var UI = { tab: 'home', tradeSub: 'spot', year: { hist: THIS_YEAR, div: THIS_YEAR, sum: THIS_YEAR }, csv: null };
+
+function emptyDb() { var d = {}; TABLES.forEach(function (t) { d[t] = []; }); return d; }
+function $(id) { return document.getElementById(id); }
+function val(id) { var el = $(id); return el ? String(el.value).trim() : ''; }
+function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function yen(n) { n = Math.round(n || 0); return (n < 0 ? '−' : '') + '¥' + Math.abs(n).toLocaleString('ja-JP'); }
+function syen(n) { n = Math.round(n || 0); return (n > 0 ? '+' : '') + yen(n); }
+function cls(n) { return n > 0 ? 'pos' : n < 0 ? 'neg' : ''; }
+function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function newId(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function nowIso() { return new Date().toISOString(); }
+function settingsObj() { return E.settingsMap(DB.settings); }
+function getSetting(k) { return settingsObj()[k]; }
+function gasUrl() { try { return localStorage.getItem(LS_KEYS.url) || ''; } catch (e) { return ''; } }
+function gasPin() { try { return localStorage.getItem(LS_KEYS.pin) || ''; } catch (e) { return ''; } }
+
+/* ---------------- キャッシュ・同期 ---------------- */
+function saveCache() {
+  try { localStorage.setItem(LS_KEYS.cache, JSON.stringify({ db: DB, rev: DATA_REV, savedAt: nowIso() })); } catch (e) { /* 容量不足などは無視 */ }
+}
+function loadCache() {
+  try {
+    var c = JSON.parse(localStorage.getItem(LS_KEYS.cache) || 'null');
+    if (c && c.db) { DB = normalizeDb(c.db); DATA_REV = Number(c.rev) || 0; }
+  } catch (e) { DB = emptyDb(); }
+}
+function normalizeDb(raw) {
+  var d = emptyDb();
+  TABLES.forEach(function (t) { d[t] = Array.isArray(raw && raw[t]) ? raw[t] : []; });
+  return d;
+}
+function setBadge(text, mode) { var b = $('syncBadge'); b.textContent = text; b.className = 'sync-badge ' + (mode || ''); }
+
+async function postGas(body) {
+  var res = await fetch(gasUrl(), { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
+  return res.json();
+}
+async function syncAll(showAlert) {
+  if (!gasUrl()) { setBadge('ローカル', ''); if (showAlert) alert('GAS URLが未設定のため、ローカルモードで動作しています（設定タブで登録）。'); return; }
+  try {
+    setBadge('🔄 同期中', 'syncing');
+    var r = await postGas({ action: 'getAll', pin: gasPin() });
+    if (r.status !== 'ok') throw new Error(r.message || '取得に失敗しました');
+    DB = normalizeDb(r.data); DATA_REV = Number(r.rev) || 0;
+    saveCache(); renderAll();
+    setBadge('☁️ 同期済', 'online');
+    if (showAlert) alert('スプレッドシートと同期しました（DATA_REV ' + DATA_REV + '）。');
+  } catch (err) {
+    setBadge('⚠️ 同期エラー', 'error');
+    if (showAlert) alert('同期に失敗しました: ' + err.message + '\nURL・PIN・GASのデプロイ設定（アクセス: 全員）を確認してください。');
+  }
+}
+// 書込み: GASが成功(rev一致)したときだけ同じ変更を手元にも適用する。rev不一致は最新を読み直して再操作を促す
+async function api(action, payload) {
+  if (!gasUrl()) {
+    applyLocal(DB, action, payload); DATA_REV++; saveCache(); renderAll();
+    return true;
+  }
+  try {
+    setBadge('⬆️ 保存中', 'syncing');
+    var r = await postGas({ action: action, pin: gasPin(), rev: DATA_REV, payload: payload });
+    if (r.status === 'ok') {
+      applyLocal(DB, action, payload); DATA_REV = Number(r.rev) || DATA_REV + 1; saveCache(); renderAll();
+      setBadge('☁️ 同期済', 'online');
+      return true;
+    }
+    if (r.status === 'conflict') {
+      await syncAll(false);
+      alert('他の端末で更新があったため、最新データを読み込みました。内容を確認して、もう一度操作してください。');
+      return false;
+    }
+    throw new Error(r.message || '保存に失敗しました');
+  } catch (err) {
+    setBadge('⚠️ 未保存', 'error');
+    alert('保存に失敗しました: ' + err.message);
+    return false;
+  }
+}
+// GASの各アクションと同じ動き（ローカルモード兼、成功後の手元反映）
+function applyLocal(db, action, p) {
+  function upsert(table, match, row) {
+    var i = db[table].findIndex(match);
+    if (i >= 0) db[table][i] = Object.assign({}, db[table][i], row); else db[table].push(row);
+  }
+  function setStatuses(st) { if (!st) return; db.margin_positions.forEach(function (r) { if (st[r.id]) r.status = st[r.id]; }); }
+  switch (action) {
+    case 'addTrade': db.trades.push(p.row); break;
+    case 'bulkAddTrades': p.rows.forEach(function (r) { db.trades.push(r); }); break;
+    case 'deleteTrade': db.trades = db.trades.filter(function (r) { return r.id !== p.id; }); break;
+    case 'addMarginPosition': db.margin_positions.push(p.row); break;
+    case 'bulkAddMarginPositions': p.rows.forEach(function (r) { db.margin_positions.push(r); }); break;
+    case 'deleteMarginPosition':
+      db.margin_settlements = db.margin_settlements.filter(function (r) { return r.positionId !== p.id; });
+      db.margin_positions = db.margin_positions.filter(function (r) { return r.id !== p.id; }); break;
+    case 'addMarginSettlement': db.margin_settlements.push(p.row); setStatuses(p.positionStatuses); break;
+    case 'bulkAddMarginSettlements': p.rows.forEach(function (r) { db.margin_settlements.push(r); }); setStatuses(p.positionStatuses); break;
+    case 'deleteMarginSettlement': db.margin_settlements = db.margin_settlements.filter(function (r) { return r.id !== p.id; }); setStatuses(p.positionStatuses); break;
+    case 'saveAnnualReport': upsert('annual_reports', function (r) { return String(r.year) === String(p.row.year) && r.kind === p.row.kind; }, p.row); break;
+    case 'addDividend': db.dividends.push(p.row); break;
+    case 'deleteDividend': db.dividends = db.dividends.filter(function (r) { return r.id !== p.id; }); break;
+    case 'saveCarryover': upsert('carryover', function (r) { return String(r.year) === String(p.row.year); }, p.row); break;
+    case 'saveSettings': p.items.forEach(function (it) { upsert('settings', function (r) { return r.key === it.key; }, { key: it.key, value: it.value, updatedAt: nowIso() }); }); break;
+    case 'saveHoldings': db.holdings = p.rows.slice(); break;
+    default: throw new Error('unknown action ' + action);
+  }
+}
+
+/* ---------------- 共通描画 ---------------- */
+function recompute() { RESULT = E.computeAll(DB, { currentYear: THIS_YEAR }); }
+function renderAll() {
+  recompute();
+  renderHome(); renderSpotFormExtras(); renderSettleOptions(); renderHistory(); renderDivTab(); renderSummary(); renderSettings();
+}
+function switchTab(name) {
+  UI.tab = name;
+  document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
+  $('page-' + name).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
+  window.scrollTo(0, 0);
+}
+function switchTradeSub(sub) {
+  UI.tradeSub = sub;
+  ['spot', 'margin', 'csv', 'hist'].forEach(function (s) { $('sub-' + s).classList.toggle('hidden', s !== sub); });
+  document.querySelectorAll('#page-trade .seg-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.sub === sub); });
+}
+function gotoMarginEntry() { switchTab('trade'); switchTradeSub('margin'); }
+function changeYear(kind, d) { UI.year[kind] += d; if (kind === 'hist') renderHistory(); if (kind === 'div') renderDivTab(); if (kind === 'sum') renderSummary(); }
+function openModal(html) { $('modalContent').innerHTML = html; $('modal').classList.add('show'); }
+function closeModal() { $('modal').classList.remove('show'); }
+function yearResult(y) {
+  if (RESULT.byYear[y]) return RESULT.byYear[y];
+  // データの無い年: 前年からの繰越だけを持ち越して空計算
+  var prev = RESULT.years.filter(function (x) { return x < y; });
+  var pool = prev.length ? RESULT.byYear[prev[prev.length - 1]].poolAfter : [];
+  var spot = RESULT.spot, margin = RESULT.margin;
+  var inp = E.yearInputs(y, spot, margin, DB.annual_reports, DB.dividends);
+  var s = RESULT.settings, choice = s['divChoice_' + y] || '申告分離';
+  var r = E.computeYear(y, inp, pool, choice, RESULT.carryCfg, s, RESULT.rates);
+  var cmp = {}; E.DIV_CHOICES.forEach(function (c) { cmp[c] = E.computeYear(y, inp, pool, c, RESULT.carryCfg, s, RESULT.rates); });
+  r.comparison = cmp; r.recommendation = { choice: null, reason: '' };
+  return r;
+}
+function warnBlock(list) {
+  if (!list || !list.length) return '';
+  return list.map(function (w) { return '<div class="alert warn">⚠️ ' + esc(w) + '</div>'; }).join('');
+}
+
+/* ---------------- ホーム ---------------- */
+function renderHome() {
+  var y = THIS_YEAR, r = yearResult(y), inp = r.inputs;
+  var realized = inp.gSpot.pnl + inp.gMargin.pnl + inp.tListed.net + inp.tMargin.net;
+  var reserve = Math.max(0, r.settle.total);
+  var pool = r.poolAfter;
+  var startPool = (r.carryApplied || []);
+  var openCnt = RESULT.margin.openPositions.length;
+  var openG = RESULT.margin.openPositions.filter(function (p) { return p.account === '一般'; }).length;
+  var html = '';
+  if (!gasUrl()) html += '<div class="alert info">ローカルモード（この端末内のみ保存）。設定タブでGAS URLとPINを登録するとスプレッドシートと同期します。</div>';
+  html += '<div class="alert warn">📌 <strong>年1回はSBIのCSVを保存してください。</strong> SBIで照会できる取引履歴は過去2年分までです（約定履歴CSV・信用決済明細CSVの2種）。保存漏れは手入力で補えます。</div>';
+  html += '<div class="card"><div class="card-title"><span>📊 ' + y + '年の実現損益</span><span class="sub">課税年の基準: ' + esc(RESULT.basis) + '</span></div>';
+  html += '<div class="kpi-val ' + cls(realized) + '" style="font-size:26px">' + syen(realized) + '</div>';
+  html += '<div class="tbl-wrap"><table class="data-table" style="margin-top:8px"><tr><th>区分</th><th class="num">損益</th><th class="num">件数</th></tr>';
+  html += '<tr><td>現物（モードG・一般）</td><td class="num ' + cls(inp.gSpot.pnl) + '">' + syen(inp.gSpot.pnl) + '</td><td class="num">' + inp.gSpot.count + '</td></tr>';
+  html += '<tr><td>信用（モードG・一般）</td><td class="num ' + cls(inp.gMargin.pnl) + '">' + syen(inp.gMargin.pnl) + '</td><td class="num">' + inp.gMargin.count + '</td></tr>';
+  html += '<tr><td>上場分（モードT・特定）</td><td class="num ' + cls(inp.tListed.net) + '">' + (inp.tListed.exists ? syen(inp.tListed.net) : '<span class="sub">報告書未入力</span>') + '</td><td></td></tr>';
+  html += '<tr><td>特定信用分（モードT・特定）</td><td class="num ' + cls(inp.tMargin.net) + '">' + (inp.tMargin.exists ? syen(inp.tMargin.net) : '<span class="sub">報告書未入力</span>') + '</td><td></td></tr>';
+  html += '</table></div><div class="sub" style="margin-top:6px">特定口座分は翌年1月の年間取引報告書の入力で確定します。年の途中はモードGのみの見込みです。</div></div>';
+
+  html += '<div class="kpi-grid">';
+  html += '<div class="kpi-box"><div class="kpi-label">課税見込額（国税＋住民税）</div><div class="kpi-val">' + yen(r.tax.total + (r.comprehensive ? r.comprehensive.national + r.comprehensive.resident : 0)) + '</div><div class="sub">課税対象 ' + yen(r.tax.taxable) + '</div></div>';
+  html += '<div class="kpi-box"><div class="kpi-label">💰 税金準備金の目安</div><div class="kpi-val ' + (reserve > 0 ? 'neg' : '') + '">' + yen(reserve) + '</div><div class="sub">' + (r.settle.total < 0 ? '還付見込み ' + yen(-r.settle.total) : '納付見込み（源泉徴収済み分を差引後）') + '</div></div>';
+  html += '<div class="kpi-box"><div class="kpi-label">繰越損失の残（翌年へ）</div><div class="kpi-val">' + yen(r.carryForwardTotal) + '</div><div class="sub">本年の控除 ' + yen(r.carryDeducted) + '</div></div>';
+  html += '<div class="kpi-box"><div class="kpi-label">未決済建玉</div><div class="kpi-val">' + openCnt + '件</div><div class="sub">うち一般 ' + openG + '件（含み損益は課税年に入れません）</div></div>';
+  html += '</div>';
+
+  // 繰越損失と失効警告
+  var carryHtml = '';
+  var lst = pool.slice();
+  r.expiring.forEach(function (e) { carryHtml += '<div class="alert red">⛔ ' + e.year + '年分の繰越損失 ' + yen(e.remaining) + ' は' + y + '年分で失効します（控除しきれない分）。</div>'; });
+  lst.forEach(function (e) {
+    var near = e.expireYear <= y + 1;
+    carryHtml += '<div class="row-item"><div><div class="row-main">' + e.year + '年発生 ' + yen(e.amount) + '</div><div class="row-sub">' + (e.year + 1) + '〜' + e.expireYear + '年分で使用可</div></div><div class="row-right">' + yen(e.remaining) + (near ? ' <span class="tag warn">失効近い</span>' : '') + '</div></div>';
+  });
+  if (startPool.length) carryHtml += '<div class="sub" style="margin-top:6px">本年の充当: ' + startPool.map(function (a) { return a.lossYear + '年分 ' + yen(a.used); }).join('、') + '</div>';
+  html += '<div class="card"><div class="card-title"><span>📦 繰越損失（' + y + '年末時点の見込み）</span></div>' + (carryHtml || '<div class="sub">繰越損失はありません。</div>') + '</div>';
+
+  // 申告要否の目安
+  html += '<div class="card"><div class="card-title"><span>🧾 申告要否の目安</span></div>' + filingHint(r) + '</div>';
+
+  var allW = RESULT.warnings.concat(r.warnings);
+  if (allW.length) html += '<div class="card"><div class="card-title"><span>⚠️ 確認事項</span></div>' + warnBlock(allW) + '</div>';
+  $('homeBody').innerHTML = html;
+}
+function filingHint(r) {
+  var s = RESULT.settings, h = '';
+  var other = r.nonSalaryIncome;
+  if (E.isBlank(s.salaryIncome)) h += '<div class="sub">給与所得見込みが未設定です（設定タブ）。</div>';
+  if (r.newLoss > 0 || r.carryDeducted > 0) {
+    h += '<div class="alert red">繰越控除を使う／損失を繰り越すため、<strong>確定申告が必要</strong>です（付表の添付）。</div>';
+  } else if (other <= 200000) {
+    h += '<div class="alert ok">給与以外の所得（本アプリ集計分）' + yen(other) + ' ≦ 20万円 → 給与所得者は<strong>所得税の確定申告は不要</strong>の目安です。</div>';
+  } else {
+    h += '<div class="alert warn">給与以外の所得（本アプリ集計分）' + yen(other) + ' ＞ 20万円 → <strong>確定申告が必要</strong>です。</div>';
+  }
+  h += '<div class="sub">※20万円以下でも<strong>住民税の申告は別途必要</strong>です。繰越控除を使う・損失を繰り越す場合は申告が必要です。給与以外の他の所得（副業等）はこの集計に含まれていません。</div>';
+  return h;
+}
+
+/* ---------------- 現物入力 ---------------- */
+function onSpotDateChange() { var d = val('spDate'); if (d) $('spSettle').value = E.addBusinessDays(d, 2); updateSpotPreview(); }
+function onSpotSideChange() {
+  var adj = val('spSide') === '数量調整';
+  $('spPriceRow').classList.toggle('hidden', adj); $('spFeeRow').classList.toggle('hidden', adj);
+  $('spQtyLabel').textContent = adj ? '増減株数（例: 1:2分割で100株→200株なら 100）' : '数量（株）';
+  updateSpotPreview();
+}
+function onSpotCodeInput() {
+  var code = val('spCode');
+  var hit = DB.trades.concat(DB.holdings).filter(function (t) { return String(t.code) === code && t.name; })[0];
+  if (hit && !val('spName')) $('spName').value = hit.name;
+  updateSpotPreview();
+}
+function spotFormRow() {
+  var side = val('spSide');
+  var qty = E.int(val('spQty')), price = E.num(val('spPrice'));
+  return {
+    id: 'preview', seq: Date.now() * 1000, tradeDate: val('spDate'), settleDate: val('spSettle') || E.addBusinessDays(val('spDate'), 2),
+    account: val('spAccount'), code: val('spCode'), name: val('spName'), side: side, qty: qty,
+    price: side === '数量調整' ? '' : price, amount: side === '数量調整' ? '' : E.amountOf(qty, price), fee: side === '数量調整' ? 0 : E.int(val('spFee')),
+    source: '手入力', memo: val('spMemo')
+  };
+}
+function updateSpotPreview() {
+  var t = spotFormRow(), box = $('spPreview');
+  if (!t.tradeDate || !t.code || !t.qty) { box.innerHTML = '入力すると取得単価・譲渡損益をプレビューします。'; return; }
+  if (t.account !== '一般') { box.innerHTML = '特定預りの取引は年間取引報告書（モードT）で計上するため、登録しても計算対象外（参考記録）です。'; return; }
+  var sp = E.calcSpot(DB.trades.concat([t]), DB.holdings, RESULT.margin.spotEvents, RESULT.basis);
+  var key = '一般|' + t.code, L = sp.ledgers[key] || [], row = L.filter(function (x) { return x.id === 'preview'; })[0];
+  if (!row) { box.innerHTML = '計算できませんでした。'; return; }
+  var h = '';
+  if (t.side === '買') h = '約定代金 ' + yen(t.amount) + ' ＋ 手数料 ' + yen(t.fee) + ' → 取得費総額 ' + yen(row.costAfter) + '／' + row.qtyAfter + '株<br>平均取得単価 <strong>' + yen(row.avgAfter) + '</strong>（' + row.avgRaw.toFixed(2) + '円の円未満切上げ）';
+  else if (t.side === '売') h = '譲渡価額 ' + yen(t.amount) + ' − 譲渡原価 ' + yen(row.cogs) + ' − 手数料 ' + yen(t.fee) + ' ＝ <strong class="' + cls(row.pnl) + '">' + syen(row.pnl) + '</strong><br>残 ' + row.qtyAfter + '株・取得費残 ' + yen(row.costAfter) + '（' + E.taxYearOf(t.tradeDate, t.settleDate, RESULT.basis) + '年分）';
+  else h = '数量調整後 ' + row.qtyAfter + '株、取得費総額 ' + yen(row.costAfter) + '（不変）→ 平均取得単価 ' + yen(row.avgAfter);
+  var newW = sp.warnings.filter(function (w) { return RESULT.spot.warnings.indexOf(w) < 0; });
+  box.innerHTML = h + (newW.length ? '<div class="alert warn" style="margin-top:6px">' + newW.map(esc).join('<br>') + '</div>' : '');
+}
+function renderSpotFormExtras() { if (UI.tab === 'trade' && UI.tradeSub === 'spot') updateSpotPreview(); }
+async function submitSpot() {
+  var t = spotFormRow();
+  if (!t.tradeDate || !t.code || !t.qty) { alert('約定日・銘柄コード・数量は必須です。'); return; }
+  if (t.side !== '数量調整' && !(E.num(t.price) > 0)) { alert('約定単価を入力してください。'); return; }
+  t.id = newId('T'); t.createdAt = nowIso();
+  if (t.account === '一般') {
+    var sp = E.calcSpot(DB.trades.concat([t]), DB.holdings, RESULT.margin.spotEvents, RESULT.basis);
+    var tr = sp.tradeResults[t.id] || {};
+    t.realizedPnl = tr.pnl === null || tr.pnl === undefined ? '' : tr.pnl;
+    t.avgCostSnapshot = tr.avgAfter || '';
+  } else { t.realizedPnl = ''; t.avgCostSnapshot = ''; }
+  if (await api('addTrade', { row: t })) {
+    ['spQty', 'spPrice', 'spMemo'].forEach(function (id) { $(id).value = ''; }); $('spFee').value = 0;
+    updateSpotPreview(); alert('登録しました。');
+  }
+}
+
+/* ---------------- 信用入力 ---------------- */
+async function submitMarginPosition(source) {
+  var row = {
+    id: newId('P'), seq: Date.now() * 1000, openDate: val('mpDate'), account: val('mpAccount'), code: val('mpCode'), name: val('mpName'),
+    side: val('mpSide'), qty: E.int(val('mpQty')), openPrice: E.num(val('mpPrice')), openAmount: E.amountOf(val('mpQty'), val('mpPrice')),
+    openFee: E.int(val('mpFee')), status: '未決済', source: source, memo: val('mpMemo'), createdAt: nowIso()
+  };
+  if (!row.openDate || !row.code || !row.qty || !(row.openPrice > 0)) { alert('建日・銘柄コード・数量・建単価は必須です。'); return; }
+  if (await api('addMarginPosition', { row: row })) {
+    ['mpQty', 'mpPrice', 'mpMemo'].forEach(function (id) { $(id).value = ''; }); $('mpFee').value = 0;
+    alert('建玉を登録しました。');
+  }
+}
+function renderSettleOptions() {
+  var sel = $('msPos'), cur = sel.value;
+  var opts = RESULT.margin.openPositions.slice().sort(function (a, b) { return a.openDate < b.openDate ? -1 : 1; });
+  sel.innerHTML = '<option value="">（未決済の建玉を選択）</option>' + opts.map(function (p) {
+    return '<option value="' + esc(p.id) + '">' + esc(p.openDate + ' ' + p.side + ' ' + p.code + ' ' + p.name + ' 残' + p.remaining + '株 @' + p.openPrice + (p.account !== '一般' ? '［' + p.account + '］' : '')) + '</option>';
+  }).join('');
+  if (cur && opts.some(function (p) { return p.id === cur; })) sel.value = cur;
+  onSettleTypeChange(true);
+}
+function selectedPos() { var id = val('msPos'); return id ? RESULT.margin.posMap[id] : null; }
+function onSettlePosChange() {
+  var p = selectedPos(); if (!p) { updateSettlePreview(); return; }
+  $('msQty').value = p.remaining;
+  $('msType').value = '返済';
+  onSettleQtyInput(); onSettleTypeChange();
+}
+function onSettleQtyInput() {
+  var p = selectedPos(); if (!p) return;
+  var q = E.int(val('msQty'));
+  $('msOpenFee').value = q >= p.remaining ? p.openFee - p.openFeeUsed : Math.round(p.openFee * q / p.qty);
+  updateSettlePreview();
+}
+function onSettleDateChange() { var d = val('msDate'); if (d) $('msDelivery').value = E.addBusinessDays(d, 2); updateSettlePreview(); }
+function onSettleTypeChange(silent) {
+  var p = selectedPos(), type = val('msType');
+  var isShort = p && p.side === '売建';
+  document.querySelectorAll('.ms-long').forEach(function (el) { el.classList.toggle('hidden', !!isShort); });
+  document.querySelectorAll('.ms-short').forEach(function (el) { el.classList.toggle('hidden', p ? !isShort : false); });
+  $('msPriceRow').classList.toggle('hidden', type !== '返済');
+  if (!silent) updateSettlePreview(); else updateSettlePreview();
+}
+function settleFormRow() {
+  var p = selectedPos(), type = val('msType'), qty = E.int(val('msQty'));
+  return {
+    id: newId('S'), seq: Date.now() * 1000, positionId: p ? p.id : '', settleDate: val('msDate'), deliveryDate: val('msDelivery') || E.addBusinessDays(val('msDate'), 2),
+    type: type, qty: qty, closePrice: type === '返済' ? E.num(val('msPrice')) : '', closeAmount: type === '返済' ? E.amountOf(qty, val('msPrice')) : '',
+    openFee: E.int(val('msOpenFee')), closeFee: E.int(val('msCloseFee')),
+    interestPaid: p && p.side === '売建' ? 0 : E.int(val('msInterestPaid')), interestReceived: p && p.side === '売建' ? E.int(val('msInterestReceived')) : 0,
+    lendingFee: p && p.side === '売建' ? E.int(val('msLendingFee')) : 0,
+    gyakuhibuPaid: E.int(val('msGyakuP')), gyakuhibuReceived: E.int(val('msGyakuR')),
+    divAdjPaid: E.int(val('msDivP')), divAdjReceived: E.int(val('msDivR')), otherCost: E.int(val('msOther')),
+    csvPnl: '', source: '手入力', memo: val('msMemo'), createdAt: nowIso()
+  };
+}
+function updateSettlePreview() {
+  var p = selectedPos(), box = $('msPreview');
+  if (!p) { box.innerHTML = '建玉を選ぶと決済損益をプレビューします。'; return; }
+  var s = settleFormRow();
+  if (!s.qty) { box.innerHTML = '数量を入力してください。'; return; }
+  var openAmount = E.amountOf(s.qty, p.openPrice), c = E.marginCosts(s);
+  if (s.type === '返済') {
+    var r = E.marginPnl(p.side, openAmount, s.closeAmount, c);
+    box.innerHTML = p.side + ' ' + p.code + ' ' + esc(p.name) + '：収入金額 ' + yen(r.income) + ' − 取得費等 ' + yen(r.cost) + ' ＝ 決済損益 <strong class="' + cls(r.pnl) + '">' + syen(r.pnl) + '</strong><br>（建代金 ' + yen(openAmount) + '／返済代金 ' + yen(s.closeAmount) + '）' + (p.account !== '一般' ? '<br>特定預りの建玉は報告書（特定信用分）で計上するため計算対象外です。' : '');
+  } else if (s.type === '現引') {
+    var cost = openAmount + c.openFee + c.closeFee + c.interestPaid + c.lendingFee + c.gyakuhibuPaid + c.otherCost + c.divAdjPaid - c.gyakuhibuReceived - c.interestReceived - c.divAdjReceived;
+    box.innerHTML = '現引: 建玉を消し、取得費 ' + yen(cost) + '（建代金＋諸経費）の現物保有 ' + s.qty + '株に振り替えます。損益は発生しません。';
+  } else {
+    var inc = openAmount + c.gyakuhibuReceived + c.interestReceived + c.divAdjReceived - c.divAdjPaid;
+    box.innerHTML = '現渡: 保有現物 ' + s.qty + '株を建値で譲渡したものとして計算します（譲渡価額 ' + yen(inc) + '、諸経費 ' + yen(c.openFee + c.closeFee + c.interestPaid + c.lendingFee + c.gyakuhibuPaid + c.otherCost) + '、原価は現物の平均取得単価）。';
+  }
+}
+function statusAfter(p, addQty, type) {
+  var rem = p.remaining - addQty;
+  return rem <= 0 ? (type === '返済' ? '決済済' : type) : '一部決済';
+}
+async function submitSettlement() {
+  var p = selectedPos(); if (!p) { alert('対象の建玉を選んでください。'); return; }
+  var s = settleFormRow();
+  if (!s.settleDate || !s.qty) { alert('決済約定日と数量は必須です。'); return; }
+  if (s.qty > p.remaining) { alert('建玉の残数量（' + p.remaining + '株）を超えています。'); return; }
+  if (s.type === '返済' && !(E.num(s.closePrice) > 0)) { alert('決済単価を入力してください。'); return; }
+  if (s.type === '現引' && p.side !== '買建') { alert('現引は買建のみです。'); return; }
+  if (s.type === '現渡' && p.side !== '売建') { alert('現渡は売建のみです。'); return; }
+  if (s.type === '返済') s.pnl = E.marginPnl(p.side, E.amountOf(s.qty, p.openPrice), s.closeAmount, E.marginCosts(s)).pnl; else s.pnl = '';
+  var st = {}; st[p.id] = statusAfter(p, s.qty, s.type);
+  if (await api('addMarginSettlement', { row: s, positionStatuses: st })) {
+    ['msQty', 'msPrice', 'msMemo'].forEach(function (id) { $(id).value = ''; });
+    ['msCloseFee', 'msInterestPaid', 'msInterestReceived', 'msLendingFee', 'msGyakuR', 'msGyakuP', 'msDivR', 'msDivP', 'msOther'].forEach(function (id) { $(id).value = 0; });
+    alert('決済を登録しました。');
+  }
+}
+
+/* ---------------- CSV取込 ---------------- */
+async function onCsvFile(ev) {
+  var f = ev.target.files[0]; if (!f) return;
+  var buf = await f.arrayBuffer();
+  var dec = E.decodeBytes(buf), type = val('csvType'), res;
+  if (type === 'spot') res = E.importSpotCsv(dec.text, DB.trades);
+  else res = E.importMarginCsv(dec.text, DB.margin_positions, DB.margin_settlements);
+  res.type = type; res.encoding = dec.encoding; res.fileName = f.name;
+  UI.csv = res; renderCsv();
+  ev.target.value = '';
+}
+var CSV_STATUS_LABEL = { 'new': ['登録', 'ok'], dup: ['重複候補', 'warn'], nisa: ['対象外', 'gray'], tokutei: ['特定（参考）', 'gray'], margin: ['信用行', 'gray'], error: ['読取不可', 'red'] };
+function renderCsv() {
+  var c = UI.csv, box = $('csvResult');
+  if (!c) { box.innerHTML = ''; return; }
+  if (c.error) { box.innerHTML = '<div class="alert red">' + esc(c.error) + '</div>'; return; }
+  var h = '<div class="card"><div class="card-title"><span>🔎 読み取り結果: ' + esc(c.fileName) + '</span><span class="sub">' + esc(c.encoding) + '／ヘッダー ' + c.headerRow + '行目</span></div>';
+  h += '<div class="sub">列の対応: ' + (c.missing.length ? '<span class="tag warn">未検出: ' + esc(c.missing.join(', ')) + '</span>' : '<span class="tag ok">全列検出</span>') + '</div>';
+  h += '<div class="sub" style="margin:4px 0 8px">ヘッダー: ' + esc(c.header.join(' | ')) + '</div>';
+  var counts = {};
+  c.rows.forEach(function (r) { counts[r._status] = (counts[r._status] || 0) + 1; });
+  h += '<div class="sub">' + Object.keys(counts).map(function (k) { return CSV_STATUS_LABEL[k][0] + ' ' + counts[k] + '件'; }).join('／') + '</div>';
+  h += '<div class="tbl-wrap" style="max-height:420px;overflow-y:auto;margin-top:8px"><table class="data-table"><tr><th>登録</th><th>日付</th><th>銘柄</th><th>取引</th><th>預り</th><th class="num">数量</th><th class="num">単価</th><th class="num">手数料</th><th>状態</th></tr>';
+  c.rows.forEach(function (r, i) {
+    var lock = r._status === 'nisa' || r._status === 'margin' || r._status === 'error';
+    var lab = CSV_STATUS_LABEL[r._status];
+    var t = c.type === 'spot' ? r : null, p = c.type === 'margin' ? r.position : null, s = c.type === 'margin' ? r.settlement : null;
+    h += '<tr class="' + (r._include ? '' : 'muted') + '"><td><input type="checkbox" ' + (r._include ? 'checked' : '') + (lock ? ' disabled' : '') + ' onchange="UI.csv.rows[' + i + ']._include=this.checked;renderCsv()"></td>';
+    if (t) h += '<td>' + esc(t.tradeDate) + '</td><td>' + esc(t.code + ' ' + t.name) + '</td><td>' + esc(t.side === 'margin' ? '信用' : t.side) + '</td><td>' + esc(t.account) + '</td><td class="num">' + t.qty + '</td><td class="num">' + t.price + '</td><td class="num">' + t.fee + '</td>';
+    else h += '<td>' + esc(s.settleDate) + '</td><td>' + esc(p.code + ' ' + p.name) + '</td><td>' + esc(p.side + '→' + s.type) + '</td><td>' + esc(p.account) + '</td><td class="num">' + s.qty + '</td><td class="num">' + p.openPrice + '→' + (s.closePrice || '-') + '</td><td class="num">' + (s.openFee + s.closeFee) + '</td>';
+    h += '<td><span class="tag ' + lab[1] + '">' + lab[0] + '</span> <span class="sub">' + esc(r._note) + '</span></td></tr>';
+  });
+  h += '</table></div>';
+  var n = c.rows.filter(function (r) { return r._include; }).length;
+  h += '<button class="btn-primary" ' + (n ? '' : 'disabled') + ' onclick="commitCsv()">選択した ' + n + ' 件を一括登録</button></div>';
+  box.innerHTML = h;
+}
+async function commitCsv() {
+  var c = UI.csv; if (!c) return;
+  var sel = c.rows.filter(function (r) { return r._include; });
+  if (!sel.length) return;
+  if (!confirm(sel.length + '件を登録します。よろしいですか？')) return;
+  var ok;
+  if (c.type === 'spot') {
+    var rows = sel.map(function (t) {
+      var o = {}; Object.keys(t).forEach(function (k) { if (k[0] !== '_') o[k] = t[k]; });
+      o.id = newId('T'); o.createdAt = nowIso(); return o;
+    });
+    var sp = E.calcSpot(DB.trades.concat(rows), DB.holdings, RESULT.margin.spotEvents, RESULT.basis);
+    rows.forEach(function (o) { var tr = sp.tradeResults[o.id] || {}; o.realizedPnl = tr.pnl === null || tr.pnl === undefined ? '' : tr.pnl; o.avgCostSnapshot = tr.avgAfter || ''; });
+    ok = await api('bulkAddTrades', { rows: rows });
+  } else {
+    var ps = [], ss = [], st = {};
+    sel.forEach(function (it) {
+      var p = Object.assign({}, it.position, { id: newId('P'), createdAt: nowIso() });
+      var s = Object.assign({}, it.settlement, { id: newId('S'), positionId: p.id, createdAt: nowIso() });
+      if (s.type === '返済') s.pnl = E.marginPnl(p.side, p.openAmount, s.closeAmount, E.marginCosts(s)).pnl; else s.pnl = '';
+      ps.push(p); ss.push(s); st[p.id] = p.status;
+    });
+    ok = await api('bulkAddMarginPositions', { rows: ps });
+    if (ok) ok = await api('bulkAddMarginSettlements', { rows: ss, positionStatuses: st });
+    if (!ok) alert('建玉の登録後に決済の登録が失敗した可能性があります。履歴を確認してください。');
+  }
+  if (ok) { alert(sel.length + '件を登録しました。'); UI.csv = null; renderCsv(); }
+}
+
+/* ---------------- 履歴 ---------------- */
+function renderHistory() {
+  if (!RESULT) return;
+  var y = UI.year.hist; $('histYearTitle').textContent = y + '年';
+  var tr = RESULT.spot.tradeResults, h = '';
+  var trades = DB.trades.filter(function (t) { return E.normDate(t.tradeDate).slice(0, 4) === String(y); })
+    .sort(function (a, b) { return a.tradeDate === b.tradeDate ? E.num(b.seq) - E.num(a.seq) : (a.tradeDate < b.tradeDate ? 1 : -1); });
+  h += '<div class="card"><div class="card-title"><span>📝 現物取引（' + trades.length + '件）</span></div>';
+  if (!trades.length) h += '<div class="sub">この年の現物取引はありません。</div>';
+  trades.forEach(function (t) {
+    var res = tr[t.id], pnl = res && res.pnl !== null ? res.pnl : null;
+    h += '<div class="row-item"><div><div class="row-main">' + esc(t.side) + ' ' + esc(t.code + ' ' + t.name) + (t.account !== '一般' ? ' <span class="tag gray">' + esc(t.account) + '・計算対象外</span>' : '') + '</div>';
+    h += '<div class="row-sub">' + esc(t.tradeDate) + '（受渡 ' + esc(t.settleDate || '-') + '）' + E.int(t.qty) + '株' + (t.side !== '数量調整' ? ' @' + esc(t.price) + ' 手数料' + E.int(t.fee) : '') + ' ／ ' + esc(t.source || '') + (res ? ' ／ 平均単価 ' + yen(res.avgAfter) : '') + '</div></div>';
+    h += '<div class="row-right">' + (pnl !== null ? '<span class="' + cls(pnl) + '">' + syen(pnl) + '</span>' : '') + '<button class="del-btn" onclick="delTrade(\'' + esc(t.id) + '\')">削除</button></div></div>';
+  });
+  h += '</div>';
+
+  // 銘柄別計算明細
+  var keys = Object.keys(RESULT.spot.ledgers).filter(function (k) { return RESULT.spot.ledgers[k].some(function (x) { return x.date.slice(0, 4) <= String(y); }); });
+  if (keys.length) {
+    h += '<div class="card"><div class="card-title"><span>🔍 銘柄別の計算明細（一般口座）</span></div><div style="display:flex;flex-wrap:wrap;gap:6px">';
+    keys.forEach(function (k) { var s = RESULT.spot.states[k]; h += '<button class="btn" onclick="showLedger(\'' + esc(k) + '\')">' + esc(s.code + ' ' + s.name) + (s.qty ? '（' + s.qty + '株）' : '') + '</button>'; });
+    h += '</div></div>';
+  }
+
+  // 信用
+  var poss = RESULT.margin.positions.filter(function (p) {
+    return p.remaining > 0 || p.settlements.some(function (s) { return s.taxYear === y || s.settleDate.slice(0, 4) === String(y); }) || p.openDate.slice(0, 4) === String(y);
+  }).sort(function (a, b) { return a.openDate < b.openDate ? 1 : -1; });
+  h += '<div class="card"><div class="card-title"><span>📈 信用建玉と決済（' + poss.length + '件）</span></div>';
+  if (!poss.length) h += '<div class="sub">該当する建玉はありません。</div>';
+  poss.forEach(function (p) {
+    var tagCls = p.status === '未決済' ? 'warn' : p.status === '一部決済' ? 'warn' : 'ok';
+    h += '<div class="row-item" style="align-items:flex-start"><div style="flex:1"><div class="row-main">' + esc(p.side + ' ' + p.code + ' ' + p.name) + ' <span class="tag ' + tagCls + '">' + esc(p.status) + '</span>' + (p.account !== '一般' ? ' <span class="tag gray">' + esc(p.account) + '・計算対象外</span>' : '') + '</div>';
+    h += '<div class="row-sub">建日 ' + esc(p.openDate) + ' ' + p.qty + '株 @' + p.openPrice + ' 建手数料' + p.openFee + '（残 ' + p.remaining + '株）／' + esc(p.source) + '</div>';
+    p.settlements.forEach(function (s) {
+      h += '<div class="row-sub" style="display:flex;justify-content:space-between;gap:6px;margin-top:4px"><span>└ ' + esc(s.type) + ' ' + esc(s.settleDate) + ' ' + s.qty + '株' + (s.type === '返済' ? ' @' + s.closePrice : '') + '（' + s.taxYear + '年分）' + (s.csvMismatch ? ' <span class="tag red">CSV差異</span>' : '') + '</span><span>' + (s.pnl !== null && s.pnl !== undefined ? '<strong class="' + cls(s.pnl) + '">' + syen(s.pnl) + '</strong> ' : '') + '<button class="del-btn" onclick="delSettlement(\'' + esc(s.id) + '\')">削除</button></span></div>';
+    });
+    h += '</div><button class="del-btn" onclick="delPosition(\'' + esc(p.id) + '\')">建玉削除</button></div>';
+  });
+  h += '</div>';
+  $('histBody').innerHTML = h;
+}
+function showLedger(key) {
+  var L = RESULT.spot.ledgers[key], s = RESULT.spot.states[key];
+  var h = '<h3 style="font-size:15px;margin-bottom:6px">' + esc(s.code + ' ' + s.name) + ' の計算明細（総平均法に準ずる方法）</h3><div class="sub" style="margin-bottom:8px">平均取得単価は買い（・期首・数量調整）のたびに再計算し円未満切上げ。売却の譲渡原価＝平均単価×数量（全量売却時は取得費残額）。</div>';
+  h += '<div class="tbl-wrap"><table class="data-table"><tr><th>日付</th><th>種別</th><th class="num">数量</th><th class="num">単価</th><th class="num">金額</th><th class="num">手数料</th><th class="num">譲渡原価</th><th class="num">損益</th><th class="num">残数量</th><th class="num">取得費残</th><th class="num">平均単価</th></tr>';
+  L.forEach(function (x) {
+    h += '<tr><td>' + esc(x.date) + '</td><td>' + esc(x.type) + '</td><td class="num">' + x.qty + '</td><td class="num">' + (x.price === null ? '' : esc(x.price)) + '</td><td class="num">' + (x.amount === null ? '' : yen(x.amount)) + '</td><td class="num">' + (x.fee === null ? '' : yen(x.fee)) + '</td><td class="num">' + (x.cogs === null ? '' : yen(x.cogs)) + '</td><td class="num ' + cls(x.pnl) + '">' + (x.pnl === null ? '' : syen(x.pnl)) + '</td><td class="num">' + x.qtyAfter + '</td><td class="num">' + yen(x.costAfter) + '</td><td class="num">' + yen(x.avgAfter) + '<div class="sub">' + (x.avgRaw ? x.avgRaw.toFixed(4) : '') + '</div></td></tr>';
+  });
+  h += '</table></div>';
+  openModal(h);
+}
+async function delTrade(id) { if (confirm('この現物取引を削除しますか？（以降の平均単価・損益が再計算されます）')) await api('deleteTrade', { id: id }); }
+async function delPosition(id) { if (confirm('この建玉と、紐づく決済をすべて削除しますか？')) await api('deleteMarginPosition', { id: id }); }
+async function delSettlement(id) {
+  var s = DB.margin_settlements.filter(function (x) { return x.id === id; })[0]; if (!s) return;
+  if (!confirm('この決済を削除しますか？')) return;
+  var p = RESULT.margin.posMap[s.positionId], st = {};
+  if (p) { var rem = p.remaining + E.int(s.qty); st[p.id] = rem >= p.qty ? '未決済' : (rem > 0 ? '一部決済' : p.status); }
+  await api('deleteMarginSettlement', { id: id, positionStatuses: st });
+}
+
+/* ---------------- 配当・報告書 ---------------- */
+function suggestDivWithholding() {
+  var a = E.int(val('dvAmount'));
+  $('dvWI').value = Math.floor(a * 0.15315); $('dvWR').value = Math.floor(a * 0.05);
+}
+async function submitDividend() {
+  var row = {
+    id: newId('D'), date: val('dvDate'), code: val('dvCode'), name: val('dvName'), amount: E.int(val('dvAmount')),
+    withholdIncome: E.int(val('dvWI')), withholdResident: E.int(val('dvWR')), account: val('dvAccount'), memo: val('dvMemo'), createdAt: nowIso()
+  };
+  if (!row.date || !row.amount) { alert('受取日と配当等の額は必須です。'); return; }
+  if (row.account === '特定' && !confirm('特定口座の配当は年間取引報告書の「配当等の額」で拾うため、通常は台帳に入れません。報告書入力前の見込み用として登録しますか？（報告書に配当が入力されると自動で計算から除外されます）')) return;
+  if (await api('addDividend', { row: row })) {
+    ['dvCode', 'dvName', 'dvAmount', 'dvWI', 'dvWR', 'dvMemo'].forEach(function (id) { $(id).value = ''; });
+    alert('配当を登録しました。');
+  }
+}
+async function delDividend(id) { if (confirm('この配当を削除しますか？')) await api('deleteDividend', { id: id }); }
+var REPORT_FIELDS = [
+  ['proceeds', '譲渡の対価の額（収入金額）'], ['cost', '取得費及び譲渡に要した費用の額等'], ['net', '差引金額（譲渡所得等の金額）'],
+  ['lossAmount', '譲渡損失の金額'], ['dividends', '配当等の額'], ['divWithholdIncome', '配当の源泉徴収税額（所得税）'], ['divWithholdResident', '配当の源泉徴収税額（住民税）']
+];
+function renderDivTab() {
+  if (!RESULT) return;
+  var y = UI.year.div; $('divYearTitle').textContent = y + '年';
+  var list = DB.dividends.filter(function (d) { return E.normDate(d.date).slice(0, 4) === String(y); }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+  var tot = 0, h = '';
+  list.forEach(function (d) {
+    tot += E.int(d.amount);
+    h += '<div class="row-item"><div><div class="row-main">' + esc(d.code + ' ' + d.name) + (d.account === '特定' ? ' <span class="tag warn">特定</span>' : '') + '</div><div class="row-sub">' + esc(d.date) + ' 源泉 所得税' + yen(d.withholdIncome) + '・住民税' + yen(d.withholdResident) + '</div></div><div class="row-right">' + yen(d.amount) + '<button class="del-btn" onclick="delDividend(\'' + esc(d.id) + '\')">削除</button></div></div>';
+  });
+  $('divList').innerHTML = h || '<div class="sub">この年の配当はありません。</div>';
+  $('divListTotal').textContent = '合計 ' + yen(tot);
+  var f = '';
+  ['上場分', '特定信用分'].forEach(function (kind, ki) {
+    var r = DB.annual_reports.filter(function (x) { return String(x.year) === String(y) && x.kind === kind; })[0] || {};
+    f += '<div style="margin:10px 0 4px;font-weight:800;font-size:13px">' + y + '年分　' + kind + (kind === '上場分' ? '（現物等）' : '（特定口座の信用取引）') + (r.updatedAt ? ' <span class="tag ok">入力済</span>' : '') + '</div>';
+    REPORT_FIELDS.forEach(function (fd) {
+      f += '<div class="form-row"><span class="form-label" style="font-size:12px">' + fd[1] + '</span><input type="text" inputmode="numeric" class="form-input" id="rp_' + ki + '_' + fd[0] + '" value="' + esc(r[fd[0]] === undefined ? '' : r[fd[0]]) + '"></div>';
+    });
+    f += '<div class="form-row"><span class="form-label">メモ</span><input type="text" class="form-input" id="rp_' + ki + '_memo" value="' + esc(r.memo || '') + '"></div>';
+    f += '<button class="btn blue" style="width:100%;margin-top:6px" onclick="saveReport(' + ki + ')">' + kind + 'を保存</button>';
+  });
+  $('reportForms').innerHTML = f;
+}
+async function saveReport(ki) {
+  var y = UI.year.div, kind = ki === 0 ? '上場分' : '特定信用分';
+  var row = { id: y + '_' + kind, year: y, kind: kind, memo: val('rp_' + ki + '_memo'), updatedAt: nowIso() };
+  REPORT_FIELDS.forEach(function (fd) { var v = val('rp_' + ki + '_' + fd[0]); row[fd[0]] = v === '' ? '' : E.int(v); });
+  if (row.net !== '' && row.proceeds !== '' && row.cost !== '' && row.net !== row.proceeds - row.cost) {
+    if (!confirm('差引金額が「譲渡の対価 − 取得費等」と一致しません（' + (row.proceeds - row.cost).toLocaleString() + '）。入力どおり保存しますか？（計算には差引金額を使います）')) return;
+  }
+  if (await api('saveAnnualReport', { row: row })) alert(y + '年 ' + kind + ' を保存しました。');
+}
+
+/* ---------------- 集計・申告 ---------------- */
+function renderSummary() {
+  if (!RESULT) return;
+  var y = UI.year.sum; $('sumYearTitle').textContent = y + '年分';
+  var r = yearResult(y), inp = r.inputs, h = '';
+  // 1. 年間合算
+  h += '<div class="card"><div class="card-title"><span>① 年間合算（上場株式等）</span></div><div class="tbl-wrap"><table class="data-table"><tr><th>内訳</th><th class="num">収入金額</th><th class="num">取得費等</th><th class="num">差引</th></tr>';
+  h += '<tr><td>モードG 現物（' + inp.gSpot.count + '件）</td><td class="num">' + yen(inp.gSpot.proceeds) + '</td><td class="num">' + yen(inp.gSpot.cost) + '</td><td class="num ' + cls(inp.gSpot.pnl) + '">' + syen(inp.gSpot.pnl) + '</td></tr>';
+  h += '<tr><td>モードG 信用（' + inp.gMargin.count + '件）</td><td class="num">' + yen(inp.gMargin.income) + '</td><td class="num">' + yen(inp.gMargin.cost) + '</td><td class="num ' + cls(inp.gMargin.pnl) + '">' + syen(inp.gMargin.pnl) + '</td></tr>';
+  h += '<tr><td>モードT 上場分</td><td class="num">' + yen(inp.tListed.proceeds) + '</td><td class="num">' + yen(inp.tListed.cost) + '</td><td class="num ' + cls(inp.tListed.net) + '">' + syen(inp.tListed.net) + '</td></tr>';
+  h += '<tr><td>モードT 特定信用分</td><td class="num">' + yen(inp.tMargin.proceeds) + '</td><td class="num">' + yen(inp.tMargin.cost) + '</td><td class="num ' + cls(inp.tMargin.net) + '">' + syen(inp.tMargin.net) + '</td></tr>';
+  var tp = inp.gSpot.proceeds + inp.gMargin.income + inp.tListed.proceeds + inp.tMargin.proceeds, tc = inp.gSpot.cost + inp.gMargin.cost + inp.tListed.cost + inp.tMargin.cost;
+  h += '<tr class="total"><td>合計（譲渡所得等）</td><td class="num">' + yen(tp) + '</td><td class="num">' + yen(tc) + '</td><td class="num ' + cls(r.transferNet) + '">' + syen(r.transferNet) + '</td></tr></table></div>';
+  h += '<div class="sub" style="margin-top:6px">配当等の額 ' + yen(inp.div.amount) + '（報告書 ' + yen(inp.div.fromReport) + '＋台帳 ' + yen(inp.div.fromLedger) + '）／源泉 所得税 ' + yen(inp.div.wIncome) + '・住民税 ' + yen(inp.div.wResident) + '</div></div>';
+
+  // 2. 配当方式
+  h += '<div class="card"><div class="card-title"><span>② 配当の課税方式</span></div>';
+  h += '<div class="seg-toggle">' + E.DIV_CHOICES.map(function (c) { return '<button class="seg-btn ' + (r.choice === c ? 'active' : '') + '" onclick="setDivChoice(' + y + ',\'' + c + '\')">' + c + '</button>'; }).join('') + '</div>';
+  var cmp = r.comparison;
+  h += '<div class="tbl-wrap"><table class="data-table"><tr><th>方式</th><th class="num">国税</th><th class="num">住民税</th><th class="num">源泉の精算</th><th class="num">納付(+)/還付(−)</th><th class="num">税負担の総額</th><th class="num">翌年繰越</th></tr>';
+  E.DIV_CHOICES.forEach(function (c) {
+    var x = cmp[c], n = x.tax.national + (x.comprehensive ? x.comprehensive.national : 0), rs = x.tax.resident + (x.comprehensive ? x.comprehensive.resident : 0);
+    h += '<tr' + (c === r.choice ? ' style="background:#f5f7ff"' : '') + '><td>' + c + (r.recommendation.choice === c ? ' <span class="tag ok">推奨</span>' : '') + '</td><td class="num">' + yen(n) + '</td><td class="num">' + yen(rs) + '</td><td class="num">' + (c === '申告不要' ? '源泉で完結' : '−' + yen(x.credited.income + x.credited.resident)) + '</td><td class="num ' + (x.settle.total > 0 ? 'neg' : 'pos') + '">' + syen(x.settle.total) + '</td><td class="num">' + yen(x.burden) + '</td><td class="num">' + yen(x.carryForwardTotal) + '</td></tr>';
+  });
+  h += '</table></div>';
+  if (r.recommendation.reason) h += '<div class="alert ok" style="margin-top:8px">' + (r.recommendation.choice ? '推奨: <strong>' + r.recommendation.choice + '</strong> — ' : '') + esc(r.recommendation.reason) + '</div>';
+  h += '<div class="sub">※2023年分（令和6年度住民税）以降、所得税と住民税で異なる課税方式は選べません（一致が必須）。総合課税・申告分離を選ぶと合計所得金額が増え、扶養・国保・各種判定に影響する場合があります。総合課税の税額は給与所得見込みを使った目安です（調整控除等は省略）。方式は年ごとに1つとして扱います。</div></div>';
+
+  // 3. 損益通算と繰越の適用過程
+  h += '<div class="card"><div class="card-title"><span>③ 損益通算と繰越控除の適用過程</span></div><ol class="steps">' + r.steps.map(function (s) { return '<li>' + esc(s.replace(/^[①-⑩]\s*/, '')) + '</li>'; }).join('') + '</ol>';
+  var cfg = RESULT.carryCfg[y] || {};
+  if (r.carryApplied.length) {
+    h += '<div class="tbl-wrap" style="margin-top:8px"><table class="data-table"><tr><th>損失発生年</th><th class="num">前年末残</th><th class="num">本年充当</th><th class="num">充当後残</th><th>使用期限</th><th>充当の手修正</th></tr>';
+    r.carryApplied.forEach(function (a) {
+      var ov = cfg.alloc && !E.isBlank(cfg.alloc[a.lossYear]) ? cfg.alloc[a.lossYear] : '';
+      h += '<tr><td>' + a.lossYear + '年</td><td class="num">' + yen(a.before) + '</td><td class="num">' + yen(a.used) + (a.overridden ? ' <span class="tag warn">手修正</span>' : '') + '</td><td class="num">' + yen(a.after) + '</td><td>' + a.expireYear + '年分まで</td><td><input class="mini-input" id="alloc_' + a.lossYear + '" placeholder="自動" value="' + esc(ov) + '"></td></tr>';
+    });
+    h += '</table></div><div class="sub">充当は古い年から自動。実際の申告と合わせる必要がある場合のみ手修正（空欄＝自動）。</div>';
+  }
+  h += '<div class="form-row"><span class="form-label">本年の繰越損失の発生額（手入力上書き）</span><input class="mini-input" id="lossOverride" placeholder="自動 ' + r.newLoss.toLocaleString() + '" value="' + esc(cfg.lossOverride === null || cfg.lossOverride === undefined ? '' : cfg.lossOverride) + '"></div>';
+  h += '<div class="sub">アプリ導入前の年の損失は、その年を選んでここに申告書（付表）の金額を入れてください。</div>';
+  h += '<div class="form-row"><span class="form-label">' + y + '年分を申告済み</span><input type="checkbox" id="filedChk" ' + (cfg.filed ? 'checked' : '') + '></div>';
+  h += '<button class="btn blue" style="width:100%;margin-top:6px" onclick="saveCarry(' + y + ')">繰越の設定を保存</button></div>';
+
+  // 4. 税額と精算
+  var comp = r.comprehensive;
+  h += '<div class="card"><div class="card-title"><span>④ 税額と精算（' + esc(r.choice) + '）</span></div><div class="tbl-wrap"><table class="data-table">';
+  h += '<tr><td>課税対象（譲渡所得等）</td><td class="num">' + yen(r.taxableTransfer) + '</td></tr>';
+  h += '<tr><td>課税対象（上場株式等の配当等・分離）</td><td class="num">' + yen(r.taxableDiv) + '</td></tr>';
+  h += '<tr><td>所得税（' + RESULT.rates.income + '%）</td><td class="num">' + yen(r.tax.incomeTax) + '</td></tr>';
+  h += '<tr><td>復興特別所得税（所得税×' + RESULT.rates.recon + '%）</td><td class="num">' + r.tax.recon.toLocaleString('ja-JP', { maximumFractionDigits: 2 }) + '円</td></tr>';
+  h += '<tr><td><strong>国税合計（100円未満切捨て）</strong></td><td class="num"><strong>' + yen(r.tax.national) + '</strong></td></tr>';
+  h += '<tr><td><strong>住民税（' + RESULT.rates.resident + '%・100円未満切捨て）</strong></td><td class="num"><strong>' + yen(r.tax.resident) + '</strong></td></tr>';
+  if (comp) {
+    h += '<tr><td>総合課税の配当による増分 国税（配当控除 ' + yen(comp.creditIncome) + ' 後）</td><td class="num">' + yen(comp.national) + '</td></tr>';
+    h += '<tr><td>総合課税の配当による増分 住民税（配当控除 ' + yen(comp.creditResident) + ' 後）</td><td class="num">' + yen(comp.resident) + '</td></tr>';
+  }
+  h += '<tr><td>源泉徴収済み（所得税）</td><td class="num">−' + yen(r.credited.income) + '</td></tr>';
+  h += '<tr><td>源泉徴収済み（住民税）</td><td class="num">−' + yen(r.credited.resident) + '</td></tr>';
+  h += '<tr><td>精算 国税</td><td class="num ' + (r.settle.national > 0 ? 'neg' : 'pos') + '">' + syen(r.settle.national) + '</td></tr>';
+  h += '<tr><td>精算 住民税</td><td class="num ' + (r.settle.resident > 0 ? 'neg' : 'pos') + '">' + syen(r.settle.resident) + '</td></tr>';
+  h += '<tr class="total"><td>' + (r.settle.total >= 0 ? '納付見込み' : '還付見込み') + '</td><td class="num">' + yen(Math.abs(r.settle.total)) + '</td></tr>';
+  h += '</table></div><div class="sub" style="margin-top:6px">目安計算です（国税は「課税対象×15%＋その2.1%」を100円未満切捨てしてから源泉分と精算）。申告書の正式な計算・税務判断は行いません。</div></div>';
+
+  // 5. 申告要否
+  h += '<div class="card"><div class="card-title"><span>⑤ 申告要否の目安</span></div>' + filingHint(r) + '</div>';
+
+  // 6. 転記用サマリ
+  h += '<div class="card"><div class="card-title"><span>⑥ 確定申告への転記用サマリ</span><button class="btn" onclick="copySummary()">コピー</button></div><textarea class="copybox" id="summaryText" readonly>' + esc(summaryText(y, r)) + '</textarea></div>';
+
+  // 7. 明細
+  var sales = RESULT.spot.sales.filter(function (s) { return s.taxYear === y; });
+  h += '<div class="card"><div class="card-title"><span>⑦ モードG 現物の売却明細（銘柄別）</span></div>';
+  if (!sales.length) h += '<div class="sub">なし</div>';
+  else {
+    var byCode = {};
+    sales.forEach(function (s) { (byCode[s.code] = byCode[s.code] || []).push(s); });
+    h += '<div class="tbl-wrap"><table class="data-table"><tr><th>銘柄</th><th>約定日</th><th>受渡日</th><th class="num">数量</th><th class="num">譲渡価額</th><th class="num">取得費</th><th class="num">手数料</th><th class="num">損益</th></tr>';
+    Object.keys(byCode).forEach(function (code) {
+      var sub = 0;
+      byCode[code].forEach(function (s) { sub += s.pnl; h += '<tr><td>' + esc(s.code + ' ' + s.name) + (s.origin === '現渡' ? ' <span class="tag gray">現渡</span>' : '') + '</td><td>' + esc(s.tradeDate) + '</td><td>' + esc(s.settleDate) + '</td><td class="num">' + s.qty + '</td><td class="num">' + yen(s.proceeds) + '</td><td class="num">' + yen(s.cogs) + '</td><td class="num">' + yen(s.fee) + '</td><td class="num ' + cls(s.pnl) + '">' + syen(s.pnl) + '</td></tr>'; });
+      h += '<tr class="muted"><td colspan="7" class="num">' + esc(code) + ' 小計</td><td class="num">' + syen(sub) + '</td></tr>';
+    });
+    h += '</table></div>';
+  }
+  h += '</div>';
+  var mds = RESULT.margin.details.filter(function (d) { return d.taxYear === y && d.type === '返済' && d.account === '一般'; });
+  h += '<div class="card"><div class="card-title"><span>⑧ モードG 信用の決済明細（建玉別）</span></div>';
+  if (!mds.length) h += '<div class="sub">なし</div>';
+  else {
+    h += '<div class="tbl-wrap"><table class="data-table"><tr><th>銘柄</th><th>建</th><th>建日</th><th>決済日</th><th class="num">数量</th><th class="num">建単価</th><th class="num">決済単価</th><th class="num">収入金額</th><th class="num">取得費等</th><th class="num">損益</th></tr>';
+    mds.forEach(function (d) { h += '<tr><td>' + esc(d.code + ' ' + d.name) + '</td><td>' + esc(d.side) + '</td><td>' + esc(d.openDate) + '</td><td>' + esc(d.settleDate) + '</td><td class="num">' + d.qty + '</td><td class="num">' + d.openPrice + '</td><td class="num">' + d.closePrice + '</td><td class="num">' + yen(d.income) + '</td><td class="num">' + yen(d.cost) + '</td><td class="num ' + cls(d.pnl) + '">' + syen(d.pnl) + '</td></tr>'; });
+    h += '</table></div>';
+  }
+  h += '</div>';
+  var openP = RESULT.margin.openPositions;
+  if (openP.length) {
+    h += '<div class="card"><div class="card-title"><span>未決済建玉（課税年に含めない）</span></div>' + openP.map(function (p) { return '<div class="row-sub">' + esc(p.openDate + ' ' + p.side + ' ' + p.code + ' ' + p.name + ' 残' + p.remaining + '株 @' + p.openPrice + (p.account !== '一般' ? '（' + p.account + '）' : '')) + '</div>'; }).join('') + '</div>';
+  }
+
+  // 9. 繰越台帳
+  h += '<div class="card"><div class="card-title"><span>⑨ 繰越台帳・連続申告チェック</span></div><div class="tbl-wrap"><table class="data-table"><tr><th>年</th><th class="num">譲渡ネット</th><th class="num">本年控除</th><th class="num">損失発生</th><th class="num">翌年へ繰越</th><th>申告済み</th></tr>';
+  RESULT.years.forEach(function (yy) {
+    var x = RESULT.byYear[yy], c = RESULT.carryCfg[yy] || {};
+    h += '<tr><td>' + yy + '年</td><td class="num ' + cls(x.transferNet) + '">' + syen(x.transferNet) + '</td><td class="num">' + yen(x.carryDeducted) + '</td><td class="num">' + yen(x.newLoss) + (x.newLoss ? '<div class="sub">〜' + (yy + 3) + '年分</div>' : '') + '</td><td class="num">' + yen(x.carryForwardTotal) + '</td><td><input type="checkbox" ' + (c.filed ? 'checked' : '') + ' onchange="toggleFiled(' + yy + ',this.checked)"></td></tr>';
+  });
+  h += '</table></div><div class="sub" style="margin-top:6px">繰越控除は「損失の年に申告し、その後も毎年連続して申告」が要件です。チェックが切れている年があると警告します。</div></div>';
+
+  var allW = RESULT.warnings.concat(r.warnings);
+  if (allW.length) h += '<div class="card"><div class="card-title"><span>⚠️ 確認事項</span></div>' + warnBlock(allW) + '</div>';
+  $('sumBody').innerHTML = h;
+}
+function summaryText(y, r) {
+  var inp = r.inputs, L = [];
+  var tp = inp.gSpot.proceeds + inp.gMargin.income + inp.tListed.proceeds + inp.tMargin.proceeds;
+  var tc = inp.gSpot.cost + inp.gMargin.cost + inp.tListed.cost + inp.tMargin.cost;
+  L.push('【' + y + '年分 転記用サマリ】（トレーダー税金計算 v1.0・目安）');
+  L.push('');
+  L.push('■ 上場株式等に係る譲渡所得等の金額の計算明細書');
+  L.push('  モードG 現物（一般口座）  収入 ' + tp0(inp.gSpot.proceeds) + ' / 取得費等 ' + tp0(inp.gSpot.cost) + ' / 差引 ' + tp0(inp.gSpot.pnl));
+  L.push('  モードG 信用（一般口座）  収入 ' + tp0(inp.gMargin.income) + ' / 取得費等 ' + tp0(inp.gMargin.cost) + ' / 差引 ' + tp0(inp.gMargin.pnl));
+  L.push('  モードT 上場分（特定）    収入 ' + tp0(inp.tListed.proceeds) + ' / 取得費等 ' + tp0(inp.tListed.cost) + ' / 差引 ' + tp0(inp.tListed.net));
+  L.push('  モードT 特定信用分（特定）収入 ' + tp0(inp.tMargin.proceeds) + ' / 取得費等 ' + tp0(inp.tMargin.cost) + ' / 差引 ' + tp0(inp.tMargin.net));
+  L.push('  合計  収入金額 ' + tp0(tp) + ' / 必要経費（取得費等） ' + tp0(tc) + ' / 譲渡所得等の金額 ' + tp0(r.transferNet));
+  L.push('');
+  L.push('■ 配当等（課税方式: ' + r.choice + '）');
+  L.push('  配当等の額 ' + tp0(inp.div.amount) + '（報告書 ' + tp0(inp.div.fromReport) + ' ＋ 台帳 ' + tp0(inp.div.fromLedger) + '）');
+  L.push('  源泉徴収税額 所得税 ' + tp0(inp.div.wIncome) + ' / 住民税（配当割額） ' + tp0(inp.div.wResident));
+  L.push('  本年の損益通算（譲渡損失と分離配当） ' + tp0(r.offsetWithDiv));
+  L.push('');
+  L.push('■ 第三表（分離課税用）');
+  L.push('  上場株式等の譲渡 所得金額 ' + tp0(r.transferIncomeFinal + r.deductFromTransfer) + ' → 繰越控除後 ' + tp0(r.transferIncomeFinal) + ' → 課税される所得金額 ' + tp0(r.taxableTransfer));
+  L.push('  上場株式等の配当等（分離） 所得金額 ' + tp0(r.divSepFinal + r.deductFromDiv) + ' → 繰越控除後 ' + tp0(r.divSepFinal) + ' → 課税される所得金額 ' + tp0(r.taxableDiv));
+  L.push('  本年分で差し引く上場株式等に係る繰越損失額 ' + tp0(r.carryDeducted));
+  L.push('  翌年以後に繰り越される損失の金額 ' + tp0(r.carryForwardTotal));
+  if (r.comprehensive) L.push('  ※配当 ' + tp0(r.divComp) + ' は総合課税（第一表の配当所得へ。配当控除の対象）');
+  L.push('');
+  L.push('■ 確定申告書付表（上場株式等に係る譲渡損失の損益通算及び繰越控除用）');
+  r.carryApplied.forEach(function (a) { L.push('  ' + a.lossYear + '年分の損失  前年から繰越 ' + tp0(a.before) + ' / 本年控除 ' + tp0(a.used) + ' / 残 ' + tp0(a.after) + '（' + a.expireYear + '年分まで）'); });
+  if (r.newLoss) L.push('  本年分の損失（翌年以後に繰越） ' + tp0(r.newLoss) + '（' + (y + 1) + '〜' + (y + 3) + '年分）');
+  if (!r.carryApplied.length && !r.newLoss) L.push('  該当なし');
+  L.push('');
+  L.push('■ 税額の目安');
+  L.push('  所得税 ' + tp0(r.tax.incomeTax) + ' ＋ 復興特別所得税 ' + r.tax.recon.toFixed(1) + ' → 国税 ' + tp0(r.tax.national) + ' / 住民税 ' + tp0(r.tax.resident));
+  L.push('  精算: 国税 ' + tp0(r.settle.national) + ' / 住民税 ' + tp0(r.settle.resident) + ' / 合計 ' + tp0(r.settle.total) + '（＋納付／−還付）');
+  return L.join('\n');
+}
+function tp0(n) { return (Math.round(n) < 0 ? '△' : '') + Math.abs(Math.round(n)).toLocaleString('ja-JP'); }
+function copySummary() {
+  var t = $('summaryText');
+  if (navigator.clipboard) navigator.clipboard.writeText(t.value).then(function () { alert('コピーしました。'); }, function () { t.select(); document.execCommand('copy'); });
+  else { t.select(); document.execCommand('copy'); alert('コピーしました。'); }
+}
+async function setDivChoice(y, c) { await api('saveSettings', { items: [{ key: 'divChoice_' + y, value: c }] }); }
+function carryRow(y) {
+  var c = DB.carryover.filter(function (r) { return String(r.year) === String(y); })[0] || {};
+  return Object.assign({ year: y, filed: 'FALSE', lossOverride: '', allocOverride: '{}', memo: '' }, c);
+}
+function withSnapshot(row, y) {
+  var x = RESULT.byYear[y];
+  row.computedLoss = x ? x.newLoss : ''; row.computedRemaining = x ? x.carryForwardTotal : ''; row.expireYear = x && x.newLoss ? y + 3 : '';
+  row.updatedAt = nowIso(); return row;
+}
+async function saveCarry(y) {
+  var row = carryRow(y);
+  var alloc = {};
+  document.querySelectorAll('[id^="alloc_"]').forEach(function (el) { var v = el.value.trim(); if (v !== '') alloc[el.id.slice(6)] = E.int(v); });
+  row.allocOverride = JSON.stringify(alloc);
+  var lo = val('lossOverride'); row.lossOverride = lo === '' ? '' : E.int(lo);
+  row.filed = $('filedChk').checked ? 'TRUE' : 'FALSE';
+  if (await api('saveCarryover', { row: withSnapshot(row, y) })) alert(y + '年の繰越設定を保存しました。');
+}
+async function toggleFiled(y, on) {
+  var row = carryRow(y); row.filed = on ? 'TRUE' : 'FALSE';
+  await api('saveCarryover', { row: withSnapshot(row, y) });
+}
+
+/* ---------------- 設定 ---------------- */
+function renderSettings() {
+  var s = settingsObj();
+  $('setGasUrl').value = gasUrl(); $('setPin').value = gasPin();
+  $('setAccG').checked = E.bool(s.accountGeneral); $('setAccT').checked = E.bool(s.accountTokutei);
+  $('setRateIncome').value = s.rateIncome; $('setRateRecon').value = s.rateRecon; $('setRateResident').value = s.rateResident;
+  $('setYearBasis').value = s.yearBasis === '約定日' ? '約定日' : '受渡日';
+  $('setSalary').value = s.salaryIncome; $('setDedI').value = s.deductionsIncome; $('setDedR').value = s.deductionsResident;
+  $('revInfo').textContent = (gasUrl() ? '同期モード' : 'ローカルモード') + '／DATA_REV ' + DATA_REV;
+  var h = DB.holdings.slice().sort(function (a, b) { return a.asOfDate < b.asOfDate ? -1 : 1; }).map(function (x) {
+    return '<div class="row-item"><div><div class="row-main">' + esc(x.code + ' ' + x.name) + '</div><div class="row-sub">期首日 ' + esc(x.asOfDate) + ' ／ ' + E.int(x.qty) + '株 ／ 平均 ' + yen(E.ceilDiv(E.int(x.costTotal), E.int(x.qty))) + '</div></div><div class="row-right">' + yen(x.costTotal) + '<button class="del-btn" onclick="removeHolding(\'' + esc(x.id) + '\')">削除</button></div></div>';
+  }).join('');
+  $('holdingsList').innerHTML = h || '<div class="sub" style="margin-bottom:8px">期首保有は未登録です。</div>';
+}
+function saveConnection() {
+  try { localStorage.setItem(LS_KEYS.url, val('setGasUrl')); localStorage.setItem(LS_KEYS.pin, val('setPin')); } catch (e) { alert('この端末に保存できませんでした。'); return; }
+  if (val('setGasUrl')) syncAll(true); else { setBadge('ローカル', ''); renderAll(); }
+}
+async function saveSettingsForm() {
+  var items = [
+    ['accountGeneral', $('setAccG').checked ? 'TRUE' : 'FALSE'], ['accountTokutei', $('setAccT').checked ? 'TRUE' : 'FALSE'],
+    ['rateIncome', val('setRateIncome')], ['rateRecon', val('setRateRecon')], ['rateResident', val('setRateResident')],
+    ['yearBasis', val('setYearBasis')], ['salaryIncome', val('setSalary')], ['deductionsIncome', val('setDedI')], ['deductionsResident', val('setDedR')]
+  ].map(function (kv) { return { key: kv[0], value: kv[1] }; });
+  if (await api('saveSettings', { items: items })) alert('設定を保存しました。');
+}
+async function addHolding() {
+  var row = { id: newId('H'), asOfDate: val('hdDate'), account: '一般', code: val('hdCode'), name: val('hdName'), qty: E.int(val('hdQty')), costTotal: E.int(val('hdCost')), memo: '', updatedAt: nowIso() };
+  if (!row.asOfDate || !row.code || !row.qty || !row.costTotal) { alert('期首日・銘柄コード・数量・取得費総額は必須です。'); return; }
+  row.avgCost = E.ceilDiv(row.costTotal, row.qty);
+  if (await api('saveHoldings', { rows: DB.holdings.concat([row]) })) { ['hdCode', 'hdName', 'hdQty', 'hdCost'].forEach(function (id) { $(id).value = ''; }); alert('期首保有を保存しました。'); }
+}
+async function removeHolding(id) {
+  if (!confirm('この期首保有を削除しますか？')) return;
+  await api('saveHoldings', { rows: DB.holdings.filter(function (h) { return h.id !== id; }) });
+}
+function clearCache() {
+  if (!confirm('この端末のキャッシュを消去しますか？' + (gasUrl() ? '（次回同期でスプレッドシートから再取得します）' : '（ローカルモードのデータはすべて消えます）'))) return;
+  try { localStorage.removeItem(LS_KEYS.cache); } catch (e) { /* noop */ }
+  DB = emptyDb(); DATA_REV = 0; renderAll(); if (gasUrl()) syncAll(false);
+}
+
+/* ---------------- PWA（家計簿と同じ単一HTML。manifestはその場で生成） ---------------- */
+function setupPwa() {
+  try {
+    var icon = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#1e293b"/><text x="256" y="330" font-size="240" text-anchor="middle" fill="#fff" font-family="sans-serif">税</text></svg>');
+    var m = { name: 'トレーダー税金計算', short_name: '税金計算', start_url: location.href.split('#')[0], display: 'standalone', background_color: '#f4f5f7', theme_color: '#1e293b', icons: [{ src: icon, sizes: 'any', type: 'image/svg+xml' }] };
+    var link = document.createElement('link'); link.rel = 'manifest';
+    link.href = URL.createObjectURL(new Blob([JSON.stringify(m)], { type: 'application/manifest+json' }));
+    document.head.appendChild(link);
+    var ati = document.createElement('link'); ati.rel = 'apple-touch-icon'; ati.href = icon; document.head.appendChild(ati);
+  } catch (e) { /* noop */ }
+}
+
+function initApp() {
+  setupPwa();
+  loadCache();
+  ['spDate', 'mpDate', 'msDate', 'dvDate'].forEach(function (id) { $(id).value = today(); });
+  $('spSettle').value = E.addBusinessDays(today(), 2); $('msDelivery').value = E.addBusinessDays(today(), 2);
+  $('hdDate').value = THIS_YEAR + '-01-01';
+  renderAll();
+  if (gasUrl()) syncAll(false); else setBadge('ローカル', '');
+}
+window.addEventListener('DOMContentLoaded', initApp);
+</script>
+</body>
+</html>

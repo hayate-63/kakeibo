@@ -1,0 +1,308 @@
+/**
+ * トレーダー税金計算（仮称） GAS v1.0
+ * 役割: スプレッドシートへの保存と読み出し（CRUD）のみ。税額などの計算はすべてHTML側で行う。
+ *
+ * ■ セットアップ手順
+ *  1. 新しいGoogleスプレッドシートを作成 →［拡張機能］→［Apps Script］を開き、このコードを全文貼り付けて保存
+ *  2. スプレッドシートを開き直すと、メニュー「税金計算アプリ」が出る
+ *       →「① 初期化（タブ作成）」を実行（初回は権限の承認が必要）
+ *       →「② PIN設定」でPINを登録（スクリプトプロパティ APP_PIN に保存。シートには書かない）
+ *     ※ メニューが出ない場合は、エディタで initializeSheets を実行し、
+ *        PINは下の setPinManually() の値を書き換えて1回だけ実行 → 実行後に値を消す
+ *  3. ［デプロイ］→［新しいデプロイ］→ 種類「ウェブアプリ」
+ *       実行ユーザー: 自分 ／ アクセスできるユーザー: 全員
+ *  4. 発行された /exec のURLを、アプリの「設定 → GAS ウェブアプリURL」に、PINと一緒に入力
+ *
+ * ■ 通信: すべて POST（Content-Type: text/plain）で JSON { action, pin, rev, payload } を受ける。
+ * ■ 競合検出（DATA_REV）: 書込み系は、送られてきた rev がスクリプトプロパティ DATA_REV と一致した場合のみ実行し、
+ *   成功したら DATA_REV を +1 して返す。一致しなければ { status:'conflict' } を返し、アプリ側は最新を読み直す。
+ */
+
+var APP_NAME = 'trader-tax';
+var APP_VERSION = '1.0';
+
+// タブ定義（列名はHTML側のフィールド名と一致させる）。型: s=文字列 d=日付文字列 n=数値 b=TRUE/FALSE j=JSON文字列
+var SCHEMA = {
+  trades: [
+    ['id', 's'], ['seq', 'n'], ['tradeDate', 'd'], ['settleDate', 'd'], ['account', 's'], ['code', 's'], ['name', 's'],
+    ['side', 's'], ['qty', 'n'], ['price', 'n'], ['amount', 'n'], ['fee', 'n'], ['realizedPnl', 'n'], ['avgCostSnapshot', 'n'],
+    ['source', 's'], ['memo', 's'], ['createdAt', 's']
+  ],
+  holdings: [
+    ['id', 's'], ['asOfDate', 'd'], ['account', 's'], ['code', 's'], ['name', 's'], ['qty', 'n'], ['costTotal', 'n'],
+    ['avgCost', 'n'], ['memo', 's'], ['updatedAt', 's']
+  ],
+  margin_positions: [
+    ['id', 's'], ['seq', 'n'], ['openDate', 'd'], ['account', 's'], ['code', 's'], ['name', 's'], ['side', 's'], ['qty', 'n'],
+    ['openPrice', 'n'], ['openAmount', 'n'], ['openFee', 'n'], ['status', 's'], ['source', 's'], ['memo', 's'], ['createdAt', 's']
+  ],
+  margin_settlements: [
+    ['id', 's'], ['seq', 'n'], ['positionId', 's'], ['settleDate', 'd'], ['deliveryDate', 'd'], ['type', 's'], ['qty', 'n'],
+    ['closePrice', 'n'], ['closeAmount', 'n'], ['openFee', 'n'], ['closeFee', 'n'], ['interestPaid', 'n'], ['interestReceived', 'n'],
+    ['lendingFee', 'n'], ['gyakuhibuPaid', 'n'], ['gyakuhibuReceived', 'n'], ['divAdjPaid', 'n'], ['divAdjReceived', 'n'],
+    ['otherCost', 'n'], ['pnl', 'n'], ['csvPnl', 'n'], ['source', 's'], ['memo', 's'], ['createdAt', 's']
+  ],
+  annual_reports: [
+    ['id', 's'], ['year', 'n'], ['kind', 's'], ['proceeds', 'n'], ['cost', 'n'], ['net', 'n'], ['lossAmount', 'n'],
+    ['dividends', 'n'], ['divWithholdIncome', 'n'], ['divWithholdResident', 'n'], ['memo', 's'], ['updatedAt', 's']
+  ],
+  dividends: [
+    ['id', 's'], ['date', 'd'], ['code', 's'], ['name', 's'], ['amount', 'n'], ['withholdIncome', 'n'], ['withholdResident', 'n'],
+    ['account', 's'], ['memo', 's'], ['createdAt', 's']
+  ],
+  carryover: [
+    ['year', 'n'], ['filed', 'b'], ['lossOverride', 'n'], ['allocOverride', 'j'], ['computedLoss', 'n'], ['computedRemaining', 'n'],
+    ['expireYear', 'n'], ['memo', 's'], ['updatedAt', 's']
+  ],
+  settings: [
+    ['key', 's'], ['value', 's'], ['updatedAt', 's']
+  ]
+};
+
+/* ============================ メニュー・初期化 ============================ */
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('税金計算アプリ')
+    .addItem('① 初期化（タブ作成）', 'initializeSheets')
+    .addItem('② PIN設定', 'setPinFromMenu')
+    .addItem('DATA_REV を表示', 'showRev')
+    .addToUi();
+}
+
+// タブを作成し、ヘッダーと書式（文字列列はプレーンテキスト）を整える。何度実行しても既存データは消さない。
+function initializeSheets() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  Object.keys(SCHEMA).forEach(function (name) {
+    var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+    var cols = SCHEMA[name].map(function (c) { return c[0]; });
+    var lastCol = sh.getLastColumn();
+    var header = lastCol ? sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String) : [];
+    if (!header.filter(String).length) {
+      sh.getRange(1, 1, 1, cols.length).setValues([cols]);
+      header = cols.slice();
+    } else {
+      cols.forEach(function (c) { if (header.indexOf(c) < 0) { header.push(c); sh.getRange(1, header.length).setValue(c); } });
+    }
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, 1, header.length).setFontWeight('bold').setBackground('#e2e8f0');
+    SCHEMA[name].forEach(function (c) {
+      if (c[1] === 's' || c[1] === 'd' || c[1] === 'j' || c[1] === 'b') {
+        var idx = header.indexOf(c[0]) + 1;
+        sh.getRange(1, idx, sh.getMaxRows(), 1).setNumberFormat('@');
+      }
+    });
+  });
+  var def = ss.getSheetByName('シート1') || ss.getSheetByName('Sheet1');
+  if (def && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
+  var props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('DATA_REV')) props.setProperty('DATA_REV', '0');
+  try { SpreadsheetApp.getUi().alert('初期化しました。次に「② PIN設定」を実行してください。'); } catch (e) { Logger.log('初期化しました'); }
+}
+
+function setPinFromMenu() {
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.prompt('PIN設定', 'アプリで使うPINを入力してください（4桁以上を推奨）', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var pin = String(r.getResponseText() || '').trim();
+  if (pin.length < 4) { ui.alert('4文字以上にしてください。'); return; }
+  PropertiesService.getScriptProperties().setProperty('APP_PIN', pin);
+  ui.alert('PINを設定しました。');
+}
+
+// メニューが使えない場合の予備: 値を書き換えて1回だけ実行し、実行後は空に戻す
+function setPinManually() {
+  var PIN = '';
+  if (String(PIN).length < 4) throw new Error('PIN を4文字以上で設定してから実行してください');
+  PropertiesService.getScriptProperties().setProperty('APP_PIN', String(PIN));
+}
+
+function showRev() { SpreadsheetApp.getUi().alert('DATA_REV = ' + getRev_()); }
+
+/* ============================ エントリポイント ============================ */
+function doGet() {
+  return out_({ status: 'ok', app: APP_NAME, version: APP_VERSION, message: 'このURLはアプリからPOSTで利用します。' });
+}
+
+function doPost(e) {
+  var req;
+  try { req = JSON.parse(e.postData.contents); } catch (err) { return out_({ status: 'error', message: 'リクエスト形式が不正です' }); }
+  var props = PropertiesService.getScriptProperties();
+  var pin = props.getProperty('APP_PIN');
+  if (!pin) return out_({ status: 'error', code: 'NO_PIN', message: 'GAS側でPINが未設定です（メニュー「② PIN設定」）' });
+  if (String(req.pin || '') !== String(pin)) return out_({ status: 'error', code: 'PIN', message: 'PINが一致しません' });
+
+  var action = String(req.action || '');
+  if (action === 'getAll') {
+    return out_({ status: 'ok', rev: getRev_(), data: readAll_() });
+  }
+  var fn = WRITE_ACTIONS[action];
+  if (!fn) return out_({ status: 'error', message: '不明なアクションです: ' + action });
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return out_({ status: 'error', message: '他の保存処理と重なりました。少し待って再度お試しください' });
+  try {
+    var cur = getRev_();
+    if (Number(req.rev) !== cur) return out_({ status: 'conflict', rev: cur, message: '他の端末で更新されています' });
+    fn(req.payload || {});
+    SpreadsheetApp.flush();
+    var next = cur + 1;
+    props.setProperty('DATA_REV', String(next));
+    return out_({ status: 'ok', rev: next });
+  } catch (err) {
+    return out_({ status: 'error', message: String(err && err.message ? err.message : err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ============================ 書込みアクション（§4） ============================ */
+var WRITE_ACTIONS = {
+  addTrade: function (p) { appendRows_('trades', [need_(p.row)]); },
+  bulkAddTrades: function (p) { appendRows_('trades', needRows_(p.rows)); },
+  deleteTrade: function (p) { deleteWhere_('trades', function (r) { return r.id === String(p.id); }); },
+
+  addMarginPosition: function (p) { appendRows_('margin_positions', [need_(p.row)]); },
+  bulkAddMarginPositions: function (p) { appendRows_('margin_positions', needRows_(p.rows)); },
+  // 追加（メモ外）: 誤登録の訂正用。建玉削除時は紐づく決済も削除する
+  deleteMarginPosition: function (p) {
+    deleteWhere_('margin_settlements', function (r) { return r.positionId === String(p.id); });
+    deleteWhere_('margin_positions', function (r) { return r.id === String(p.id); });
+  },
+  addMarginSettlement: function (p) { appendRows_('margin_settlements', [need_(p.row)]); setStatuses_(p.positionStatuses); },
+  bulkAddMarginSettlements: function (p) { appendRows_('margin_settlements', needRows_(p.rows)); setStatuses_(p.positionStatuses); },
+  // 追加（メモ外）: 誤登録の訂正用
+  deleteMarginSettlement: function (p) {
+    deleteWhere_('margin_settlements', function (r) { return r.id === String(p.id); });
+    setStatuses_(p.positionStatuses);
+  },
+
+  saveAnnualReport: function (p) {
+    var row = need_(p.row);
+    upsert_('annual_reports', function (r) { return String(r.year) === String(row.year) && r.kind === row.kind; }, row);
+  },
+
+  addDividend: function (p) { appendRows_('dividends', [need_(p.row)]); },
+  deleteDividend: function (p) { deleteWhere_('dividends', function (r) { return r.id === String(p.id); }); },
+
+  saveCarryover: function (p) {
+    var row = need_(p.row);
+    upsert_('carryover', function (r) { return String(r.year) === String(row.year); }, row);
+  },
+
+  saveSettings: function (p) {
+    (p.items || []).forEach(function (it) {
+      if (!it || !it.key) return;
+      upsert_('settings', function (r) { return r.key === String(it.key); }, { key: String(it.key), value: it.value, updatedAt: new Date().toISOString() });
+    });
+  },
+
+  // 追加（メモ外）: 期首保有（holdingsタブ）の保存。全件置換
+  saveHoldings: function (p) { replaceAll_('holdings', needRows_(p.rows || [])); }
+};
+
+/* ============================ 内部関数 ============================ */
+function out_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+function getRev_() { return Number(PropertiesService.getScriptProperties().getProperty('DATA_REV') || 0); }
+function need_(row) { if (!row || typeof row !== 'object') throw new Error('row がありません'); return row; }
+function needRows_(rows) { if (!Array.isArray(rows)) throw new Error('rows がありません'); rows.forEach(need_); return rows; }
+
+function sheet_(name) {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sh) throw new Error('タブ「' + name + '」がありません。メニューから初期化を実行してください');
+  return sh;
+}
+function header_(sh) {
+  var lastCol = sh.getLastColumn();
+  return lastCol ? sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String) : [];
+}
+function typeOf_(name, col) {
+  var def = (SCHEMA[name] || []).filter(function (c) { return c[0] === col; })[0];
+  return def ? def[1] : 's';
+}
+function toCell_(name, col, v) {
+  if (v === null || v === undefined) return '';
+  var t = typeOf_(name, col);
+  if (t === 'n') { if (v === '') return ''; var n = Number(v); return isFinite(n) ? n : ''; }
+  if (t === 'b') return (v === true || String(v).toUpperCase() === 'TRUE') ? 'TRUE' : 'FALSE';
+  if (t === 'j') return typeof v === 'string' ? v : JSON.stringify(v);
+  return String(v);
+}
+function fromCell_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return v;
+}
+function readTable_(name) {
+  var sh = sheet_(name);
+  var last = sh.getLastRow();
+  var header = header_(sh);
+  if (last < 2 || !header.length) return [];
+  var values = sh.getRange(2, 1, last - 1, header.length).getValues();
+  return values.filter(function (r) { return r.some(function (c) { return c !== ''; }); }).map(function (r) {
+    var o = {};
+    header.forEach(function (h, i) { if (h) o[h] = fromCell_(r[i]); });
+    return o;
+  });
+}
+function readAll_() {
+  var out = {};
+  Object.keys(SCHEMA).forEach(function (n) { out[n] = readTable_(n); });
+  return out;
+}
+function rowArray_(name, header, obj) {
+  return header.map(function (h) { return h ? toCell_(name, h, obj[h]) : ''; });
+}
+function appendRows_(name, rows) {
+  if (!rows.length) return;
+  var sh = sheet_(name), header = header_(sh);
+  var data = rows.map(function (r) { return rowArray_(name, header, r); });
+  sh.getRange(sh.getLastRow() + 1, 1, data.length, header.length).setValues(data);
+}
+function deleteWhere_(name, pred) {
+  var sh = sheet_(name), header = header_(sh), last = sh.getLastRow();
+  if (last < 2) return 0;
+  var values = sh.getRange(2, 1, last - 1, header.length).getValues();
+  var n = 0;
+  for (var i = values.length - 1; i >= 0; i--) {
+    var o = {};
+    header.forEach(function (h, j) { o[h] = String(fromCell_(values[i][j])); });
+    if (pred(o)) { sh.deleteRow(i + 2); n++; }
+  }
+  return n;
+}
+function upsert_(name, pred, row) {
+  var sh = sheet_(name), header = header_(sh), last = sh.getLastRow();
+  if (last >= 2) {
+    var values = sh.getRange(2, 1, last - 1, header.length).getValues();
+    for (var i = 0; i < values.length; i++) {
+      var o = {};
+      header.forEach(function (h, j) { o[h] = fromCell_(values[i][j]); });
+      var so = {};
+      Object.keys(o).forEach(function (k) { so[k] = String(o[k]); });
+      if (pred(so)) {
+        Object.keys(row).forEach(function (k) { o[k] = row[k]; });
+        sh.getRange(i + 2, 1, 1, header.length).setValues([rowArray_(name, header, o)]);
+        return;
+      }
+    }
+  }
+  appendRows_(name, [row]);
+}
+function replaceAll_(name, rows) {
+  var sh = sheet_(name), header = header_(sh), last = sh.getLastRow();
+  if (last >= 2) sh.getRange(2, 1, last - 1, header.length).clearContent();
+  if (rows.length) sh.getRange(2, 1, rows.length, header.length).setValues(rows.map(function (r) { return rowArray_(name, header, r); }));
+}
+function setStatuses_(st) {
+  if (!st || typeof st !== 'object') return;
+  var ids = Object.keys(st);
+  if (!ids.length) return;
+  var sh = sheet_('margin_positions'), header = header_(sh), last = sh.getLastRow();
+  if (last < 2) return;
+  var idCol = header.indexOf('id'), stCol = header.indexOf('status');
+  var values = sh.getRange(2, 1, last - 1, header.length).getValues();
+  values.forEach(function (r, i) {
+    var id = String(r[idCol]);
+    if (st[id]) sh.getRange(i + 2, stCol + 1).setValue(String(st[id]));
+  });
+}
