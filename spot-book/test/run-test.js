@@ -512,6 +512,16 @@ async function testV2(page, env, dialogs, browser) {
   await page.waitForFunction(() => document.getElementById('syncBadge').textContent.includes('530'));
   const tkRes = await page.textContent('#importResult');
   check('Takeout再取込：新規1件だけ追加（既存URL・同一ファイル内重複を除外）', /追加 1 件/.test(tkRes) && /除外 2 件/.test(tkRes), tkRes.replace(/\s+/g, ' ').slice(0, 120));
+  if (V2) {
+    // 日本語版 Takeout（見出し「タイトル,メモ,URL,タグ,コメント」＋空行あり）も Takeout 形式として読めること
+    const jp = await page.evaluate(() => {
+      const rows = parseCsv('\uFEFFタイトル,メモ,URL,タグ,コメント\n,,,,\n藤屋,美味い,https://www.google.com/maps/place/X/data=!4m2!3m1!1s0x5f8:0x49b,,\n');
+      const h = rows[0].map(x => x.trim());
+      const sp = takeoutRowsToSpots(rows, '焼肉');
+      return { detect: takeoutCol(h, 'title') >= 0 && takeoutCol(h, 'url') >= 0, n: sp.length, name: sp[0] && sp[0].name, memo: sp[0] && sp[0].memo, url: sp[0] && sp[0].maps_url, tags: sp[0] && sp[0].tags };
+    });
+    check('T1 日本語見出しの Takeout CSV（タイトル／メモ／URL）を認識・空行は除外・リスト名からタグ推定', jp.detect && jp.n === 1 && jp.name === '藤屋' && jp.memo === '美味い' && /0x5f8:0x49b/.test(jp.url) && jp.tags === '焼肉', JSON.stringify(jp));
+  }
   const newRow = env.ss.getSheetByName('spots')._data[530];
   check('Takeout行：県=三重県・項目=グルメ・未処理キュー対象（座標なし）', newRow[3] === '三重県' && newRow[5] === 'グルメ' && newRow[10] === '', newRow.slice(0, 13).join(','));
   await page.click('.nav-item[data-tab="add"]');

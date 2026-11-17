@@ -2110,9 +2110,15 @@ function guessFromListName(list) {
   tagsOfType("地域").forEach(t => { if (n.includes(t.name)) out.regions.push(t.name); });
   return out;
 }
+/** Google Takeout の列名（英語版・日本語版のどちらでも可）→ 列番号。無ければ -1 */
+const TAKEOUT_COLS = { title: ["title", "タイトル", "名前"], note: ["note", "メモ"], url: ["url"], comment: ["comment", "コメント"] };
+function takeoutCol(h, key) {
+  const names = TAKEOUT_COLS[key];
+  return h.findIndex(x => names.includes(String(x).replace(/^\uFEFF/, "").trim().toLowerCase()));
+}
 function takeoutRowsToSpots(rows, listName) {
   const h = rows[0].map(x => x.trim());
-  const iT = h.indexOf("Title"), iN = h.indexOf("Note"), iU = h.indexOf("URL"), iC = h.indexOf("Comment");
+  const iT = takeoutCol(h, "title"), iN = takeoutCol(h, "note"), iU = takeoutCol(h, "url"), iC = takeoutCol(h, "comment");
   const g = guessFromListName(listName);
   const d = todayStr();
   return rows.slice(1).filter(r => (r[iT] || r[iU] || "").trim()).map(r => {
@@ -2138,7 +2144,7 @@ async function importCsvFiles(ev) {
     const h = rows[0].map(x => x.trim());
     if (SPOT_HEADERS.every(k => h.includes(k))) {
       rows.slice(1).forEach(r => { const o = {}; SPOT_HEADERS.forEach(k => o[k] = r[h.indexOf(k)] == null ? "" : r[h.indexOf(k)]); spotRows.push(o); });
-    } else if (h.includes("Title") && h.includes("URL")) {
+    } else if (takeoutCol(h, "title") >= 0 && takeoutCol(h, "url") >= 0) {
       takeout = takeout.concat(takeoutRowsToSpots(rows, f.name.replace(/\.csv$/i, "")));
     } else unknown.push(f.name);
   }
