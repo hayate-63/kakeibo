@@ -6,6 +6,7 @@ const CSV = process.argv[2];
 const OUT = path.join(require('os').tmpdir(), 'spotbook-test-out'); fs.mkdirSync(OUT, { recursive: true });
 const VER = process.env.SPOT_VER || '2.0';   // 検証する版（index-v◯.html／gas-v◯.gs）
 const V2 = Number(VER.split('.')[0]) >= 2;
+const V201 = V2 && fs.readFileSync(path.join(__dirname, '..', 'gas-v' + VER + '.gs'), 'utf8').includes('pin_default');
 const PIN = 'Ab-123xy!'; // v1.0.1：英字＋記号混じりのパスワード
 
 function parseCsv(text) { text = text.replace(/^﻿/, ''); const rows = []; let row = [], f = '', q = false;
@@ -42,6 +43,7 @@ const server = http.createServer((req, res) => {
     const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(env.doPost(Buffer.concat(chunks).toString('utf8')))); });  // 多バイト文字がチャンク境界で割れないよう Buffer で結合
     return;
   }
+  if (req.url.startsWith('/exec')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(env.doGet())); return; }
   res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html);
 });
 const results = [];
@@ -58,6 +60,51 @@ function jpegSize(buf) {
     i += 2 + len;
   }
   return null;
+}
+
+// ==================== v2.0.1：PIN の記憶・GAS とパスワードを合わせる ====================
+async function testV201(page, env) {
+  // ここに来る時点：アプリのパスワード＝Zz#9876_new、GAS の SECRET_PIN＝PIN（不一致）
+  check('R0 doGet：版と「SECRET_PIN が初期値か」だけ返す（PIN の値は返さない）', env.doGet().version === '2.0.1' && env.doGet().pin_default === false && !JSON.stringify(env.doGet()).includes(PIN));
+  const env0 = require('./gasmock').makeEnv({ gasPath: path.join(REPO, 'gas-v' + VER + '.gs'), pin: '0000', fetch: () => {} });
+  check('R0b SECRET_PIN が 0000 のままなら pin_default=true', env0.doGet().pin_default === true);
+  const auth = env.doPost(JSON.stringify({ action: 'getAll', pin: 'nope' }));
+  check('R0c AUTH のメッセージに原因（新バージョンでデプロイ）を表示', /新バージョン/.test(auth.message), auth.message);
+  await page.click('#syncBadge');   // 同期（showAlert）→ 不一致なら直す画面が開く
+  await page.waitForSelector('.view .gpGo');
+  await page.waitForFunction(() => /v2\.0\.1/.test(document.querySelector('.view:last-child .view-body').textContent));
+  const fixTxt = await page.textContent('.view:last-child .view-body');
+  check('R1 「PINが一致しません」時は原因の説明つき「GAS とパスワードを合わせる」画面が開く', /SECRET_PIN が違う状態/.test(fixTxt) && /新バージョン/.test(fixTxt), fixTxt.slice(0, 90));
+  await page.screenshot({ path: path.join(OUT, '30-gas-pin-fix.png') });
+  await page.fill('.view .gpPin', 'Wrong-pin1'); await page.click('.view .gpGo'); await page.waitForTimeout(300);
+  const wrong = await page.textContent('.view .gpMsg');
+  check('R2 違う値では接続せずエラー表示（アプリ側のパスワードも変えない）', /一致しません/.test(wrong) && await page.evaluate(() => state.pin) === 'Zz#9876_new', wrong);
+  await page.fill('.view .gpPin', PIN); await page.click('.view .gpGo');
+  await page.waitForFunction(() => /☁️/.test(document.getElementById('syncBadge').textContent));
+  const after = await page.evaluate(async P => ({ pin: state.pin, hashOk: localStorage.getItem('spotbook_pin_hash') === await sha256(P), saved: localStorage.getItem('spotbook_pin_saved'), views: state.viewStack.length }), PIN);
+  check('R3 SECRET_PIN を入れると接続し、アプリのパスワードもその値にそろう（今のパスワード不要）', after.pin === PIN && after.hashOk && after.views === 0, JSON.stringify(after));
+  check('R4 「この端末に記憶する」ON で端末に保存', after.saved === PIN);
+  // アプリを落として開き直す（セッション消去＋再読み込み）→ 入力不要
+  await page.evaluate(() => sessionStorage.clear()); await page.reload();
+  await page.waitForFunction(() => document.getElementById('lockScreen').classList.contains('hidden'));
+  await page.waitForFunction(() => /☁️/.test(document.getElementById('syncBadge').textContent));
+  check('R5 記憶中はアプリを開き直してもパスワード入力なしで同期できる', true, await page.textContent('#syncBadge'));
+  await page.click('.nav-item[data-tab="settings"]');
+  const rs = await page.textContent('#rememberState');
+  await page.click('#rememberBtn');
+  const saved2 = await page.evaluate(() => localStorage.getItem('spotbook_pin_saved'));
+  await page.evaluate(() => sessionStorage.clear()); await page.reload();
+  const locked = await page.$eval('#lockScreen', e => !e.classList.contains('hidden'));
+  check('R6 設定タブで記憶を解除できる → 次回はパスワード入力', /記憶中/.test(rs) && saved2 === null && locked, rs);
+  const remember = await page.$eval('#lockRemember', e => e.checked);
+  await page.fill('#lockPass', PIN); await page.click('#lockBtn');
+  await page.waitForSelector('#lockScreen.hidden', { state: 'attached' });
+  check('R7 ロック画面の「この端末に記憶する」（既定ON）で再び記憶', remember && await page.evaluate(() => localStorage.getItem('spotbook_pin_saved')) === PIN);
+  await page.screenshot({ path: path.join(OUT, '31-settings-remember.png') });
+  await page.evaluate(() => lockNow()); await page.waitForTimeout(500);
+  check('R8 「今すぐロック」は記憶も解除してロック画面に戻る', await page.$eval('#lockScreen', e => !e.classList.contains('hidden')) && await page.evaluate(() => localStorage.getItem('spotbook_pin_saved')) === null);
+  await page.fill('#lockPass', PIN); await page.click('#lockBtn');
+  await page.waitForSelector('#lockScreen.hidden', { state: 'attached' });
 }
 
 // ==================== v2.0：訪問記録・思い出ノート・写真 ====================
@@ -266,8 +313,8 @@ async function testV2(page, env, dialogs, browser) {
   r = await trySetup(PIN, PIN);  // Enter キーで確定
   check('P1a 英字＋記号（Ab-123xy!）で初期設定（Enterで確定）', !r.locked, r.msg);
   check('64文字ちょうどは設定できる', ok64);
-  // ロック解除（新しいセッション＝別タブ相当）
-  await page.evaluate(() => sessionStorage.clear()); await page.reload();
+  // ロック解除（新しいセッション＝別タブ相当。端末の記憶も外して検証）
+  await page.evaluate(() => { sessionStorage.clear(); localStorage.removeItem('spotbook_pin_saved'); }); await page.reload();
   const unlockAc = await page.getAttribute('#lockPass', 'autocomplete');
   const p2hidden = await page.$eval('#lockPass2', e => e.hidden);
   await page.fill('#lockPass', 'Ab-123xy?'); await page.press('#lockPass', 'Enter'); await page.waitForTimeout(150);
@@ -497,6 +544,7 @@ async function testV2(page, env, dialogs, browser) {
   await page.evaluate(() => syncFromCloud(false)); await page.waitForTimeout(300);
   const badge = await page.textContent('#syncBadge');
   check('P5c アプリ側だけ変更すると GAS と不一致で同期不可（AUTH）', /パスワード不一致/.test(badge), badge);
+  if (V201) await testV201(page, env);
 
   check('コンソールエラーなし', errors.length === 0, errors.join(' | '));
   fs.writeFileSync(path.join(OUT, 'results.json'), JSON.stringify(results, null, 1));

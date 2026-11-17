@@ -106,7 +106,9 @@ const SECRET_CONFIG_KEYS = ['places_api_key'];
 // ==================== 入口 ====================
 function doGet(e) {
   // データは返さない（PIN照合のため POST のみ受け付ける）
-  return out_({ status: 'ok', message: 'スポット帳 GAS v2.0 稼働中。データ取得は POST で行います。' });
+  // v2.0.1：接続トラブルの診断用。PIN の値は返さず「初期値 0000 のままか」だけ返す
+  return out_({ status: 'ok', version: '2.0.1', pin_default: String(SECRET_PIN) === '0000',
+    message: 'スポット帳 GAS v2.0.1 稼働中。データ取得は POST で行います。' });
 }
 
 function doPost(e) {
@@ -117,7 +119,7 @@ function doPost(e) {
     return out_({ status: 'error', code: 'BAD_REQUEST', message: 'JSON を解釈できません' });
   }
   if (String(req.pin || '') !== String(SECRET_PIN)) {
-    return out_({ status: 'error', code: 'AUTH', message: 'PINが一致しません' });
+    return out_({ status: 'error', code: 'AUTH', message: 'PINが一致しません（アプリのパスワードと GAS の SECRET_PIN が違います。GAS を書き換えた場合は「新バージョン」でデプロイし直してください）' });
   }
   try {
     const ss = getSpreadsheet_();

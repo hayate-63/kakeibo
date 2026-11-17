@@ -83,7 +83,7 @@ function makeEnv(opts) {
   };
   vm.createContext(ctx);
   let src = fs.readFileSync(opts.gasPath, 'utf8').replace("const SECRET_PIN = '0000'", "const SECRET_PIN = '" + opts.pin + "'");
-  vm.runInContext(src + '\n;this.__doPost = doPost; this.__setup = setup;', ctx);
-  return { ss, ctx, fetchLog, props, DriveApp, doPost: body => JSON.parse(ctx.__doPost({ postData: { contents: body } }).content) };
+  vm.runInContext(src + '\n;this.__doPost = doPost; this.__doGet = doGet; this.__setup = setup;', ctx);
+  return { ss, ctx, fetchLog, props, DriveApp, doGet: () => JSON.parse(ctx.__doGet({}).content), doPost: body => JSON.parse(ctx.__doPost({ postData: { contents: body } }).content) };
 }
 module.exports = { makeEnv };

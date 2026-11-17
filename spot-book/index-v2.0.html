@@ -232,6 +232,8 @@
   #lockForm { width: 100%; max-width: 320px; display: flex; flex-direction: column; gap: 10px; }
   #lockForm input { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.95); color: var(--text); font-size: 16px; }
   #lockForm button { padding: 12px; border-radius: 10px; border: none; background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; }
+  .remember-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #e2e8f0; }
+  .remember-row input { width: 20px; height: 20px; }
   .lock-msg { min-height: 18px; font-size: 13px; color: #fca5a5; font-weight: 700; }
 
   .toast { position: fixed; left: 50%; bottom: calc(var(--nav-h) + 20px); transform: translateX(-50%); background: rgba(15,23,42,.92); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; z-index: 6000; max-width: 90%; text-align: center; pointer-events: none; opacity: 0; transition: opacity .2s; }
@@ -251,6 +253,7 @@
     <input type="text" name="username" value="spotbook" autocomplete="username" hidden>
     <input type="password" id="lockPass" placeholder="パスワード" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false">
     <input type="password" id="lockPass2" placeholder="確認のためもう一度" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" hidden>
+    <label class="remember-row"><input type="checkbox" id="lockRemember" checked> この端末に記憶する（次回から入力不要）</label>
     <button type="submit" id="lockBtn">ロック解除</button>
   </form>
   <div class="lock-msg" id="lockMsg"></div>
@@ -415,6 +418,16 @@
         <div class="form-row"><label class="lbl">新しいパスワード（4文字以上）</label><input type="password" id="pinNew" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
       </div>
       <button class="btn dark" onclick="changePin()">パスワードを変更</button>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
+        <div class="card-title" style="margin-bottom:6px;"><span style="font-size:13px;">📱 この端末に記憶</span><span class="muted" id="rememberState"></span></div>
+        <p class="muted" style="margin-bottom:8px;">記憶すると、アプリを開くたびのパスワード入力が不要になります（この端末だけ）。</p>
+        <div class="btn-row"><button class="btn secondary" id="rememberBtn" onclick="toggleRemember()">記憶する</button></div>
+      </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
+        <div class="card-title" style="margin-bottom:6px;"><span style="font-size:13px;">🔗 GAS とパスワードを合わせる</span></div>
+        <p class="muted" style="margin-bottom:8px;">「PINが一致しません」と出る時に使います。GAS の SECRET_PIN を入れて接続できたら、アプリのパスワードもその値にそろえます（今のパスワードは不要）。</p>
+        <button class="btn ghost" onclick="openGasPinFix()">GAS の SECRET_PIN で接続し直す</button>
+      </div>
     </div>
 
     <div class="card">
@@ -456,7 +469,7 @@
       <p class="muted" style="line-height:1.7;">スポット帳 v2.0 ／ 登録件数 <span id="infoCount">0</span> 件 ／ 訪問記録 <span id="infoVisits">0</span> 件<br>
       地図：Leaflet ＋ OpenStreetMap ／ Esri World Imagery</p>
       <div class="btn-row" style="margin-top:8px;">
-        <button class="btn ghost" onclick="lockNow()">🔒 今すぐロック</button>
+        <button class="btn ghost" onclick="lockNow()">🔒 今すぐロック（記憶も解除）</button>
       </div>
     </div>
   </section>
@@ -486,7 +499,8 @@ const LS = {
   pinHash: "spotbook_pin_hash",
   cache: "spotbook_cache_v1",
   recent: "spotbook_recent_viewed",
-  pinSession: "spotbook_pin_session"
+  pinSession: "spotbook_pin_session",
+  pinSaved: "spotbook_pin_saved"
 };
 const SPOT_HEADERS = ["id","place_id","name","prefecture","city","categories","tags","regions","rep_tag","address","lat","lng","maps_url","status","rating","memo","google_saved","coord_source","source_lists","created_at","updated_at"];
 const MAIN_CATS = ["カフェ","宿","グルメ","観光地","服","その他"];
@@ -691,8 +705,64 @@ async function syncFromCloud(showAlert) {
     if (showAlert) toast("同期しました（" + state.spots.length + "件）");
   } catch (e) {
     setBadge(e.code === "AUTH" ? "⚠️ パスワード不一致" : "⚠️ 同期エラー", "error");
+    if (e.code === "AUTH") { if (showAlert) openGasPinFix(); return; }
     if (showAlert) alert(e.message);
   }
+}
+/** GAS の状態（doGet）を見る。v2.0.1 以降の GAS は SECRET_PIN が初期値のままかを返す */
+async function gasDiagnose() {
+  try {
+    const r = await fetch(state.gasUrl, { method: "GET" });
+    return await r.json();
+  } catch (e) { return null; }
+}
+/** 「PINが一致しません」の解消画面：原因の説明＋SECRET_PIN を入れて接続→アプリ側もそろえる */
+function openGasPinFix() {
+  if (!state.gasUrl) { alert("先に GAS のURLを保存してください"); return; }
+  if (state.viewStack.some(v => v.gasPinFix)) return;
+  let diag = null, checked = false;
+  pushView({
+    static: true, gasPinFix: true,
+    title: "🔗 GAS とパスワードを合わせる",
+    render(body, view) {
+      const d = diag;
+      let cause = "";
+      if (checked && !d) cause = '<div class="notice warn">GAS の状態を確認できませんでした（URL・電波を確認）。</div>';
+      else if (d && d.pin_default) cause = '<div class="notice danger">GAS 側の SECRET_PIN が初期値「0000」のまま動いています。<br>GAS エディタで SECRET_PIN を書き換えて保存したあと、<b>デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ</b> をしてください。保存しただけでは反映されません。</div>';
+      else if (d && d.version) cause = '<div class="notice info">GAS（v' + esc(d.version) + '）は動いています。アプリのパスワードと GAS の SECRET_PIN が違う状態です。</div>';
+      else if (d) cause = '<div class="notice warn">GAS が古い版のまま動いています。GAS を書き換えた場合は「新バージョン」でデプロイし直してください。</div>';
+      body.innerHTML = cause +
+        '<div class="card"><p style="font-size:13px;line-height:1.7;margin-bottom:10px;">よくある原因：<br>' +
+        "① GAS の SECRET_PIN を書き換えて<b>保存しただけ</b>（新バージョンでデプロイしていない）<br>" +
+        "② アプリを最初に開いた時に決めたパスワードが、SECRET_PIN と違う<br>" +
+        "③ 大文字・小文字、全角・半角、記号（' ’ など）の違い</p>" +
+        '<div class="form-row"><label class="lbl">GAS の SECRET_PIN と同じ文字列</label><input type="password" class="gpPin" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false"></div>' +
+        '<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:12px;"><input type="checkbox" class="gpRemember" checked> この端末に記憶する</label>' +
+        '<div class="btn-row"><button class="btn gpGo">この値で接続する</button></div><div class="lock-msg gpMsg" style="color:var(--danger);margin-top:8px;"></div></div>';
+      const go = async () => {
+        const v = body.querySelector(".gpPin").value;
+        const msg = body.querySelector(".gpMsg");
+        const err = pinFormatError(v);
+        if (err) { msg.textContent = err; return; }
+        msg.textContent = "接続中…";
+        const prev = state.pin;
+        state.pin = v;
+        try {
+          await api("ping");
+          await adoptPin(v, body.querySelector(".gpRemember").checked);
+          popView();
+          await syncFromCloud(false);
+          toast("GAS と接続できました。アプリのパスワードもこの値にそろえました");
+        } catch (e) {
+          state.pin = prev;
+          msg.textContent = e.code === "AUTH" ? "GAS の SECRET_PIN と一致しません。上の原因①〜③を確認してください" : e.message;
+        }
+      };
+      body.querySelector(".gpGo").onclick = go;
+      body.querySelector(".gpPin").addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    }
+  });
+  gasDiagnose().then(d => { diag = d; checked = true; const v = state.viewStack.find(x => x.gasPinFix); if (v) drawView(v); });
 }
 function replaceSpotLocal(spot) {
   const i = state.spots.findIndex(s => s.id === spot.id);
@@ -712,17 +782,32 @@ function pinFormatError(p) {
   if (/\s/.test(p)) return "空白（スペース）は使えません";
   return "";
 }
+function getSavedPin() { try { return localStorage.getItem(LS.pinSaved) || ""; } catch (e) { return ""; } }
+function setSavedPin(v) { try { if (v) localStorage.setItem(LS.pinSaved, v); else localStorage.removeItem(LS.pinSaved); } catch (e) { /* 無視 */ } }
+/** パスワードを確定：ハッシュ保存＋セッション保持＋（希望時）端末に記憶 */
+async function adoptPin(v, remember) {
+  localStorage.setItem(LS.pinHash, await sha256(v));
+  state.pin = v;
+  sessionStorage.setItem(LS.pinSession, v);
+  setSavedPin(remember ? v : "");
+  renderSettings();
+}
 function initLock() {
   // Enter キー（キーボードの「開く／実行」）でも確定できるよう form の submit で受ける
   document.getElementById("lockForm").addEventListener("submit", e => { e.preventDefault(); submitLock(); });
-  // 同じタブ内の再読み込みでは再入力を求めない（タブ／アプリを閉じると再ロック）
-  const sessionPin = sessionStorage.getItem(LS.pinSession);
   const hash = localStorage.getItem(LS.pinHash);
-  if (hash && sessionPin) {
-    sha256(sessionPin).then(h => { if (h === hash) { state.pin = sessionPin; unlock(); } else showLock("unlock"); });
+  // 端末に記憶している場合（v2.0.1）、または同じタブ内の再読み込みなら再入力を求めない
+  const cand = getSavedPin() || sessionStorage.getItem(LS.pinSession);
+  if (hash && cand) {
+    sha256(cand).then(h => { if (h === hash) { state.pin = cand; sessionStorage.setItem(LS.pinSession, cand); unlock(); } else { setSavedPin(""); showLock("unlock"); } });
     return;
   }
   showLock(hash ? "unlock" : "setup");
+}
+function toggleRemember() {
+  if (getSavedPin()) { setSavedPin(""); toast("記憶を解除しました（次回から入力が必要）"); }
+  else if (state.pin) { setSavedPin(state.pin); toast("この端末に記憶しました（次回から入力不要）"); }
+  renderSettings();
 }
 function showLock(mode) {
   lock.mode = mode;
@@ -750,12 +835,16 @@ async function submitLock() {
     if (err) { msg.textContent = err; return; }
     if (v !== p2.value) { msg.textContent = "確認用と一致しません"; p2.value = ""; p2.focus(); return; }
     localStorage.setItem(LS.pinHash, await sha256(v));
-    state.pin = v; sessionStorage.setItem(LS.pinSession, v); unlock();
+    state.pin = v; sessionStorage.setItem(LS.pinSession, v);
+    setSavedPin(document.getElementById("lockRemember").checked ? v : "");
+    unlock();
     return;
   }
   if (!v) { msg.textContent = "パスワードを入力してください"; return; }
   if ((await sha256(v)) === localStorage.getItem(LS.pinHash)) {
-    state.pin = v; sessionStorage.setItem(LS.pinSession, v); unlock();
+    state.pin = v; sessionStorage.setItem(LS.pinSession, v);
+    setSavedPin(document.getElementById("lockRemember").checked ? v : "");
+    unlock();
   } else {
     msg.textContent = "パスワードが違います"; p1.value = ""; p1.focus();
   }
@@ -769,6 +858,7 @@ function unlock() {
 }
 function lockNow() {
   sessionStorage.removeItem(LS.pinSession);
+  setSavedPin("");
   state.pin = ""; unlocked = false;
   location.reload();
 }
@@ -779,6 +869,7 @@ async function changePin() {
   if (err) { alert("新しいパスワード：" + err); return; }
   localStorage.setItem(LS.pinHash, await sha256(n));
   state.pin = n; sessionStorage.setItem(LS.pinSession, n);
+  if (getSavedPin()) setSavedPin(n);
   document.getElementById("pinOld").value = ""; document.getElementById("pinNew").value = "";
   alert("アプリ側のパスワードを変更しました。\nGAS の SECRET_PIN も同じ値に書き換えて、デプロイを更新してください。");
 }
@@ -1942,6 +2033,8 @@ async function markGoogleSaved(s, val) {
 // タブ5 設定
 // ======================================================================
 function renderSettings() {
+  const rs = document.getElementById("rememberState"), rb = document.getElementById("rememberBtn");
+  if (rs) { const on = !!getSavedPin(); rs.textContent = on ? "✅ 記憶中" : "記憶していません"; rb.textContent = on ? "記憶を解除する" : "この端末に記憶する"; }
   document.getElementById("apiKeyState").textContent = state.config.places_api_key_set ? "✅ 設定済み" : "未設定";
   ["tile_std_url", "tile_std_attr", "tile_sat_url", "tile_sat_attr"].forEach(k => {
     const id = { tile_std_url: "tileStdUrl", tile_std_attr: "tileStdAttr", tile_sat_url: "tileSatUrl", tile_sat_attr: "tileSatAttr" }[k];
