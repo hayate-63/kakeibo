@@ -1,0 +1,1100 @@
+/**
+ * ほしいもの帳 GAS v1.0
+ * ------------------------------------------------------------------
+ * 構成: 単一HTML（PWA）＋ 本GAS ＋ 本スプレッドシート（新規DB）
+ * 家計簿とは別GAS・別シート。家計簿のデータは家計簿 GAS の Web API
+ * （loadAll / POST）経由でのみ読み書きする（openById で直接触らない）。
+ *
+ * スクリプトプロパティ:
+ *   SECRET_PIN      … ほしいもの帳のパスワード（4〜64文字、英数字＋記号）
+ *   HOUSEHOLD_PIN   … 家計簿 GAS の PIN（クライアントへは絶対に返さない）
+ *   DATA_REV        … 本DBのリビジョン（setup で 0 を入れる。手で触らない）
+ *   HH_LAST         … 家計簿サマリーの前回取得値（自動。手で触らない）
+ *
+ * 初回: setup() を実行 → Webアプリとしてデプロイ（実行ユーザー: 自分 /
+ *       アクセス: 全員）。
+ * ------------------------------------------------------------------
+ */
+
+const APP_VERSION = '1.0';
+const TZ = 'Asia/Tokyo';
+const BACKUP_KEEP = 10;
+
+const SHEETS = {
+  items: ['id', 'name', 'price', 'url', 'imageUrl', 'shop', 'categoryId', 'tags', 'desire', 'memo',
+          'status', 'createdAt', 'boughtAt', 'boughtPrice', 'satisfaction', 'householdLogId'],
+  categories: ['id', 'name', 'icon', 'color', 'sort', 'budgetCat'],
+  tags: ['id', 'name'],
+  settings: ['key', 'value']
+};
+const NUM_FIELDS = {
+  items: ['price', 'desire', 'boughtPrice', 'satisfaction'],
+  categories: ['sort'],
+  tags: [],
+  settings: []
+};
+const JSON_FIELDS = { items: ['tags'], categories: [], tags: [], settings: [] };
+
+// 初期カテゴリー（§2）と家計簿区分の対応表（§5）
+const INITIAL_CATEGORIES = [
+  ['玄関',         '🚪', '#8d6e63', '変動費（通販・買い物）'],
+  ['トイレ',       '🚽', '#26a69a', '変動費（通販・買い物）'],
+  ['洗面所',       '🪥', '#29b6f6', '変動費（通販・買い物）'],
+  ['お風呂場',     '🛁', '#1e88e5', '変動費（通販・買い物）'],
+  ['台所',         '🍳', '#ff7043', '変動費（通販・買い物）'],
+  ['ダイニング',   '🍽️', '#ffa726', '変動費（通販・買い物）'],
+  ['リビング',     '🛋️', '#66bb6a', '変動費（通販・買い物）'],
+  ['寝室',         '🛏️', '#7e57c2', '変動費（通販・買い物）'],
+  ['作業スペース', '💻', '#5c6bc0', '変動費（通販・買い物）'],
+  ['スマートホーム', '📡', '#00acc1', '変動費（ガジェット）'],
+  ['日用雑貨',     '🧴', '#ec407a', '変動費（日用品）'],
+  ['作業効率化',   '⚡', '#f9a825', '変動費（ガジェット）'],
+  ['通勤',         '🚃', '#78909c', '変動費（車・交通）']
+];
+
+// =====================================================================
+// エントリーポイント
+// =====================================================================
+function doGet(e) {
+  return out_({ status: 'ok', app: 'wishlist', version: APP_VERSION });
+}
+
+function doPost(e) {
+  let req;
+  try {
+    req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+  } catch (err) {
+    return out_({ status: 'error', reason: 'リクエストを読めませんでした' });
+  }
+  try {
+    const action = String(req.action || '');
+    if (action === 'ping') return out_({ status: 'ok', version: APP_VERSION });
+
+    const authErr = checkPin_(req.pin);
+    if (authErr) return out_(authErr);
+
+    switch (action) {
+      case 'auth':       return out_({ status: 'ok', version: APP_VERSION });
+      case 'loadAll':    return out_(loadAll_());
+      case 'save':       return out_(withLock_(function () { return save_(req); }));
+      case 'purchase':   return out_(withLock_(function () { return purchase_(req); }));
+      case 'deleteItem': return out_(withLock_(function () { return deleteItem_(req); }));
+      case 'hhSummary':  return out_(hhSummary_());
+      case 'hhPreview':  return out_(hhPreview_(req));
+      case 'fetchUrl':   return out_(fetchUrl_(req.url));
+      case 'changePin':  return out_(changePin_(req));
+      default:           return out_({ status: 'error', reason: '不明な操作です: ' + action });
+    }
+  } catch (err) {
+    return out_({ status: 'error', reason: String((err && err.message) || err) });
+  }
+}
+
+function out_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// =====================================================================
+// 認証
+// =====================================================================
+function checkPin_(pin) {
+  const secret = PropertiesService.getScriptProperties().getProperty('SECRET_PIN');
+  if (!secret) return { status: 'unauthorized', reason: 'SECRET_PIN が未設定です（スクリプトプロパティ）' };
+  const cache = CacheService.getScriptCache();
+  const fails = Number(cache.get('pinFails') || 0);
+  if (fails >= 10) {
+    return { status: 'unauthorized', reason: '入力ミスが続いたため10分間ロック中です' };
+  }
+  if (String(pin == null ? '' : pin) !== secret) {
+    cache.put('pinFails', String(fails + 1), 600);
+    return { status: 'unauthorized', reason: 'パスワードが違います' };
+  }
+  if (fails) cache.remove('pinFails');
+  return null;
+}
+
+function changePin_(req) {
+  const np = String(req.newPin == null ? '' : req.newPin);
+  if (!/^[\x21-\x7E]{4,64}$/.test(np)) {
+    return { status: 'error', reason: '新しいパスワードは英数字・記号で4〜64文字にしてください' };
+  }
+  PropertiesService.getScriptProperties().setProperty('SECRET_PIN', np);
+  return { status: 'ok' };
+}
+
+// =====================================================================
+// 自前DB（家計簿 GAS と同じ流儀: rev ＋ baseRev 競合検出、
+//          保存直前にシートごとのバックアップ 10世代）
+// =====================================================================
+function withLock_(fn) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { status: 'busy', reason: '他の保存処理中です' };
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getRev_() {
+  return Number(PropertiesService.getScriptProperties().getProperty('DATA_REV') || 0);
+}
+function bumpRev_() {
+  const next = getRev_() + 1;
+  PropertiesService.getScriptProperties().setProperty('DATA_REV', String(next));
+  return next;
+}
+
+function ss_() {
+  return SpreadsheetApp.getActiveSpreadsheet();
+}
+
+function readSheet_(name) {
+  const sh = ss_().getSheetByName(name);
+  if (!sh) throw new Error('シート「' + name + '」がありません。setup を実行してください');
+  const values = sh.getDataRange().getValues();
+  if (values.length < 2) return [];
+  const header = values[0].map(String);
+  const nums = NUM_FIELDS[name] || [];
+  const jsons = JSON_FIELDS[name] || [];
+  const rows = [];
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    if (row.every(function (v) { return v === '' || v === null; })) continue;
+    const o = {};
+    header.forEach(function (h, i) {
+      let v = row[i];
+      if (v instanceof Date) v = Utilities.formatDate(v, TZ, 'yyyy-MM-dd');
+      if (nums.indexOf(h) >= 0) {
+        o[h] = (v === '' || v === null) ? 0 : Number(v) || 0;
+      } else if (jsons.indexOf(h) >= 0) {
+        try { o[h] = v ? JSON.parse(v) : []; } catch (e) { o[h] = []; }
+      } else {
+        o[h] = v === null ? '' : String(v);
+      }
+    });
+    rows.push(o);
+  }
+  return rows;
+}
+
+function countRows_(name) {
+  const sh = ss_().getSheetByName(name);
+  return sh ? Math.max(0, sh.getLastRow() - 1) : 0;
+}
+
+function backupSheet_(name) {
+  const ss = ss_();
+  const sh = ss.getSheetByName(name);
+  if (!sh) return;
+  const stamp = Utilities.formatDate(new Date(), TZ, 'yyyyMMdd_HHmmss_SSS');
+  const prefix = 'bk_' + name + '_';
+  const copy = sh.copyTo(ss).setName(prefix + stamp);
+  copy.hideSheet();
+  const olds = ss.getSheets()
+    .filter(function (s) { return s.getName().indexOf(prefix) === 0; })
+    .sort(function (a, b) { return a.getName() < b.getName() ? -1 : 1; });
+  while (olds.length > BACKUP_KEEP) ss.deleteSheet(olds.shift());
+}
+
+function writeSheet_(name, rows) {
+  const header = SHEETS[name];
+  const sh = ss_().getSheetByName(name);
+  if (!sh) throw new Error('シート「' + name + '」がありません。setup を実行してください');
+  const jsons = JSON_FIELDS[name] || [];
+  const data = [header].concat(rows.map(function (o) {
+    return header.map(function (h) {
+      const v = o[h];
+      if (jsons.indexOf(h) >= 0) return JSON.stringify(Array.isArray(v) ? v : []);
+      return v === undefined || v === null ? '' : String(v);
+    });
+  }));
+  backupSheet_(name);
+  sh.clearContents();
+  const rng = sh.getRange(1, 1, data.length, header.length);
+  rng.setNumberFormat('@');
+  rng.setValues(data);
+  SpreadsheetApp.flush();
+}
+
+function loadAll_() {
+  return {
+    status: 'ok',
+    rev: getRev_(),
+    items: readSheet_('items'),
+    categories: readSheet_('categories'),
+    tags: readSheet_('tags'),
+    settings: readSheet_('settings')
+  };
+}
+
+/** 空データで上書きしないガード: 既存2件以上を0件にする保存は拒否 */
+function emptyGuard_(name, rows) {
+  if (rows.length === 0 && countRows_(name) >= 2) {
+    return { status: 'error', reason: 'emptyGuard', message: name + ' を空にする保存を中止しました（取得失敗の可能性）' };
+  }
+  return null;
+}
+
+function validateRows_(name, rows) {
+  if (!Array.isArray(rows)) return name + ' が配列ではありません';
+  const key = name === 'settings' ? 'key' : 'id';
+  const seen = {};
+  for (let i = 0; i < rows.length; i++) {
+    const k = rows[i] && rows[i][key];
+    if (!k) return name + ' に ' + key + ' のない行があります';
+    if (seen[k]) return name + ' の ' + key + ' が重複しています: ' + k;
+    seen[k] = true;
+  }
+  return null;
+}
+
+function save_(req) {
+  const rev = getRev_();
+  if (Number(req.baseRev) !== rev) return { status: 'conflict', rev: rev };
+  const targets = Object.keys(SHEETS).filter(function (k) { return Array.isArray(req[k]); });
+  if (!targets.length) return { status: 'error', reason: '保存するデータがありません' };
+  for (let i = 0; i < targets.length; i++) {
+    const k = targets[i];
+    const bad = validateRows_(k, req[k]);
+    if (bad) return { status: 'error', reason: bad };
+    const g = emptyGuard_(k, req[k]);
+    if (g) return g;
+  }
+  targets.forEach(function (k) { writeSheet_(k, req[k]); });
+  return { status: 'saved', rev: bumpRev_() };
+}
+
+/**
+ * 「買った！」: 家計簿へ明細作成（任意）→ 成功したら items を保存。
+ * 家計簿側が失敗したら items は一切書かない（購入確定を中断）。
+ */
+function purchase_(req) {
+  const rev = getRev_();
+  if (Number(req.baseRev) !== rev) return { status: 'conflict', rev: rev };
+  const items = req.items;
+  const bad = validateRows_('items', items);
+  if (bad) return { status: 'error', reason: bad };
+  const item = items.filter(function (it) { return it.id === req.itemId; })[0];
+  if (!item) return { status: 'error', reason: '対象の商品が見つかりません' };
+  if (item.status !== 'bought') return { status: 'error', reason: '購入済の状態になっていません' };
+
+  let logId = '';
+  let hhRev = null;
+  if (req.household) {
+    const r = hhAddLog_(req.household);
+    if (r.status !== 'saved') return r;
+    logId = String(r.logId);
+    hhRev = r.hhRev;
+    item.householdLogId = logId;
+  } else {
+    item.householdLogId = '';
+  }
+  try {
+    writeSheet_('items', items);
+  } catch (err) {
+    return {
+      status: 'error',
+      reason: (logId ? '家計簿には明細（id ' + logId + '）を登録済みですが、' : '') +
+        'ほしいもの帳の保存に失敗しました: ' + ((err && err.message) || err),
+      logId: logId
+    };
+  }
+  return { status: 'saved', rev: bumpRev_(), logId: logId, hhRev: hhRev };
+}
+
+/** 商品削除（購入済の家計簿明細も消す場合は deleteLogId を付ける） */
+function deleteItem_(req) {
+  const rev = getRev_();
+  if (Number(req.baseRev) !== rev) return { status: 'conflict', rev: rev };
+  const bad = validateRows_('items', req.items);
+  if (bad) return { status: 'error', reason: bad };
+  if (req.items.length < countRows_('items') - 1) {
+    return { status: 'error', reason: 'emptyGuard', message: '2件以上を一度に消す保存を中止しました' };
+  }
+  let hhNote = '';
+  if (req.deleteLogId) {
+    const r = hhDeleteLog_(req.deleteLogId);
+    if (r.status === 'notFound') hhNote = 'notFound';
+    else if (r.status !== 'saved') return r;
+  }
+  writeSheet_('items', req.items);
+  return { status: 'saved', rev: bumpRev_(), hhNote: hhNote };
+}
+
+// =====================================================================
+// 家計簿連携（家計簿 GAS の Web API 経由のみ）
+// =====================================================================
+function settingsMap_() {
+  const m = {};
+  try {
+    readSheet_('settings').forEach(function (r) { m[r.key] = r.value; });
+  } catch (e) { /* setup 前 */ }
+  return m;
+}
+
+function hhConfig_() {
+  const s = settingsMap_();
+  const url = String(s.householdUrl || '').trim();
+  const pin = PropertiesService.getScriptProperties().getProperty('HOUSEHOLD_PIN') || '';
+  if (s.householdEnabled !== '1') return { ok: false, disabled: true, reason: '家計簿連携がOFFです' };
+  if (!url) return { ok: false, reason: '家計簿 GAS の URL が未設定です' };
+  if (!/^https:\/\//.test(url)) return { ok: false, reason: '家計簿 GAS の URL が https で始まっていません' };
+  if (!pin) return { ok: false, reason: 'スクリプトプロパティ HOUSEHOLD_PIN が未設定です' };
+  return { ok: true, url: url, pin: pin };
+}
+
+function parseJsonResponse_(res) {
+  const code = res.getResponseCode();
+  if (code >= 400) return { status: 'error', reason: '家計簿 GAS が HTTP ' + code + ' を返しました' };
+  try {
+    return JSON.parse(res.getContentText());
+  } catch (e) {
+    return { status: 'error', reason: '家計簿 GAS の応答が JSON ではありません（URL・デプロイのアクセス権を確認）' };
+  }
+}
+
+function hhLoad_(cfg) {
+  const url = cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') +
+    'action=loadAll&pin=' + encodeURIComponent(cfg.pin);
+  let res;
+  try {
+    res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true });
+  } catch (e) {
+    return { status: 'error', reason: '家計簿 GAS に接続できません: ' + ((e && e.message) || e) };
+  }
+  const data = parseJsonResponse_(res);
+  if (data.status === 'unauthorized') {
+    return { status: 'hhError', hhStatus: 'unauthorized', reason: '家計簿の PIN が違います（HOUSEHOLD_PIN を確認）' };
+  }
+  if (data.status !== 'ok' && data.status !== 'success') {
+    return { status: 'error', reason: data.reason || data.message || ('家計簿 GAS: ' + data.status) };
+  }
+  if (!Array.isArray(data.logs)) return { status: 'error', reason: '家計簿の応答に logs がありません' };
+  return { status: 'ok', data: data };
+}
+
+function hhPost_(cfg, baseRev, logs) {
+  let res;
+  try {
+    res = UrlFetchApp.fetch(cfg.url, {
+      method: 'post',
+      contentType: 'text/plain;charset=utf-8',
+      payload: JSON.stringify({ pin: cfg.pin, baseRev: baseRev, logs: logs }),
+      muteHttpExceptions: true,
+      followRedirects: true
+    });
+  } catch (e) {
+    return { status: 'error', reason: '家計簿 GAS に接続できません: ' + ((e && e.message) || e) };
+  }
+  return parseJsonResponse_(res);
+}
+
+function hhFail_(r) {
+  switch (r.status) {
+    case 'conflict':
+      return { status: 'hhError', hhStatus: 'conflict', reason: '家計簿側で他の更新と競合しました（再試行しても解消せず）' };
+    case 'unauthorized':
+      return { status: 'hhError', hhStatus: 'unauthorized', reason: '家計簿の PIN が違います（HOUSEHOLD_PIN を確認）' };
+    case 'busy':
+      return { status: 'hhError', hhStatus: 'busy', reason: '家計簿で他の保存処理中です' };
+    default:
+      return { status: 'hhError', hhStatus: 'error', reason: r.reason || r.message || ('家計簿 GAS: ' + r.status) };
+  }
+}
+
+function isActive_(v) {
+  if (v === undefined || v === null || v === '') return true; // 列が無い版は有効扱い
+  return v === 1 || v === true || String(v) === '1' || String(v).toUpperCase() === 'TRUE';
+}
+
+function payMethods_(cats) {
+  return (cats || []).filter(function (c) {
+    return isActive_(c.active) && c.mode === '支出';
+  }).map(function (c) {
+    return {
+      name: String(c.name),
+      bigCat: String(c.bigCat || ''),
+      closeDay: Number(c.closeDay) || 0,
+      payMonthOffset: Number(c.payMonthOffset) || 0,
+      payDay: Number(c.payDay) || 0,
+      adjust: c.adjust == null ? '' : String(c.adjust)
+    };
+  });
+}
+
+/** 新規ログ（家計簿 evaluateEntry と同一の引落日計算。usageCat/budgetCat は対応表どおり直接セット） */
+function buildLog_(logs, m, h, holidays) {
+  const tmpl = {};
+  Object.keys(logs[0] || {}).forEach(function (k) { tmpl[k] = ''; });
+  const maxId = logs.reduce(function (mx, l) { return Math.max(mx, Number(l.id) || 0); }, 0);
+  const id = Math.max(Date.now(), maxId + 1);
+  const amt = Math.round(Math.abs(Number(h.amount) || 0));
+  const payDate = calcPayDate_(m, h.date, holidays);
+  return Object.assign(tmpl, {
+    id: id,
+    date: h.date,
+    useDate: h.date,
+    amount: -amt,
+    absAmount: amt,
+    category: m.name,
+    memo: String(h.memo || ''),
+    bigCat: m.bigCat,
+    payDate: payDate,
+    payYM: payDate.slice(0, 7),
+    useYM: h.date.slice(0, 7),
+    usageCat: String(h.usageCat || ''),
+    budgetCat: String(h.budgetCat || ''),
+    ruleId: '',
+    isLegacy: '',
+    catLock: '1' // v1.0.1: 家計簿の再計算で usageCat／budgetCat を固定する印（家計簿 v5.2 以降で有効）
+  });
+}
+
+function validHousehold_(h) {
+  if (!h || !/^\d{4}-\d{2}-\d{2}$/.test(String(h.date || ''))) return '購入日が不正です';
+  if (!(Number(h.amount) > 0)) return '実購入額が不正です';
+  if (!h.method) return '支払い方法が未選択です';
+  if (!h.budgetCat) return '家計簿の予算区分（budgetCat）が未設定です';
+  return null;
+}
+
+function hhAddLog_(h) {
+  const bad = validHousehold_(h);
+  if (bad) return { status: 'error', reason: bad };
+  const cfg = hhConfig_();
+  if (!cfg.ok) return { status: 'hhError', hhStatus: 'config', reason: cfg.reason };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const L = hhLoad_(cfg);
+    if (L.status !== 'ok') return L.status === 'hhError' ? L : hhFail_(L);
+    const data = L.data;
+    const logs = data.logs;
+    if (!logs.length) {
+      return { status: 'hhError', hhStatus: 'error', reason: '家計簿の明細が0件で返ってきたため書き込みを中止しました' };
+    }
+    const m = payMethods_(data.categories).filter(function (c) { return c.name === h.method; })[0];
+    if (!m) return { status: 'hhError', hhStatus: 'error', reason: '支払い方法「' + h.method + '」が家計簿の有効な支出マスタにありません' };
+    const log = buildLog_(logs, m, h, data.holidays);
+    const next = logs.concat([log]);
+    if (next.length !== logs.length + 1) return { status: 'hhError', hhStatus: 'error', reason: '件数チェックに失敗しました' };
+    const r = hhPost_(cfg, data.rev, next);
+    if (r.status === 'saved') return { status: 'saved', logId: log.id, hhRev: r.rev };
+    if (r.status === 'conflict' && attempt === 0) continue; // 1回だけ再試行
+    return hhFail_(r);
+  }
+  return hhFail_({ status: 'conflict' });
+}
+
+function hhDeleteLog_(logId) {
+  const cfg = hhConfig_();
+  if (!cfg.ok) return { status: 'hhError', hhStatus: 'config', reason: cfg.reason };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const L = hhLoad_(cfg);
+    if (L.status !== 'ok') return L.status === 'hhError' ? L : hhFail_(L);
+    const data = L.data;
+    const logs = data.logs;
+    const next = logs.filter(function (l) { return String(l.id) !== String(logId); });
+    if (next.length === logs.length) return { status: 'notFound' };
+    if (next.length !== logs.length - 1 || next.length === 0) {
+      return { status: 'hhError', hhStatus: 'error', reason: '削除件数が想定外のため中止しました' };
+    }
+    const r = hhPost_(cfg, data.rev, next);
+    if (r.status === 'saved') return { status: 'saved', hhRev: r.rev };
+    if (r.status === 'conflict' && attempt === 0) continue;
+    return hhFail_(r);
+  }
+  return hhFail_({ status: 'conflict' });
+}
+
+// ---------------------------------------------------------------------
+// サマリー（基準 A / B / C の材料）
+// ---------------------------------------------------------------------
+function hhSummary_() {
+  const cfg = hhConfig_();
+  const last = getLast_();
+  if (!cfg.ok) return { status: cfg.disabled ? 'disabled' : 'error', reason: cfg.reason, last: last };
+  const L = hhLoad_(cfg);
+  if (L.status !== 'ok') return { status: 'error', reason: L.reason, last: last };
+  const summary = computeSummary_(L.data, todayYMD_(), new Date());
+  setLast_(summary);
+  return { status: 'ok', summary: summary };
+}
+
+function getLast_() {
+  try {
+    const s = PropertiesService.getScriptProperties().getProperty('HH_LAST');
+    return s ? JSON.parse(s) : null;
+  } catch (e) { return null; }
+}
+function setLast_(summary) {
+  try {
+    PropertiesService.getScriptProperties().setProperty('HH_LAST', JSON.stringify(summary));
+  } catch (e) { /* サイズ超過時は保存しない（クライアント側にも前回値あり） */ }
+}
+
+function todayYMD_() {
+  return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+}
+
+function num_(v) {
+  const n = Number(String(v == null ? '' : v).replace(/[,，¥円\s]/g, ''));
+  return isFinite(n) ? n : 0;
+}
+
+function normYMD_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, TZ, 'yyyy-MM-dd');
+  const s = String(v == null ? '' : v).trim();
+  let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
+  if (m) return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d)) return Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+  }
+  return s;
+}
+function normYM_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, TZ, 'yyyy-MM');
+  const s = String(v == null ? '' : v).trim();
+  let m = s.match(/^(\d{4})[-\/](\d{1,2})$/);
+  if (m) return m[1] + '-' + ('0' + m[2]).slice(-2);
+  const d = normYMD_(s);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d.slice(0, 7) : s;
+}
+
+function configMap_(config) {
+  const m = {};
+  if (Array.isArray(config)) {
+    config.forEach(function (r) { if (r && r.key != null) m[String(r.key)] = r.value; });
+  } else if (config && typeof config === 'object') {
+    Object.keys(config).forEach(function (k) { m[k] = config[k]; });
+  }
+  return m;
+}
+
+/** 家計簿 getEffectiveBudget と同じ: bonusMonths を "," で区切って月の数字として比べる */
+function inBonusMonths_(bonusMonths, ym) {
+  const month = Number(ym.slice(5, 7));
+  return String(bonusMonths == null ? '' : bonusMonths).split(',')
+    .map(function (t) { return Number(String(t).trim()); })
+    .filter(Boolean)
+    .indexOf(month) >= 0;
+}
+
+function bmKeyYM_(row) {
+  return normYM_(row.ym);
+}
+
+/** 家計簿 getEffectiveBudget と同一: BudgetMonthly に (対象月, budgetCat) があればその amount、無ければ monthly + bonusAdd */
+function effBudget_(b, ym, budgetMonthly) {
+  const hit = (budgetMonthly || []).filter(function (r) {
+    return bmKeyYM_(r) === ym && String(r.budgetCat) === String(b.budgetCat);
+  })[0];
+  if (hit) return num_(hit.amount);
+  return num_(b.monthly) + (inBonusMonths_(b.bonusMonths, ym) ? num_(b.bonusAdd) : 0);
+}
+
+function logUseYM_(l) {
+  return normYM_(l.useYM || l.useDate || l.date);
+}
+function logAbs_(l) {
+  return l.absAmount !== undefined && l.absAmount !== '' ? Math.abs(num_(l.absAmount)) : Math.abs(num_(l.amount));
+}
+
+function computeSummary_(data, today, now) {
+  const ym = today.slice(0, 7);
+  const y = Number(today.slice(0, 4));
+  const mo = Number(today.slice(5, 7));
+  const dd = Number(today.slice(8, 10));
+  const lastDay = new Date(y, mo, 0).getDate();
+  const daysLeft = lastDay - dd + 1;
+
+  // --- 基準A: 今月の変動費残金（renderHomeMonthSummary の varRest）
+  const effBudgets = {};
+  (data.budget || []).forEach(function (b) {
+    if (!b || !b.budgetCat) return;
+    effBudgets[String(b.budgetCat)] = effBudget_(b, ym, data.budgetMonthly);
+  });
+  let varBudget = 0;
+  Object.keys(effBudgets).forEach(function (k) {
+    if (k.indexOf('変動費') === 0) varBudget += effBudgets[k];
+  });
+  let varSpent = 0;
+  (data.logs || []).forEach(function (l) {
+    const bc = String(l.bigCat || '');
+    if (logUseYM_(l) !== ym) return;
+    if (!(bc.indexOf('支出') === 0 || bc === '固定引落')) return;
+    if (String(l.budgetCat || '').indexOf('変動費') !== 0) return;
+    varSpent += logAbs_(l);
+  });
+  const varRest = varBudget - varSpent;
+
+  // --- 基準B: 防衛資金
+  const cfg = configMap_(data.config);
+  const actualBalance = num_(cfg.actualBalance);
+  const target = num_(cfg.dodai_target) || 1000000;
+  const basePace = num_(cfg.dodai_base) || 60000;
+  let balance = actualBalance;
+  let balanceSource = 'actual';
+  if (actualBalance === 0) {
+    // 家計簿 calculateDodaiMetrics の logBalance と同じ（開始月の既定 2026-10、今月までの分）
+    const startYM = cfg.dodai_start_ym ? normYM_(cfg.dodai_start_ym) : '2026-10';
+    const SAV = ['エース預金', 'エース預金（引出）', 'デイトレ貯金'];
+    let acc = num_(cfg.dodai_start_balance);
+    (data.logs || []).forEach(function (l) {
+      if (SAV.indexOf(String(l.category)) < 0) return;
+      const u = logUseYM_(l);
+      if (u < startYM || u > ym) return;
+      acc += -num_(l.amount);
+    });
+    balance = acc;
+    balanceSource = 'log';
+  }
+  const defenseFund = Math.min(balance, target);
+  const toTarget = Math.max(0, target - defenseFund);
+
+  return {
+    fetchedAt: now.toISOString(),
+    today: today,
+    ym: ym,
+    daysLeft: daysLeft,
+    varBudget: varBudget,
+    varSpent: varSpent,
+    varRest: varRest,
+    effBudgets: effBudgets,
+    actualBalance: actualBalance,
+    balance: balance,
+    balanceSource: balanceSource,
+    defenseFund: defenseFund,
+    target: target,
+    toTarget: toTarget,
+    basePace: basePace,
+    payMethods: payMethods_(data.categories),
+    holidays: (Array.isArray(data.holidays) ? data.holidays : []).map(normYMD_).filter(function (d) { return d >= today.slice(0, 4) + '-01-01'; }),
+    hhRev: data.rev
+  };
+}
+
+function hhPreview_(req) {
+  const m = req.method;
+  const d = String(req.date || '');
+  if (!m || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return { status: 'error', reason: '入力が不正です' };
+  return { status: 'ok', payDate: calcPayDate_(m, d, req.holidays) };
+}
+
+// ---------------------------------------------------------------------
+// 引落日計算（家計簿 evaluateEntry と同一）＋ 休日調整
+// ---------------------------------------------------------------------
+function fmtYMD_(dt) {
+  return dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2) + '-' + ('0' + dt.getDate()).slice(-2);
+}
+
+/** holidays: 家計簿 loadAll の holidays（Googleカレンダーの祝日 yyyy-MM-dd 配列）。空なら計算で補う */
+function calcPayDate_(m, ymd, holidays) {
+  const p = ymd.split('-').map(Number);
+  const y = p[0], mo = p[1], d = p[2];
+  const closeDay = Number(m.closeDay) || 0;
+  const payDay = Number(m.payDay) || 0;
+  const off = Number(m.payMonthOffset) || 0;
+  let dt = new Date(y, mo - 1, d);
+  if (m.bigCat === '支出（クレカ）' && closeDay > 0 && payDay > 0) {
+    let tm = mo + off;
+    if (d > closeDay) tm += 1;
+    dt = adjustHoliday_(new Date(y, tm - 1, payDay), normAdjust_(m), holidays);
+  } else if (m.bigCat === '固定引落' && payDay > 0) {
+    dt = adjustHoliday_(new Date(y, mo - 1, payDay), normAdjust_(m), holidays);
+  }
+  return fmtYMD_(dt);
+}
+
+/** 家計簿 normalizeCategoryAdjust と同じ: adjust 未設定はカード・固定引落なら next、それ以外は none */
+function normAdjust_(m) {
+  const a = m.adjust;
+  if (a === undefined || a === null || String(a) === '') {
+    return (m.bigCat === '支出（クレカ）' || m.bigCat === '固定引落') ? 'next' : 'none';
+  }
+  return String(a);
+}
+
+/** 家計簿 adjustPayDateForBusinessDay と同じ: none 以外は prev なら前、それ以外は後ろへ（最大15日） */
+function adjustHoliday_(dt, adjust, holidays) {
+  if (!adjust || adjust === 'none') return dt;
+  const set = holidaySet_(holidays);
+  const cur = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  let guard = 0;
+  while (isHoliday_(cur, set) && guard < 15) {
+    cur.setDate(cur.getDate() + (adjust === 'prev' ? -1 : 1));
+    guard++;
+  }
+  return cur;
+}
+
+function holidaySet_(holidays) {
+  if (!Array.isArray(holidays) || !holidays.length) return null;
+  const s = {};
+  holidays.forEach(function (d) { s[normYMD_(d)] = true; });
+  return s;
+}
+
+/** 土日＋祝日。家計簿から祝日リストが来ていればそれを使い、無い時だけ計算（jpHolidays_）で補う */
+function isHoliday_(dt, set) {
+  const w = dt.getDay();
+  if (w === 0 || w === 6) return true;
+  if (set) return !!set[fmtYMD_(dt)];
+  return !!jpHolidays_(dt.getFullYear())[fmtYMD_(dt)];
+}
+
+const HOLIDAY_CACHE_ = {};
+/** 日本の国民の祝日（2020年以降の法令ベース。振替休日・国民の休日を含む） */
+function jpHolidays_(y) {
+  if (HOLIDAY_CACHE_[y]) return HOLIDAY_CACHE_[y];
+  const h = {};
+  const add = function (m, d) { h[fmtYMD_(new Date(y, m - 1, d))] = true; };
+  const nthMonday = function (m, n) {
+    const first = new Date(y, m - 1, 1).getDay();
+    return 1 + ((8 - first) % 7) + (n - 1) * 7;
+  };
+  add(1, 1);
+  add(1, nthMonday(1, 2));
+  add(2, 11);
+  if (y >= 2020) add(2, 23);
+  add(3, Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)));
+  add(4, 29);
+  add(5, 3); add(5, 4); add(5, 5);
+  if (y === 2020) { add(7, 23); add(7, 24); add(8, 10); }
+  else if (y === 2021) { add(7, 22); add(7, 23); add(8, 8); }
+  else { add(7, nthMonday(7, 3)); add(8, 11); add(10, nthMonday(10, 2)); }
+  add(9, nthMonday(9, 3));
+  add(9, Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)));
+  add(11, 3);
+  add(11, 23);
+  // 振替休日
+  Object.keys(h).sort().forEach(function (k) {
+    const p = k.split('-').map(Number);
+    const d = new Date(p[0], p[1] - 1, p[2]);
+    if (d.getDay() !== 0) return;
+    const n = new Date(d);
+    do { n.setDate(n.getDate() + 1); } while (h[fmtYMD_(n)]);
+    h[fmtYMD_(n)] = true;
+  });
+  // 国民の休日（祝日に挟まれた平日）
+  Object.keys(h).forEach(function (k) {
+    const p = k.split('-').map(Number);
+    const mid = new Date(p[0], p[1] - 1, p[2] + 1);
+    const next = new Date(p[0], p[1] - 1, p[2] + 2);
+    if (!h[fmtYMD_(mid)] && h[fmtYMD_(next)] && mid.getDay() !== 0) h[fmtYMD_(mid)] = true;
+  });
+  HOLIDAY_CACHE_[y] = h;
+  return h;
+}
+
+// =====================================================================
+// URL 読み取り
+// =====================================================================
+const UA_ = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+
+function fetchUrl_(rawUrl) {
+  const url = String(rawUrl || '').trim();
+  if (!/^https?:\/\/\S+$/i.test(url)) return { status: 'error', reason: 'URL の形式ではありません' };
+
+  let current = url;
+  let res = null;
+  let fetchError = '';
+  // 短縮URL（amzn.to 等）のリダイレクト先を解決しながら取得
+  for (let hop = 0; hop < 8; hop++) {
+    try {
+      res = UrlFetchApp.fetch(current, {
+        followRedirects: false,
+        muteHttpExceptions: true,
+        headers: { 'User-Agent': UA_, 'Accept-Language': 'ja,en;q=0.8' }
+      });
+    } catch (e) {
+      fetchError = String((e && e.message) || e);
+      res = null;
+      break;
+    }
+    const code = res.getResponseCode();
+    if (code >= 300 && code < 400) {
+      const hdr = res.getAllHeaders();
+      let loc = hdr.Location || hdr.location;
+      if (Array.isArray(loc)) loc = loc[0];
+      if (!loc) break;
+      current = absUrl_(loc, current);
+      res = null;
+      continue;
+    }
+    break;
+  }
+
+  const finalUrl = canonicalUrl_(current);
+  const shop = shopFromUrl_(finalUrl);
+  const item = { url: finalUrl, shop: shop, name: '', price: 0, imageUrl: '' };
+  if (!res) {
+    return { status: 'ok', item: item, partial: true, note: '取得できませんでした' + (fetchError ? '（' + fetchError + '）' : '') };
+  }
+  const code = res.getResponseCode();
+  if (code >= 400) {
+    return { status: 'ok', item: item, partial: true, note: 'サイトが取得を拒否しました（HTTP ' + code + '）' };
+  }
+  const html = decodeBody_(res);
+  const info = extractProduct_(html, finalUrl);
+  item.name = info.name;
+  item.price = info.price;
+  item.imageUrl = info.image;
+  const partial = !item.name || !item.price;
+  return {
+    status: 'ok',
+    item: item,
+    partial: partial,
+    source: info.source,
+    note: partial ? (item.name ? '価格が取れませんでした。手入力してください' : '商品情報が取れませんでした。手入力してください') : ''
+  };
+}
+
+function absUrl_(href, base) {
+  href = String(href || '').trim();
+  if (!href) return '';
+  if (/^https?:\/\//i.test(href)) return href;
+  const m = base.match(/^(https?:)\/\/([^\/?#]+)(\/[^?#]*)?/i);
+  if (!m) return href;
+  if (href.indexOf('//') === 0) return m[1] + href;
+  if (href.charAt(0) === '/') return m[1] + '//' + m[2] + href;
+  const dir = (m[3] || '/').replace(/[^\/]*$/, '');
+  return m[1] + '//' + m[2] + dir + href;
+}
+
+function hostOf_(url) {
+  const m = String(url).match(/^https?:\/\/([^\/?#:]+)/i);
+  return m ? m[1].toLowerCase() : '';
+}
+
+function canonicalUrl_(url) {
+  const host = hostOf_(url);
+  if (/(^|\.)amazon\.co\.jp$/.test(host)) {
+    const m = url.match(/\/(?:dp|gp\/product|gp\/aw\/d|exec\/obidos\/ASIN)\/([A-Z0-9]{10})/i);
+    if (m) return 'https://www.amazon.co.jp/dp/' + m[1].toUpperCase();
+  }
+  return url;
+}
+
+function shopFromUrl_(url) {
+  const host = hostOf_(url);
+  if (/(^|\.)amazon\.co\.jp$/.test(host) || host === 'amzn.to' || host === 'amzn.asia') return 'Amazon';
+  if (/(^|\.)rakuten\.co\.jp$/.test(host)) return '楽天市場';
+  if (host === 'shopping.yahoo.co.jp' || /(^|\.)shopping\.yahoo\.co\.jp$/.test(host)) return 'Yahoo!ショッピング';
+  return host.replace(/^www\./, '');
+}
+
+function decodeBody_(res) {
+  const blob = res.getBlob();
+  const ct = String((res.getAllHeaders()['Content-Type'] || res.getAllHeaders()['content-type'] || ''));
+  let cs = (ct.match(/charset=([\w-]+)/i) || [])[1];
+  if (!cs) {
+    const head = blob.getDataAsString('ISO-8859-1').slice(0, 4000);
+    cs = (head.match(/<meta[^>]+charset=["']?([\w-]+)/i) || [])[1];
+  }
+  cs = (cs || 'UTF-8').toUpperCase();
+  if (cs === 'SHIFT-JIS' || cs === 'SJIS' || cs === 'X-SJIS') cs = 'Shift_JIS';
+  try {
+    return blob.getDataAsString(cs);
+  } catch (e) {
+    return blob.getDataAsString('UTF-8');
+  }
+}
+
+function decodeEntities_(s) {
+  return String(s || '')
+    .replace(/&#x([0-9a-f]+);/gi, function (_, h) { return String.fromCharCode(parseInt(h, 16)); })
+    .replace(/&#(\d+);/g, function (_, d) { return String.fromCharCode(Number(d)); })
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ').trim();
+}
+
+function parsePrice_(v) {
+  if (v === undefined || v === null) return 0;
+  if (typeof v === 'number') return Math.round(v);
+  const s = String(v).replace(/[,，\s]/g, '');
+  const m = s.match(/\d+(?:\.\d+)?/);
+  return m ? Math.round(Number(m[0])) : 0;
+}
+
+function hasType_(node, t) {
+  const ty = node && node['@type'];
+  if (!ty) return false;
+  return Array.isArray(ty) ? ty.indexOf(t) >= 0 : ty === t;
+}
+
+function findProducts_(node, out) {
+  if (!node || typeof node !== 'object') return;
+  if (Array.isArray(node)) { node.forEach(function (n) { findProducts_(n, out); }); return; }
+  if (hasType_(node, 'Product') || hasType_(node, 'ProductGroup')) out.push(node);
+  if (node['@graph']) findProducts_(node['@graph'], out);
+  if (node.mainEntity) findProducts_(node.mainEntity, out);
+}
+
+function offerPrice_(offers) {
+  if (!offers) return 0;
+  if (Array.isArray(offers)) {
+    for (let i = 0; i < offers.length; i++) { const p = offerPrice_(offers[i]); if (p) return p; }
+    return 0;
+  }
+  if (offers.price !== undefined) return parsePrice_(offers.price);
+  if (offers.lowPrice !== undefined) return parsePrice_(offers.lowPrice);
+  if (offers.priceSpecification) return offerPrice_(offers.priceSpecification);
+  if (offers.offers) return offerPrice_(offers.offers);
+  return 0;
+}
+
+function imageOf_(img) {
+  if (!img) return '';
+  if (typeof img === 'string') return img;
+  if (Array.isArray(img)) return imageOf_(img[0]);
+  return img.url || img.contentUrl || '';
+}
+
+function extractProduct_(html, pageUrl) {
+  const r = { name: '', price: 0, image: '', source: '' };
+
+  // 1. JSON-LD
+  const re = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    let txt = m[1].replace(/^\s*<!--/, '').replace(/-->\s*$/, '').trim();
+    let json;
+    try { json = JSON.parse(txt); } catch (e) { continue; }
+    const prods = [];
+    findProducts_(json, prods);
+    for (let i = 0; i < prods.length; i++) {
+      const p = prods[i];
+      if (!r.name && p.name) r.name = decodeEntities_(p.name);
+      if (!r.price) r.price = offerPrice_(p.offers);
+      if (!r.image) r.image = imageOf_(p.image);
+    }
+    if (r.name) r.source = 'json-ld';
+  }
+
+  // 2. OGP / meta
+  const meta = {};
+  const mre = /<meta\b[^>]*>/gi;
+  while ((m = mre.exec(html)) !== null) {
+    const attrs = {};
+    const are = /([\w:.-]+)\s*=\s*("([^"]*)"|'([^']*)')/g;
+    let a;
+    while ((a = are.exec(m[0])) !== null) attrs[a[1].toLowerCase()] = a[3] !== undefined ? a[3] : a[4];
+    const key = (attrs.property || attrs.name || attrs.itemprop || '').toLowerCase();
+    if (key && attrs.content !== undefined && meta[key] === undefined) meta[key] = attrs.content;
+  }
+  if (!r.name && meta['og:title']) { r.name = decodeEntities_(meta['og:title']); r.source = r.source || 'ogp'; }
+  if (!r.image) r.image = meta['og:image'] || meta['og:image:url'] || meta['twitter:image'] || '';
+  if (!r.price) r.price = parsePrice_(meta['product:price:amount'] || meta['og:price:amount'] || meta['price'] || '');
+
+  // 3. title のみ
+  if (!r.name) {
+    const t = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (t) { r.name = decodeEntities_(t[1]); r.source = r.source || 'title'; }
+  }
+
+  // Amazon のタイトル整形（「Amazon.co.jp: 商品名 : カテゴリ」）
+  if (/amazon\.co\.jp/.test(hostOf_(pageUrl)) && r.name) {
+    r.name = r.name.replace(/^Amazon\.co\.jp\s*[:：]\s*/i, '').replace(/\s*[:：]\s*[^:：]+$/, '').trim();
+    if (!r.name) {
+      const pt = html.match(/id=["']productTitle["'][^>]*>([\s\S]*?)<\/span>/i);
+      if (pt) r.name = decodeEntities_(pt[1]);
+    }
+  }
+  if (r.image) r.image = absUrl_(decodeEntities_(r.image), pageUrl);
+  if (r.name.length > 200) r.name = r.name.slice(0, 200);
+  return r;
+}
+
+// =====================================================================
+// setup（初回だけ手動実行）
+// =====================================================================
+function setup() {
+  const ss = ss_();
+  const props = PropertiesService.getScriptProperties();
+  Object.keys(SHEETS).forEach(function (name) {
+    let sh = ss.getSheetByName(name);
+    if (!sh) sh = ss.insertSheet(name);
+    if (sh.getLastRow() === 0) {
+      const header = SHEETS[name];
+      sh.getRange(1, 1, 1, header.length).setNumberFormat('@').setValues([header]);
+      sh.setFrozenRows(1);
+    }
+  });
+
+  if (countRows_('categories') === 0) {
+    const rows = INITIAL_CATEGORIES.map(function (c, i) {
+      return { id: 'c' + ('0' + (i + 1)).slice(-2), name: c[0], icon: c[1], color: c[2], sort: i + 1, budgetCat: c[3] };
+    });
+    writeSheet_('categories', rows);
+  }
+  if (countRows_('settings') === 0) {
+    writeSheet_('settings', [
+      { key: 'householdEnabled', value: '0' },
+      { key: 'householdUrl', value: '' },
+      { key: 'themeColor', value: '#f43f5e' }
+    ]);
+  }
+  if (props.getProperty('DATA_REV') === null) props.setProperty('DATA_REV', '0');
+
+  // 既定の空シート（シート1 / Sheet1）を削除
+  ['シート1', 'Sheet1'].forEach(function (n) {
+    const sh = ss.getSheetByName(n);
+    if (sh && sh.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(sh);
+  });
+
+  const missing = [];
+  if (!props.getProperty('SECRET_PIN')) missing.push('SECRET_PIN');
+  if (!props.getProperty('HOUSEHOLD_PIN')) missing.push('HOUSEHOLD_PIN');
+  Logger.log('setup 完了。' + (missing.length ? '未設定のスクリプトプロパティ: ' + missing.join(', ') : 'スクリプトプロパティもOK'));
+}
+
+// =====================================================================
+// 自己検証用（エディタから実行。家計簿へは書き込まない）
+// =====================================================================
+function testSummaryDummy() {
+  const data = {
+    rev: 5,
+    logs: [
+      { id: 1, amount: -3000, absAmount: 3000, bigCat: '支出（クレカ）', budgetCat: '変動費（食費）', useYM: '2026-11', category: '三井住友ゴールド(NL)' },
+      { id: 2, amount: -2000, absAmount: 2000, bigCat: '支出（即時）', budgetCat: '変動費（日用品）', useYM: '2026-11', category: 'PayPay' },
+      { id: 3, amount: -9999, absAmount: 9999, bigCat: '支出（即時）', budgetCat: '変動費（日用品）', useYM: '2026-10', category: 'PayPay' },
+      { id: 4, amount: -5000, absAmount: 5000, bigCat: '固定引落', budgetCat: '変動費（車・交通）', useYM: '2026-11', category: '車 ローン' },
+      { id: 5, amount: -8000, absAmount: 8000, bigCat: '固定引落', budgetCat: '固定費', useYM: '2026-11', category: '車 ローン' },
+      { id: 6, amount: -50000, absAmount: 50000, bigCat: '貯蓄移動', budgetCat: '貯蓄移動', useYM: '2026-11', category: 'エース預金' },
+      { id: 7, amount: 10000, absAmount: 10000, bigCat: '貯蓄移動', budgetCat: '貯蓄移動', useYM: '2026-11', category: 'エース預金（引出）' },
+      { id: 8, amount: -30000, absAmount: 30000, bigCat: '貯蓄移動', budgetCat: '貯蓄移動', useYM: '2026-05', category: 'デイトレ貯金' }
+    ],
+    budget: [
+      { budgetCat: '変動費（食費）', monthly: 40000, bonusAdd: 0, bonusMonths: '' },
+      { budgetCat: '変動費（日用品）', monthly: 10000, bonusAdd: 5000, bonusMonths: '6,12' },
+      { budgetCat: '変動費（車・交通）', monthly: 15000, bonusAdd: 0, bonusMonths: '' },
+      { budgetCat: '変動費（ガジェット）', monthly: 8000, bonusAdd: 20000, bonusMonths: '11' },
+      { budgetCat: '固定費', monthly: 100000, bonusAdd: 0, bonusMonths: '' }
+    ],
+    budgetMonthly: [{ ym: '2026-11', budgetCat: '変動費（食費）', amount: 35000 }],
+    config: [
+      { key: 'actualBalance', value: 0 },
+      { key: 'dodai_start_balance', value: 300000 },
+      { key: 'dodai_start_ym', value: '2026-06' }
+    ],
+    categories: []
+  };
+  const s = computeSummary_(data, '2026-11-18', new Date());
+  Logger.log(JSON.stringify(s, null, 2));
+  // 期待値: varBudget = 35000 + 10000 + 15000 + 28000 = 88000
+  //         varSpent  = 3000 + 2000 + 5000 = 10000 → varRest 78000
+  //         balance (log) = 300000 + 50000 - 10000 = 340000（2026-05 のデイトレ貯金は対象外）
+  //         defenseFund = 340000, toTarget = 660000, daysLeft = 13
+}
+
+function testPayDate() {
+  const card = { bigCat: '支出（クレカ）', closeDay: 31, payMonthOffset: 1, payDay: 26, adjust: 'next' };
+  Logger.log(calcPayDate_(card, '2026-11-18')); // 2026-12-26(土) → 2026-12-28(月)
+  const saison = { bigCat: '支出（クレカ）', closeDay: 10, payMonthOffset: 1, payDay: 4, adjust: 'next' };
+  Logger.log(calcPayDate_(saison, '2026-11-18')); // 11/18 > 10 → 2027-01-04(月)
+  const fixed = { bigCat: '固定引落', closeDay: 0, payMonthOffset: 0, payDay: 27, adjust: '' };
+  Logger.log(calcPayDate_(fixed, '2026-11-18')); // 2026-11-27
+}
