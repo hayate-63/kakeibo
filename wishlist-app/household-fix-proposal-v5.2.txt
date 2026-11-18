@@ -1,0 +1,149 @@
+================================================================
+家計簿側の修正案（ほしいもの帳 v1.0 連携のため）
+================================================================
+作成: 2026-11-18（Claude Code）
+対象: 家計簿 index-v5.1.html ／ GAS_v3.0.2
+根拠: 上記2ファイルとの照合結果
+     （ほしいもの帳 implementation-notes-v1.0.txt §A〜C）
+優先度: 修正1 ＝ 必須級 ／ 修正2 ＝ 推奨 ／ 修正3 ＝ 本人判断
+
+================================================================
+修正1【必須級】連携明細の区分が再計算で戻る問題
+================================================================
+■ 現象
+v5.1 の recalculateAllLogs() は、起動時、同期の後（毎回）、
+明細の追加・削除・編集、マスタ変更、CSV 取込、給油明細の作成・
+削除などで全明細に走る。そこで evaluateEntry の結果をそのまま
+上書きするため、ほしいもの帳が直接入れた usageCat／budgetCat
+（例「日用雑貨／変動費（日用品）」）は、辞書判定に戻る。
+商品名が辞書に無ければ「その他（要確認）／変動費（その他）」に
+なる。家計簿アプリがその後に保存すると、シートの値も書き換わる。
+
+影響:
+- 家計簿の区分別集計、ほしいもの帳の基準C（カテゴリー予算）が
+  ずれる
+- 変動費の合計（基準A）は、どちらも「変動費」で始まるので
+  変わらない
+- 未登録ワードの確認（isMatched=false）に商品名が出てくる
+
+付随する問題: メモ（＝商品名）が「3/4 ソケット」のように
+「月/日」で始まると、parseMemoLeadingDate が利用日をメモの
+日付に置き換える。引落日も購入日と同じ日になる。
+
+■ 案A（推奨）: Logs に「区分固定」の印の列を足す
+1) GAS v3.0.3
+   LOG_HEADERS の最後に "catLock" を追加する。
+     const LOG_HEADERS = ["id","amount","date","memo","category",
+       "useDate","payDate","payYM","useYM","bigCat","usageCat",
+       "budgetCat","absAmount","ruleId","isLegacy","catLock"];
+   TEXT_COLUMNS.Logs にも "catLock" を追加する。
+   ※ saveSheetData は毎回ヘッダー行を書き直すので、次の保存で
+     列が自動的にできる。既存の明細は空欄（＝固定しない）になる。
+
+2) index v5.2: recalculateAllLogs を次のように変える
+   function isCatLocked(log) {
+     const v = log.catLock;
+     return v === 1 || v === true || String(v) === "1";
+   }
+   function recalculateAllLogs() {
+     normalizeCategoryAdjust();
+     state.logs = state.logs.map(log => {
+       if (isCatLocked(log)) {
+         // 引落日などはマスタから計算し直す。区分は固定し、メモの日付は読まない
+         const res = evaluateEntry(log.amount, log.date, "", log.category, log.isLegacy);
+         return { ...log, ...res,
+           usageCat: log.usageCat, budgetCat: log.budgetCat,
+           cleanMemo: String(log.memo || "").trim(), isMatched: true };
+       }
+       const res = evaluateEntry(log.amount, log.date, log.memo, log.category, log.isLegacy);
+       return { ...log, ...res };
+     });
+     saveLocalState();
+   }
+   ポイント:
+   - メモに "" を渡すので、parseMemoLeadingDate が効かない
+     （付随する問題も同時に解消）
+   - カードの締め日・支払日を変えたときは、引落日に正しく反映される
+   - normalizeCloudLog は {...l} で受け取るので、catLock も
+     そのまま保持される（追加の対応は不要）
+
+3) 家計簿で連携明細を手で編集したときの扱い（決めること）
+   - (a) 編集したら catLock を外し、通常の辞書判定に戻す
+   - (b) 固定したままにして、区分を手で選べるようにする
+   v5.2 の最小対応は (a) がおすすめ。明細の編集保存の処理で
+   log.catLock = "" にするだけで済む。
+   明細一覧などで catLock="1" の行に「🛍️ほしいもの帳」の印を
+   出すと、見分けやすくなる（任意）。
+
+4) ほしいもの帳 v1.0.1（こちら側の対応。小さい）
+   gas の buildLog_ で catLock: '1' を入れる。
+   ※ 家計簿 GAS がまだ v3.0.2 でも、知らない列は
+     saveSheetData が無視するので害はない。どちらを先に
+     出してもよい。
+   ※ v1.0 で作った明細は印が無い。家計簿 v5.2 を入れる前に
+     作った分は、シートで手作業で catLock=1 を入れるか、
+     区分を手で直す。
+
+■ 案B: 買った時に商品名を辞書に登録する（非推奨）
+商品名をそのまま辞書のキーワードにすると、長い・一度きりの
+キーワードが辞書に溜まる。部分一致で、別の明細を誤判定する
+おそれもある。
+
+■ 案C: ruleId に "wishlist" を入れて印にする（非推奨）
+ruleId は定期ルールの印で、relinkRecurringLogIds（ルールとの
+照合・付け直し）などが参照する。そちらへの影響が読み切れない。
+
+================================================================
+修正2【推奨】SECRET_PIN 未設定時の既定 PIN "1234"
+================================================================
+■ 現状（GAS_v3.0.2）
+  const SECRET_PIN = "1234";
+  function getSecretPin_() { ... プロパティが無ければ "1234" }
+スクリプトプロパティを消したり入れ忘れたりすると、"1234" で
+家計簿全体を読み書きできてしまう。Web アプリは「全員」に
+公開されている。ほしいもの帳はこの PIN を HOUSEHOLD_PIN として
+使うので、連携の安全性にも関わる。
+
+■ 案（GAS v3.0.3）
+  function getSecretPin_() {
+    const p = PropertiesService.getScriptProperties().getProperty("SECRET_PIN");
+    return (p !== null && p !== "") ? p : null;   // 既定値を使わない
+  }
+  doGetInner_ / doPostInner_ の照合を次のようにする:
+    const secret = getSecretPin_();
+    if (!secret || pin !== secret) → unauthorized
+  （const SECRET_PIN = "1234"; の行は削除）
+入れる前に、スクリプトプロパティに SECRET_PIN があることを
+必ず確認すること。無いまま入れると、全端末が unauthorized になる。
+
+================================================================
+修正3【本人判断】「今日の1日予算」を一致させるか
+================================================================
+家計簿の renderDailyBudgetBanner は
+  （変動費予算 − 使った額 − buildMonthlyForecast の予定からの予想）
+  ÷ 出費予定のない残り日数（マイナスなら ¥0）
+で計算している。ほしいもの帳 v1.0 は予定の見込みを再現しない
+（設計 §4）ので、「今日の1日予算（簡易）＝ 残金 ÷ 残り日数」と
+明記して出している。
+
+選択肢:
+- (1) このまま（簡易と明記して表示）← 現状
+- (2) ほしいもの帳から1日予算の表示を消す（家計簿の修正は不要）
+- (3) v1.1 で、月末着地予想と一緒に予定の見込みを再現する
+      （家計簿の修正は不要。ほしいもの帳 GAS の作業が大きい）
+- (4) 家計簿アプリが計算した値を Config に書いて共有する
+      → 表示のたびに保存が走り、rev が上がって他端末と競合しやすく
+        なるので非推奨
+
+================================================================
+参考: 照合で「修正不要」と確認したもの
+================================================================
+- LOG_HEADERS はメモと一致。POST {pin, baseRev, logs} は Logs
+  シートだけを上書きし、他のシートには触らない（連携の書き込み
+  経路として安全）
+- 祝日（loadAll の holidays）、adjust の既定（カード・固定引落は
+  next）、getEffectiveBudget、calculateDodaiMetrics の logBalance
+  は、ほしいもの帳 v1.0 側を家計簿に合わせて修正済み
+================================================================
+以上
+================================================================
