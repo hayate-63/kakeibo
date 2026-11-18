@@ -4,9 +4,11 @@ const { makeEnv } = require('./gasmock');
 const REPO = path.join(__dirname, '..');
 const CSV = process.argv[2];
 const OUT = path.join(require('os').tmpdir(), 'spotbook-test-out'); fs.mkdirSync(OUT, { recursive: true });
-const VER = process.env.SPOT_VER || '3.0';   // 検証する版（index-v◯.html／gas-v◯.gs）
+const VER = process.env.SPOT_VER || '3.1';   // 検証する版（index-v◯.html／gas-v◯.gs）
 const V2 = Number(VER.split('.')[0]) >= 2;
 const V3 = Number(VER.split('.')[0]) >= 3;
+const V31 = parseFloat(VER) >= 3.1;
+const ocrCtl = { text: '' };   // v3.1 検証用：OCR の結果（実 OCR は実 GAS でしか動かない）
 const ctl = { delay: 0, fail: null };   // v3.0 検証用：応答を遅らせる／通信を切る
 const V201 = V2 && fs.readFileSync(path.join(__dirname, '..', 'gas-v' + VER + '.gs'), 'utf8').includes('pin_default');
 const PIN = 'Ab-123xy!'; // v1.0.1：英字＋記号混じりのパスワード
@@ -38,7 +40,7 @@ const fetchMock = (url, o) => {
   if (url.includes('nominatim.openstreetmap.org/search')) return resp(200, url.includes(encodeURIComponent('三重県四日市市テスト住所')) ? [{ lat: '34.95', lon: '136.60' }] : []);
   return resp(404, {});
 };
-const env = makeEnv({ gasPath: path.join(REPO, 'gas-v' + VER + '.gs'), pin: PIN, fetch: fetchMock });
+const env = makeEnv({ gasPath: path.join(REPO, 'gas-v' + VER + '.gs'), pin: PIN, fetch: fetchMock, ocr: ocrCtl });
 // setConfig でAPIキーはアプリから入れる
 
 const html = fs.readFileSync(path.join(REPO, 'index-v' + VER + '.html'));
@@ -336,10 +338,97 @@ async function testV3(page, env, dialogs) {
   await page.evaluate(() => { closeAllViews(); switchTab('settings'); hideFailBanner(); });
 }
 
+// ==================== v3.1：スクショから追加（OCR）・クリップボード貼り付け ====================
+async function testV31(page, env, dialogs, browser, ctx) {
+  const call = o => env.doPost(JSON.stringify(Object.assign({ pin: PIN }, o)));
+  const spotsSheet = () => env.ss.getSheetByName('spots')._data;
+  const ocrTemps = () => Object.values(env.DriveApp._files).filter(f => /^スポット帳OCR一時_/.test(f.getName()));
+  await page.evaluate(() => { closeAllViews(); hideFailBanner(); switchTab('add'); });
+  // S6 古い表示が消え、ボタンが押せる
+  const addTxt = await page.textContent('#page-add');
+  check('S6 「v1.1で対応」の表示が消え、［画像を選ぶ］が押せる', !/v1\.1で対応/.test(addTxt) && !(await page.$eval('#ocrPick', b => b.disabled)));
+  // Googleマップの店舗画面を模した画像
+  const shot = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await shot.setContent('<body style="font-family:sans-serif;margin:0"><div style="padding:8px">13:59 5G 80%</div><h1 style="padding:16px">テスト中華そば 四日市店</h1><p style="padding:0 16px">4.5 ★★★★★ (120)・ラーメン</p><p style="padding:0 16px">三重県四日市市テスト町1-2</p><p style="padding:0 16px">経路　保存　共有</p></body>');
+  const png = await shot.screenshot(); await shot.close();
+  ocrCtl.text = '13:59\n5G\n80%\nテスト中華そば 四日市店\n4.5 ★★★★★ (120)\nラーメン\n〒510-0001 三重県四日市市テスト町1-2\n経路\n保存\n共有\nhttps://example.com\n喫茶me\n';
+  ocrCtl.calls = [];
+  await page.evaluate(() => { window.__lbl = []; const el = document.getElementById('busyLabel'); new MutationObserver(() => window.__lbl.push(el.textContent)).observe(el, { childList: true, characterData: true, subtree: true }); });
+  await page.setInputFiles('#ocrFile', { name: 'IMG_0001.PNG', mimeType: 'image/png', buffer: png });
+  await page.waitForSelector('#ocrResult .ocrChips .toggle-chip');
+  const chips = await page.$$eval('#ocrResult .ocrChips .toggle-chip', b => b.map(x => x.textContent));
+  const lbl = await page.evaluate(() => window.__lbl);
+  const sent = ocrCtl.calls[0];
+  check('S1a 画像を選ぶと「文字を読み取り中…」→ GAS の ocrImage（Drive に日本語 OCR で作成）', lbl.includes('文字を読み取り中…') && sent && sent.meta.mimeType === 'application/vnd.google-apps.document' && sent.opt.ocrLanguage === 'ja', lbl.join(','));
+  check('S1b 店名候補は上から最大5つ（時刻・電池・評価・住所・URL・「経路／保存／共有」を除く）', chips[0] === 'テスト中華そば 四日市店' && chips.length <= 5 && !chips.some(c => /13:59|80%|★|〒|経路|保存|共有|https/.test(c)) && chips.includes('喫茶me'), chips.join(' | '));
+  check('S4a OCR の一時ファイルは成功時もゴミ箱へ（Drive に溜めない）', ocrTemps().length === 1 && ocrTemps().every(f => f._trashed));
+  await page.screenshot({ path: path.join(OUT, '50-ocr-candidates.png') });
+  // 候補タップ → 検索 → 確認カード → 保存
+  await page.click('#ocrResult .ocrChips .toggle-chip[data-i="0"]');
+  await page.waitForSelector('#ocrResult .ocrCands .spot-row[data-i="1"]');
+  await page.click('#ocrResult .ocrCands .spot-row[data-i="1"]');
+  await page.waitForSelector('.view .fSave');
+  const card = await page.textContent('.view .view-body');
+  await page.click('.view .fSave');
+  await page.waitForFunction(() => !document.querySelector('.view .fSave'));
+  const row = spotsSheet().find(r => r[2] === 'テスト中華そば 四日市店');
+  check('S1c 候補タップ → 検索 → 確認カード（自動判定つき）→ 保存まで通る', /自動判定/.test(card) && /ラーメン/.test(card) && row && row[3] === '三重県' && row[6].split('/').includes('ラーメン'), row && row.slice(0, 7).join(','));
+  if (row) { call({ action: 'deleteSpot', id: row[0] }); await page.evaluate(id => { state.spots = state.spots.filter(s => s.id !== id); }, row[0]); }
+  // S2 選び直し・手で直す
+  await page.evaluate(() => { closeAllViews(); switchTab('add'); });
+  await page.click('#ocrResult .ocrChips .toggle-chip:has-text("喫茶me")');
+  await page.waitForFunction(() => document.querySelector('#ocrResult .ocrQ').value === '喫茶me');
+  await page.waitForSelector('#ocrResult .ocrCands .spot-row');
+  await page.fill('#ocrResult .ocrQ', '手で直した店名');
+  await page.click('#ocrResult .ocrGo');
+  await page.waitForSelector('#ocrResult .ocrCands .spot-row');
+  const full = await page.$eval('#ocrResult details pre', e => e.textContent);
+  check('S2 候補を選び直せる・入力欄で店名を手で直して検索し直せる・全文を折りたたみで見られる', /喫茶me/.test(full) && /テスト中華そば/.test(full) && await page.$eval('#ocrResult .ocrQ', e => e.value) === '手で直した店名');
+  // S3 文字の無い画像
+  ocrCtl.text = '';
+  await page.setInputFiles('#ocrFile', { name: 'blank.png', mimeType: 'image/png', buffer: png });
+  await page.waitForFunction(() => /文字を読み取れませんでした/.test(document.getElementById('ocrResult').textContent));
+  await page.waitForTimeout(200);
+  const focused = await page.evaluate(() => document.activeElement && document.activeElement.classList.contains('ocrQ'));
+  check('S3 文字が無い画像は「文字を読み取れませんでした」＋店名の手入力欄（カーソルが入る）', focused && !!(await page.$('#ocrResult .ocrQ')));
+  await page.screenshot({ path: path.join(OUT, '51-ocr-notext.png') });
+  // S4 OCR 失敗：スピナーは残らない・一時ファイルは削除・赤バナー
+  ocrCtl.text = 'なにか'; ocrCtl.failDoc = true;
+  const before = ocrTemps().length;
+  await page.setInputFiles('#ocrFile', { name: 'x.png', mimeType: 'image/png', buffer: png });
+  await page.waitForSelector('#failBanner.show');
+  const busyLeft = await page.$eval('#busy', e => e.classList.contains('show'));
+  const fb = await page.textContent('#failBody');
+  const temps = ocrTemps();
+  check('S4b OCR 失敗時：スピナーは消える・赤バナー「文字の読み取りに失敗しました」・手入力へ誘導', !busyLeft && /文字の読み取りに失敗しました/.test(fb) && /文字を読み取れませんでした/.test(await page.textContent('#ocrResult')), fb.slice(0, 50));
+  check('S4c OCR 失敗時も一時ファイルは削除（ゴミ箱）される', temps.length === before + 1 && temps.every(f => f._trashed));
+  ocrCtl.failDoc = false;
+  await page.evaluate(() => hideFailBanner());
+  // Drive API 未追加の GAS
+  const noApi = require('./gasmock').makeEnv({ gasPath: path.join(REPO, 'gas-v' + VER + '.gs'), pin: PIN, fetch: () => {}, noDriveApi: true });
+  const na = noApi.doPost(JSON.stringify({ action: 'ocrImage', pin: PIN, data: 'AAAA' }));
+  check('S4d Drive API を追加していない GAS は「サービス → Drive API を追加」と案内（NO_DRIVE_API）', na.code === 'NO_DRIVE_API' && /Drive API/.test(na.message) && noApi.doGet().ocr_ready === false && env.doGet().ocr_ready === true);
+  check('S4e PIN が違えば ocrImage も拒否', env.doPost(JSON.stringify({ action: 'ocrImage', pin: 'wrong', data: 'AAAA' })).code === 'AUTH');
+  // S7 貼り付け
+  const url = 'https://www.google.com/maps/place/%E8%B2%BC%E3%82%8A%E4%BB%98%E3%81%91%E3%83%86%E3%82%B9%E3%83%88/@34.97,136.62,17z/data=!3m1!4b1';
+  await page.evaluate(u => navigator.clipboard.writeText('この店よかった ' + u), url);
+  await page.evaluate(() => { document.getElementById('addUrl').value = ''; document.getElementById('urlCandidates').innerHTML = ''; });
+  await page.click('button:has-text("貼り付け")');
+  await page.waitForSelector('#urlCandidates .spot-row');
+  check('S7 ［貼り付け］でクリップボードの URL（前後の文章は除く）が入り、そのままリンクの解決へ進む', await page.$eval('#addUrl', e => e.value) === url);
+  await page.screenshot({ path: path.join(OUT, '52-paste.png') });
+  await page.evaluate(() => navigator.clipboard.writeText(''));
+  dialogs.length = 0;
+  await page.click('button:has-text("貼り付け")');
+  await page.waitForTimeout(300);
+  check('S7b クリップボードが空なら「長押しして貼り付けてください」と案内', dialogs.some(d => /長押し/.test(d)), dialogs.join('|'));
+  await page.evaluate(() => { closeAllViews(); switchTab('settings'); });
+}
+
 // ==================== v2.0.1：PIN の記憶・GAS とパスワードを合わせる ====================
 async function testV201(page, env) {
   // ここに来る時点：アプリのパスワード＝Zz#9876_new、GAS の SECRET_PIN＝PIN（不一致）
-  check('R0 doGet：版と「SECRET_PIN が初期値か」だけ返す（PIN の値は返さない）', env.doGet().version === (V3 ? '3.0' : '2.0.1') && env.doGet().pin_default === false && !JSON.stringify(env.doGet()).includes(PIN));
+  check('R0 doGet：版と「SECRET_PIN が初期値か」だけ返す（PIN の値は返さない）', env.doGet().version === (V3 ? VER : '2.0.1') && env.doGet().pin_default === false && !JSON.stringify(env.doGet()).includes(PIN));
   const env0 = require('./gasmock').makeEnv({ gasPath: path.join(REPO, 'gas-v' + VER + '.gs'), pin: '0000', fetch: () => {} });
   check('R0b SECRET_PIN が 0000 のままなら pin_default=true', env0.doGet().pin_default === true);
   const auth = env.doPost(JSON.stringify({ action: 'getAll', pin: 'nope' }));
@@ -544,7 +633,7 @@ async function testV2(page, env, dialogs, browser) {
   const port = server.address().port;
   const base = 'http://localhost:' + port;
   const browser = await chromium.launch();
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, geolocation: { latitude: 35.0116, longitude: 135.7681 }, permissions: ['geolocation'] });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, geolocation: { latitude: 35.0116, longitude: 135.7681 }, permissions: ['geolocation', 'clipboard-read', 'clipboard-write'] });
   const page = await ctx.newPage();
   const errors = [], dialogs = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
@@ -570,7 +659,10 @@ async function testV2(page, env, dialogs, browser) {
   }));
   check('P4 自作キーパッドなし・type=password・inputmode無し・autocapitalize/autocorrect/spellcheck off・初期設定は new-password＋確認欄',
     !lockUi.keypad && lockUi.type === 'password' && lockUi.inputmode === null && lockUi.ac === 'new-password' && lockUi.cap === 'off' && lockUi.corr === 'off' && lockUi.spell === 'false' && lockUi.confirmShown, JSON.stringify(lockUi));
-  const trySetup = async (a, b) => { await page.fill('#lockPass', a); await page.fill('#lockPass2', b); await page.press('#lockPass2', 'Enter'); await page.waitForTimeout(150);
+  const trySetup = async (a, b) => { await page.evaluate(() => { document.getElementById('lockMsg').textContent = ''; }); await page.fill('#lockPass', a); await page.fill('#lockPass2', b);
+    if (await page.$eval('#lockPass', e => e.value) !== a || await page.$eval('#lockPass2', e => e.value) !== b) console.log('DEBUG lock input mismatch');
+    await page.press('#lockPass2', 'Enter');
+    await page.waitForFunction(() => document.getElementById('lockMsg').textContent || document.getElementById('lockScreen').classList.contains('hidden'), null, { timeout: 5000 }).catch(() => {});
     return { msg: await page.textContent('#lockMsg'), locked: await page.$eval('#lockScreen', e => !e.classList.contains('hidden')) }; };
   let r = await trySetup('Ab1', 'Ab1');
   check('P2a 3文字はエラー', r.locked && /4文字以上/.test(r.msg), r.msg);
@@ -819,6 +911,7 @@ async function testV2(page, env, dialogs, browser) {
 
   if (V2) await testV2(page, env, dialogs, browser);
   if (V3) await testV3(page, env, dialogs);
+  if (V31) await testV31(page, env, dialogs, browser, ctx);
 
   // パスワード変更（設定タブ）：空白・短すぎはエラー、変更後は GAS と不一致で AUTH 表示
   await page.click('.nav-item[data-tab="settings"]');

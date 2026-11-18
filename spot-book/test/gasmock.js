@@ -78,6 +78,21 @@ function makeEnv(opts) {
       newBlob: (bytes, type, name) => ({ bytes: Buffer.from(bytes), type, name })
     },
     DriveApp,
+    // v3.1：Drive API（高度なサービス）と DocumentApp の簡易モック（OCR は opts.ocr で結果を決める）
+    Drive: opts.noDriveApi ? undefined : { Files: { create: (meta, blob, o) => {
+      const ocr = opts.ocr || {};
+      ocr.calls = (ocr.calls || []); ocr.calls.push({ meta, opt: o });
+      if (ocr.failCreate) throw new Error('create failed');
+      const folder = DriveApp.getFolderById(meta.parents[0]);
+      const f = folder.createFile(Object.assign({}, blob, { name: meta.name, type: meta.mimeType }));
+      (ocr.docs = ocr.docs || {})[f.getId()] = ocr.text || '';
+      return { id: f.getId() };
+    } } },
+    DocumentApp: { openById: id => {
+      const ocr = opts.ocr || {};
+      if (ocr.failDoc) throw new Error('document open failed');
+      return { getBody: () => ({ getText: () => (ocr.docs || {})[id] || '' }) };
+    } },
     Logger: { log: () => {} },
     UrlFetchApp: { fetch: (url, o) => { fetchLog.push({ url, o }); return opts.fetch(url, o); } }
   };
