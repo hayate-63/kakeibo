@@ -660,7 +660,9 @@ function calcA(h, total) {
   const before = h.varRest;
   const after = before - total;
   const days = Math.max(1, h.daysLeft || 1);
-  return { before, after, over: after < 0 ? -after : 0, dayBefore: Math.floor(before / days), dayAfter: Math.floor(after / days) };
+  // 1日予算（簡易）: 残金 ÷ 今日を含む残り日数。マイナスは ¥0（家計簿の「リアル1日予算」は予定の見込みも引くため一致しない）
+  const perDay = v => v < 0 ? 0 : Math.floor(v / days);
+  return { before, after, over: after < 0 ? -after : 0, dayBefore: perDay(before), dayAfter: perDay(after) };
 }
 function calcB(h, total) {
   const after = Math.max(0, h.defenseFund - total);
@@ -834,8 +836,8 @@ function renderHh() {
   box.innerHTML = head + warn + `
     <div class="stat"><span>今月の変動費残金</span><b class="${h.varRest < 0 ? 'neg' : ''}">${yen(h.varRest)}</b></div>
     <div class="muted" style="text-align:right">予算 ${yen(h.varBudget)} − 使用 ${yen(h.varSpent)}</div>
-    <div class="stat"><span>今日の1日予算</span><b>${yen(A.dayBefore)}</b></div>
-    <div class="muted" style="text-align:right">残り${h.daysLeft}日で割った額</div>
+    <div class="stat"><span>今日の1日予算（簡易）</span><b>${yen(A.dayBefore)}</b></div>
+    <div class="muted" style="text-align:right">残金 ÷ 残り${h.daysLeft}日。家計簿の「リアル1日予算」（予定の見込みを引く）とは別の計算</div>
     <div class="stat"><span>防衛資金枠</span><b>${yen(h.defenseFund)}</b></div>
     ${h.balanceSource === 'log' ? '<div class="muted" style="text-align:right">ログ算出残高で計算中</div>' : ''}
     <div class="stat"><span>${manLabel(h.target)}まであと</span><b>${yen(h.toTarget)}</b></div>
@@ -870,7 +872,7 @@ function renderCalc() {
       <h4>基準A　今月の変動費残金</h4>
       <div class="big">${yen(A.before)} → <span class="${A.after < 0 ? 'neg' : 'pos'}">${yen(A.after)}</span></div>
       ${A.over ? `<div class="line neg"><b>${yen(A.over)} 超過</b></div>` : ''}
-      <div class="line">今日の1日予算 ${yen(A.dayBefore)} → <b class="${A.dayAfter < 0 ? 'neg' : ''}">${yen(A.dayAfter)}</b></div>
+      <div class="line">今日の1日予算（簡易） ${yen(A.dayBefore)} → <b class="${A.after < 0 ? 'neg' : ''}">${yen(A.dayAfter)}</b></div>
     </div>
     <div class="res">
       <h4>基準B　防衛資金</h4>
@@ -1220,7 +1222,7 @@ async function puPreview() {
   box.innerHTML = head + '<br>引落予定: 計算中…';
   if (!m || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { box.innerHTML = head; return; }
   const seq = ++puSeq;
-  const r = await api('hhPreview', { method: m, date });
+  const r = await api('hhPreview', { method: m, date, holidays: S.hh.holidays || [] });
   if (seq !== puSeq || !$('puPrev')) return;
   box.innerHTML = head + '<br>' + (r.status === 'ok' ? `引落予定 <b>${mdLabel(r.payDate)}</b>` : '引落予定: 計算できませんでした');
 }

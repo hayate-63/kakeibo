@@ -424,13 +424,13 @@ function payMethods_(cats) {
 }
 
 /** 新規ログ（家計簿 evaluateEntry と同一の引落日計算。usageCat/budgetCat は対応表どおり直接セット） */
-function buildLog_(logs, m, h) {
+function buildLog_(logs, m, h, holidays) {
   const tmpl = {};
   Object.keys(logs[0] || {}).forEach(function (k) { tmpl[k] = ''; });
   const maxId = logs.reduce(function (mx, l) { return Math.max(mx, Number(l.id) || 0); }, 0);
   const id = Math.max(Date.now(), maxId + 1);
   const amt = Math.round(Math.abs(Number(h.amount) || 0));
-  const payDate = calcPayDate_(m, h.date);
+  const payDate = calcPayDate_(m, h.date, holidays);
   return Object.assign(tmpl, {
     id: id,
     date: h.date,
@@ -473,7 +473,7 @@ function hhAddLog_(h) {
     }
     const m = payMethods_(data.categories).filter(function (c) { return c.name === h.method; })[0];
     if (!m) return { status: 'hhError', hhStatus: 'error', reason: '支払い方法「' + h.method + '」が家計簿の有効な支出マスタにありません' };
-    const log = buildLog_(logs, m, h);
+    const log = buildLog_(logs, m, h, data.holidays);
     const next = logs.concat([log]);
     if (next.length !== logs.length + 1) return { status: 'hhError', hhStatus: 'error', reason: '件数チェックに失敗しました' };
     const r = hhPost_(cfg, data.rev, next);
@@ -570,21 +570,17 @@ function configMap_(config) {
   return m;
 }
 
-/** bonusMonths: "6,12" / [6,12] / "2026-06,2026-12" 等を許容 */
+/** 家計簿 getEffectiveBudget と同じ: bonusMonths を "," で区切って月の数字として比べる */
 function inBonusMonths_(bonusMonths, ym) {
   const month = Number(ym.slice(5, 7));
-  let list = Array.isArray(bonusMonths) ? bonusMonths : String(bonusMonths == null ? '' : bonusMonths).split(/[,、\s\/|]+/);
-  return list.some(function (t) {
-    const s = String(t).trim();
-    if (!s) return false;
-    if (/^\d{4}-\d{1,2}$/.test(s)) return normYM_(s) === ym;
-    return Number(s.replace(/月$/, '')) === month;
-  });
+  return String(bonusMonths == null ? '' : bonusMonths).split(',')
+    .map(function (t) { return Number(String(t).trim()); })
+    .filter(Boolean)
+    .indexOf(month) >= 0;
 }
 
 function bmKeyYM_(row) {
-  const v = row.ym !== undefined ? row.ym : (row.month !== undefined ? row.month : (row.yearMonth !== undefined ? row.yearMonth : row.targetYM));
-  return normYM_(v);
+  return normYM_(row.ym);
 }
 
 /** 家計簿 getEffectiveBudget と同一: BudgetMonthly に (対象月, budgetCat) があればその amount、無ければ monthly + bonusAdd */
@@ -639,12 +635,14 @@ function computeSummary_(data, today, now) {
   let balance = actualBalance;
   let balanceSource = 'actual';
   if (actualBalance === 0) {
-    const startYM = cfg.dodai_start_ym ? normYM_(cfg.dodai_start_ym) : '';
+    // 家計簿 calculateDodaiMetrics の logBalance と同じ（開始月の既定 2026-10、今月までの分）
+    const startYM = cfg.dodai_start_ym ? normYM_(cfg.dodai_start_ym) : '2026-10';
     const SAV = ['エース預金', 'エース預金（引出）', 'デイトレ貯金'];
     let acc = num_(cfg.dodai_start_balance);
     (data.logs || []).forEach(function (l) {
       if (SAV.indexOf(String(l.category)) < 0) return;
-      if (startYM && logUseYM_(l) < startYM) return;
+      const u = logUseYM_(l);
+      if (u < startYM || u > ym) return;
       acc += -num_(l.amount);
     });
     balance = acc;
@@ -670,6 +668,7 @@ function computeSummary_(data, today, now) {
     toTarget: toTarget,
     basePace: basePace,
     payMethods: payMethods_(data.categories),
+    holidays: (Array.isArray(data.holidays) ? data.holidays : []).map(normYMD_).filter(function (d) { return d >= today.slice(0, 4) + '-01-01'; }),
     hhRev: data.rev
   };
 }
@@ -678,7 +677,7 @@ function hhPreview_(req) {
   const m = req.method;
   const d = String(req.date || '');
   if (!m || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return { status: 'error', reason: '入力が不正です' };
-  return { status: 'ok', payDate: calcPayDate_(m, d) };
+  return { status: 'ok', payDate: calcPayDate_(m, d, req.holidays) };
 }
 
 // ---------------------------------------------------------------------
@@ -688,7 +687,8 @@ function fmtYMD_(dt) {
   return dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2) + '-' + ('0' + dt.getDate()).slice(-2);
 }
 
-function calcPayDate_(m, ymd) {
+/** holidays: 家計簿 loadAll の holidays（Googleカレンダーの祝日 yyyy-MM-dd 配列）。空なら計算で補う */
+function calcPayDate_(m, ymd, holidays) {
   const p = ymd.split('-').map(Number);
   const y = p[0], mo = p[1], d = p[2];
   const closeDay = Number(m.closeDay) || 0;
@@ -698,27 +698,47 @@ function calcPayDate_(m, ymd) {
   if (m.bigCat === '支出（クレカ）' && closeDay > 0 && payDay > 0) {
     let tm = mo + off;
     if (d > closeDay) tm += 1;
-    dt = adjustHoliday_(new Date(y, tm - 1, payDay), m.adjust);
+    dt = adjustHoliday_(new Date(y, tm - 1, payDay), normAdjust_(m), holidays);
   } else if (m.bigCat === '固定引落' && payDay > 0) {
-    dt = adjustHoliday_(new Date(y, mo - 1, payDay), m.adjust);
+    dt = adjustHoliday_(new Date(y, mo - 1, payDay), normAdjust_(m), holidays);
   }
   return fmtYMD_(dt);
 }
 
-function adjustHoliday_(dt, adjust) {
-  const a = String(adjust || '').toLowerCase();
-  let step = 0;
-  if (a === 'next' || a.indexOf('翌') >= 0 || a.indexOf('後') >= 0) step = 1;
-  else if (a === 'prev' || a.indexOf('前') >= 0) step = -1;
-  if (!step) return dt;
-  let cur = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
-  for (let i = 0; i < 15 && isHoliday_(cur); i++) cur.setDate(cur.getDate() + step);
+/** 家計簿 normalizeCategoryAdjust と同じ: adjust 未設定はカード・固定引落なら next、それ以外は none */
+function normAdjust_(m) {
+  const a = m.adjust;
+  if (a === undefined || a === null || String(a) === '') {
+    return (m.bigCat === '支出（クレカ）' || m.bigCat === '固定引落') ? 'next' : 'none';
+  }
+  return String(a);
+}
+
+/** 家計簿 adjustPayDateForBusinessDay と同じ: none 以外は prev なら前、それ以外は後ろへ（最大15日） */
+function adjustHoliday_(dt, adjust, holidays) {
+  if (!adjust || adjust === 'none') return dt;
+  const set = holidaySet_(holidays);
+  const cur = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  let guard = 0;
+  while (isHoliday_(cur, set) && guard < 15) {
+    cur.setDate(cur.getDate() + (adjust === 'prev' ? -1 : 1));
+    guard++;
+  }
   return cur;
 }
 
-function isHoliday_(dt) {
+function holidaySet_(holidays) {
+  if (!Array.isArray(holidays) || !holidays.length) return null;
+  const s = {};
+  holidays.forEach(function (d) { s[normYMD_(d)] = true; });
+  return s;
+}
+
+/** 土日＋祝日。家計簿から祝日リストが来ていればそれを使い、無い時だけ計算（jpHolidays_）で補う */
+function isHoliday_(dt, set) {
   const w = dt.getDay();
   if (w === 0 || w === 6) return true;
+  if (set) return !!set[fmtYMD_(dt)];
   return !!jpHolidays_(dt.getFullYear())[fmtYMD_(dt)];
 }
 
