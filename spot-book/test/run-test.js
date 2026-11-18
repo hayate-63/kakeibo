@@ -4,8 +4,10 @@ const { makeEnv } = require('./gasmock');
 const REPO = path.join(__dirname, '..');
 const CSV = process.argv[2];
 const OUT = path.join(require('os').tmpdir(), 'spotbook-test-out'); fs.mkdirSync(OUT, { recursive: true });
-const VER = process.env.SPOT_VER || '2.0';   // 検証する版（index-v◯.html／gas-v◯.gs）
+const VER = process.env.SPOT_VER || '3.0';   // 検証する版（index-v◯.html／gas-v◯.gs）
 const V2 = Number(VER.split('.')[0]) >= 2;
+const V3 = Number(VER.split('.')[0]) >= 3;
+const ctl = { delay: 0, fail: null };   // v3.0 検証用：応答を遅らせる／通信を切る
 const V201 = V2 && fs.readFileSync(path.join(__dirname, '..', 'gas-v' + VER + '.gs'), 'utf8').includes('pin_default');
 const PIN = 'Ab-123xy!'; // v1.0.1：英字＋記号混じりのパスワード
 
@@ -23,6 +25,7 @@ const kyotoCafe = csvSpots.find(s => s.prefecture === '京都府' && s.categorie
 const NEW_PID = 'ChIJ_TEST_NEW_RAMEN_0001';
 const fetchMock = (url, o) => {
   const resp = (code, obj) => ({ getResponseCode: () => code, getContentText: () => JSON.stringify(obj), getHeaders: () => ({}) });
+  if (url.includes('places:searchText') && /座標の無い/.test((o && o.payload) || '')) return resp(200, { places: [] });
   if (url.includes('places:searchText')) return resp(200, { places: [
     { id: kyotoCafe.place_id, displayName: { text: kyotoCafe.name }, formattedAddress: kyotoCafe.address, location: { latitude: +kyotoCafe.lat, longitude: +kyotoCafe.lng }, types: ['cafe', 'food'] },
     { id: NEW_PID, displayName: { text: 'テスト中華そば 四日市店' }, formattedAddress: '日本、〒510-0001 三重県四日市市テスト町1-2', location: { latitude: 34.97, longitude: 136.62 }, types: ['ramen_restaurant', 'restaurant', 'food'] } ] });
@@ -32,6 +35,7 @@ const fetchMock = (url, o) => {
       addressComponents: [{ longText: '三重県', types: ['administrative_area_level_1'] }, { longText: '四日市市', types: ['locality'] }], googleMapsUri: 'https://maps.google.com/?cid=123456789' });
     return resp(200, { id, displayName: { text: kyotoCafe.name }, formattedAddress: kyotoCafe.address, location: { latitude: +kyotoCafe.lat, longitude: +kyotoCafe.lng }, types: ['cafe'], addressComponents: [{ longText: '京都府', types: ['administrative_area_level_1'] }], googleMapsUri: 'https://maps.google.com/?cid=1' });
   }
+  if (url.includes('nominatim.openstreetmap.org/search')) return resp(200, url.includes(encodeURIComponent('三重県四日市市テスト住所')) ? [{ lat: '34.95', lon: '136.60' }] : []);
   return resp(404, {});
 };
 const env = makeEnv({ gasPath: path.join(REPO, 'gas-v' + VER + '.gs'), pin: PIN, fetch: fetchMock });
@@ -40,7 +44,11 @@ const env = makeEnv({ gasPath: path.join(REPO, 'gas-v' + VER + '.gs'), pin: PIN,
 const html = fs.readFileSync(path.join(REPO, 'index-v' + VER + '.html'));
 const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url.startsWith('/exec')) {
-    const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(env.doPost(Buffer.concat(chunks).toString('utf8')))); });  // 多バイト文字がチャンク境界で割れないよう Buffer で結合
+    const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => {
+      if (ctl.fail === 'drop') { req.socket.destroy(); return; }
+      const out = JSON.stringify(env.doPost(Buffer.concat(chunks).toString('utf8')));
+      setTimeout(() => { res.setHeader('Content-Type', 'application/json'); res.end(out); }, ctl.delay);
+    });  // 多バイト文字がチャンク境界で割れないよう Buffer で結合
     return;
   }
   if (req.url.startsWith('/exec')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(env.doGet())); return; }
@@ -62,17 +70,283 @@ function jpegSize(buf) {
   return null;
 }
 
+// ==================== v3.0：スピナー・結果表示・名称/ジャンル絞り込み・ジャンル判定・座標補完・上部UI ====================
+async function testV3(page, env, dialogs) {
+  const { makeEnv } = require('./gasmock');
+  const call = o => env.doPost(JSON.stringify(Object.assign({ pin: PIN }, o)));
+  const spotsSheet = () => env.ss.getSheetByName('spots')._data;
+  const rowOf = id => spotsSheet().find(r => r[0] === id);
+  const C = h => H.indexOf(h);
+  await page.evaluate(() => { closeAllViews(); hideFailBanner(); switchTab('home'); });
+  // 表示の記録（スピナーの出入り・トースト・バナー）
+  await page.evaluate(() => {
+    window.__log = [];
+    const busyEl = document.getElementById('busy'), t = document.getElementById('toast');
+    new MutationObserver(() => window.__log.push({ k: 'busy', on: busyEl.classList.contains('show'), label: document.getElementById('busyLabel').textContent, t: performance.now() })).observe(busyEl, { attributes: true });
+    new MutationObserver(() => { if (t.classList.contains('show')) window.__log.push({ k: 'toast', text: t.textContent, ok: t.classList.contains('ok'), t: performance.now() }); }).observe(t, { attributes: true });
+  });
+  const log = () => page.evaluate(() => window.__log.splice(0));
+  const busyOn = () => page.$eval('#busy', e => e.classList.contains('show'));
+
+  // ---- L1 追加・編集・削除の間スピナー、L4 下を押せない、L6 成功トースト ----
+  ctl.delay = 700;
+  const p1 = page.evaluate(() => saveSpot({ id: '', place_id: '', name: 'スピナー確認の店', prefecture: '三重県', city: '', categories: 'グルメ', tags: '', regions: '', rep_tag: '', address: '', lat: '34.9', lng: '136.6', maps_url: '', status: '行きたい', rating: '', memo: '', google_saved: '対象外', coord_source: '', source_lists: '', created_at: '', updated_at: '', _classified: true }, true));
+  await page.waitForTimeout(250);
+  const during = await busyOn();
+  const label1 = await page.textContent('#busyLabel');
+  const blocked = await page.evaluate(() => { const n = document.querySelector('.nav-item[data-tab="map"]').getBoundingClientRect(); const el = document.elementFromPoint(n.x + n.width / 2, n.y + n.height / 2); return !!(el && el.closest('#busy')); });
+  const added = await p1;
+  const afterAdd = await busyOn();
+  let lg = await log();
+  check('L1a スポット追加の間、中央にスピナー「保存中…」→ 完了で消える', during && label1 === '保存中…' && !afterAdd && added && added.id, label1);
+  check('L4 スピナー表示中は下のボタン（下部タブ）が押せない', blocked);
+  const okT = lg.find(x => x.k === 'toast');
+  check('L6a 保存成功で緑のトースト「✓ スポットを保存しました」', okT && okT.ok && okT.text === '✓ スポットを保存しました', okT && okT.text);
+  const busyEnd = lg.filter(x => x.k === 'busy' && !x.on).pop(), toastAt = okT && okT.t;
+  check('L6b 順序：スピナーが消えてから結果を表示', busyEnd && toastAt && toastAt >= busyEnd.t - 5);
+  await page.waitForTimeout(2800);
+  check('L6c トーストは2.5秒で自動で消える', !(await page.$eval('#toast', e => e.classList.contains('show'))));
+  const pu = page.evaluate(id => saveSpot(Object.assign({}, getSpot(id), { memo: '更新テスト' }), false), added.id);
+  await page.waitForTimeout(250); const duringU = await busyOn(); await pu;
+  const pd = page.evaluate(id => api('deleteSpot', { id }), added.id);
+  await page.waitForTimeout(250); const duringD = await busyOn(); await pd;
+  await page.evaluate(id => { state.spots = state.spots.filter(s => s.id !== id); }, added.id);
+  lg = await log();
+  check('L1b 編集・削除の間もスピナー（トースト「更新しました」「削除しました」）', duringU && duringD && lg.some(x => x.text === '✓ スポットを更新しました') && lg.some(x => x.text === '✓ スポットを削除しました'), lg.filter(x => x.k === 'toast').map(x => x.text).join(','));
+
+  // ---- L2・L7 同期中のスピナーと「同期しました（◯件）」 ----
+  const ps = page.evaluate(() => syncFromCloud(true));
+  await page.waitForTimeout(250);
+  const syncLabel = await page.textContent('#busyLabel'); const syncOn = await busyOn();
+  await ps; ctl.delay = 0;
+  lg = await log();
+  const n = spotsSheet().length - 1;
+  check('L2 同期（再読み込み）の間「同期中…」のスピナー', syncOn && syncLabel === '同期中…', syncLabel);
+  check('L7 同期成功で「同期しました（' + n + '件）」', lg.some(x => x.text === '✓ 同期しました（' + n + '件）'), lg.filter(x => x.k === 'toast').map(x => x.text).join(','));
+
+  // ---- 最低300ms表示（一瞬の通信でもチカチカしない） ----
+  await page.evaluate(() => api('ping'));
+  lg = await log();
+  const on = lg.find(x => x.k === 'busy' && x.on), off = lg.find(x => x.k === 'busy' && !x.on);
+  check('L1c 一瞬で終わる通信でもスピナーは最低300ms表示', on && off && off.t - on.t >= 290, on && off ? Math.round(off.t - on.t) + 'ms' : '');
+
+  // ---- L3・L8 通信失敗：スピナーは消え、赤バナーが残る → 再試行で復旧 ----
+  ctl.fail = 'drop';
+  await page.evaluate(() => syncFromCloud(true));
+  const stuck = await busyOn();
+  await page.waitForTimeout(3000);
+  const banner = await page.$eval('#failBanner', e => e.classList.contains('show') ? e.textContent : '');
+  check('L3 通信エラー時もスピナーが残りっぱなしにならない', !stuck);
+  check('L8a 失敗は赤バナー（何が・理由・次の行動）で、3秒たっても残る', /同期に失敗しました/.test(banner) && /通信できませんでした/.test(banner) && /再試行/.test(banner), banner.slice(0, 80));
+  await page.screenshot({ path: path.join(OUT, '40-fail-banner.png') });
+  ctl.fail = null;
+  await page.click('#failBanner .fbRetry');
+  await page.waitForFunction(() => !document.getElementById('failBanner').classList.contains('show') && /☁️/.test(document.getElementById('syncBadge').textContent));
+  lg = await log();
+  check('L8b ［再試行］で同期が復旧（バナーが消えて「同期しました」）', lg.some(x => /同期しました/.test(x.text || '')));
+  // 保存の失敗：フォームを閉じず入力を保持
+  await page.evaluate(() => { closeAllViews(); openEdit(getSpot('SP0003'), false); });
+  await page.fill('.view .fMemo', '保存失敗テストの入力');
+  ctl.fail = 'drop';
+  await page.click('.view .fSave');
+  await page.waitForSelector('#failBanner.show');
+  const kept = await page.$eval('.view .fMemo', e => e.value).catch(() => null);
+  const fb = await page.textContent('#failBody');
+  check('L8c 保存の失敗：バナー「スポットの更新に失敗しました」＋入力は残ったまま', kept === '保存失敗テストの入力' && /スポットの更新に失敗しました/.test(fb) && /入力内容はそのまま/.test(fb), fb.slice(0, 60));
+  ctl.fail = null;
+  await page.click('.view .fSave');
+  await page.waitForFunction(() => !document.querySelector('.view .fSave'));
+  check('L8d 直してもう一度保存できる', rowOf('SP0003')[C('memo')] === '保存失敗テストの入力');
+  await page.evaluate(() => hideFailBanner());
+  // AUTH の理由文
+  const authReason = await page.evaluate(() => failReason({ code: 'AUTH' }));
+  check('L8e AUTH の理由「パスワードが一致しません。設定タブで確認してください」', /パスワードが一致しません。設定タブで確認/.test(authReason));
+
+  // ---- 項目3 名称検索＋ジャンルフィルター（県ページ・思い出ノート） ----
+  await page.evaluate(() => { closeAllViews(); openPref('三重県'); });
+  const total = await page.$$eval('.view .listHost .spot-row', r => r.length);
+  await page.fill('.view .fltQ', 'ラーメン');
+  const byName = await page.$$eval('.view .listHost .spot-row', r => r.length);
+  const cntTxt = await page.textContent('.view .lcnt');
+  const expectName = await page.evaluate(() => state.spots.filter(s => s.prefecture === '三重県' && norm(s.name).includes(norm('ラーメン'))).length);
+  check('F1 県ページ：店名の部分一致で絞り込み・「◯件中◯件を表示」', byName === expectName && cntTxt === total + '件中 ' + byName + '件を表示' && byName < total, cntTxt);
+  await page.fill('.view .fltQ', '');
+  await page.click('.view .flt-genres .toggle-chip[data-g="焼肉"]');
+  await page.click('.view .flt-genres .toggle-chip[data-g="寿司"]');
+  const g2 = await page.$$eval('.view .listHost .spot-row', r => r.length);
+  const expectG = await page.evaluate(() => state.spots.filter(s => s.prefecture === '三重県' && splitList(s.tags).some(t => ['焼肉', '寿司'].includes(t))).length);
+  await page.selectOption('.view .vfSel', 'unvisited');
+  const g3 = await page.$$eval('.view .listHost .spot-row', r => r.length);
+  const expectG3 = await page.evaluate(() => state.spots.filter(s => s.prefecture === '三重県' && splitList(s.tags).some(t => ['焼肉', '寿司'].includes(t)) && !isVisited(s)).length);
+  check('F2 ジャンル複数選択は OR（焼肉 or 寿司）・訪問済フィルターと AND', g2 === expectG && g3 === expectG3 && g2 > 0, g2 + '/' + g3);
+  await page.screenshot({ path: path.join(OUT, '41-pref-filter.png') });
+  // 思い出ノート：訪問を2件作ってジャンル・名称で絞る
+  const ramenMie = await page.evaluate(() => state.spots.find(s => s.prefecture === '三重県' && splitList(s.tags).includes('ラーメン') && !isVisited(s)).id);
+  const yakiMie = await page.evaluate(() => state.spots.find(s => s.prefecture === '三重県' && splitList(s.tags).includes('焼肉') && !isVisited(s)).id);
+  for (const id of [ramenMie, yakiMie]) await page.evaluate(id => saveVisit({ spot_id: id, date: '2026-11-18', rating: '4', menu: '', price: '', companions: '', people: '', comment: '', photos: '', repeat: '' }, true, [], []), id);
+  await page.evaluate(() => { closeAllViews(); openMemories(); });
+  const allTl = await page.$$eval('.view .tl-item', r => r.length);
+  const sumBefore = await page.$$eval('.view .summary-grid .sv b', b => b.map(x => x.textContent).join(','));
+  await page.click('.view .flt-genres .toggle-chip[data-g="焼肉"]');
+  const tlG = await page.$$eval('.view .tl-item', r => r.length);
+  const mcnt = await page.textContent('.view .mcnt');
+  const sumAfter = await page.$$eval('.view .summary-grid .sv b', b => b.map(x => x.textContent).join(','));
+  check('F3 思い出ノート：訪問したスポットのタグで絞り込み・「◯件中◯件を表示」・サマリーは全体のまま', tlG >= 1 && tlG < allTl && mcnt === allTl + '件中 ' + tlG + '件を表示' && sumBefore === sumAfter, mcnt);
+  await page.click('.view .flt-genres .toggle-chip[data-g="焼肉"]');
+  const nm = await page.evaluate(id => getSpot(id).name.slice(0, 3), ramenMie);
+  await page.fill('.view .fltQ', nm);
+  const tlQ = await page.$$eval('.view .tl-item', r => r.length);
+  check('F4 思い出ノート：店名で絞り込み（入力は画面を開いている間保持）', tlQ >= 1 && tlQ < allTl && await page.$eval('.view .fltQ', e => e.value) === nm, nm + ':' + tlQ);
+  await page.screenshot({ path: path.join(OUT, '42-memories-filter.png') });
+
+  // ---- 項目4 ジャンル（マスタ・移行・判定・確認カード・再判定） ----
+  const master = env.doPost(JSON.stringify({ action: 'getAll', pin: PIN })).tags;
+  const genres = master.filter(t => t.type === 'ジャンル');
+  check('G1 ジャンル114種＋旧2種がマスタに入り、判定キーワード・Places種別・グループを持つ', genres.length === 116 && genres.find(t => t.name === 'つけ麺').group === '麺' && /つけ麺/.test(genres.find(t => t.name === 'つけ麺').keywords) && genres.find(t => t.name === '寿司').placeTypes === 'sushi_restaurant');
+  check('G1b 既存ジャンルの絵文字は変えない（うなぎ📌・すき焼き🥓・スキー場🏂・美容💉・車 写真撮影場所📸）', ['うなぎ:📌', 'すき焼き:🥓', 'スキー場:🏂', '美容:💉', '車 写真撮影場所:📸'].every(x => { const [n, e] = x.split(':'); return genres.find(t => t.name === n).emoji === e; }));
+  // v2.0 のDBに v3.0 GAS → tags 移行
+  const v2 = makeEnv({ gasPath: path.join(REPO, 'gas-v2.0.gs'), pin: PIN, fetch: () => {} });
+  v2.doPost(JSON.stringify({ action: 'importSpots', pin: PIN, rows: csvSpots.slice(0, 5) }));
+  v2.ss.getSheetByName('tags')._data.find(r => r[0] === 'ラーメン')[1] = '🍥';   // 本人が絵文字を変えていた場合
+  const v3 = makeEnv({ gasPath: path.join(REPO, 'gas-v3.0.gs'), pin: PIN, fetch: () => {}, ss: v2.ss, props: v2.props });
+  const g3m = v3.doPost(JSON.stringify({ action: 'getAll', pin: PIN }));
+  const tg = g3m.tags, names = tg.map(t => t.name);
+  check('G2 v2.0 のDBに v3.0 GAS を載せると tags に列とジャンルを追加（重複なし・本人の絵文字は保持・代表優先順は確定版）',
+    v2.ss.getSheetByName('tags')._data[0][5] === '判定キーワード' && tg.length === 129 && new Set(names).size === names.length &&
+    tg.find(t => t.name === 'ラーメン').emoji === '🍥' && tg.find(t => t.name === '中華').repPriority === 27 && tg.find(t => t.name === '定期').group === 'その他' && g3m.spots.length === 5,
+    tg.length + ' / 中華=' + (tg.find(t => t.name === '中華') || {}).repPriority);
+  v3.doPost(JSON.stringify({ action: 'getAll', pin: PIN }));
+  check('G2b 移行は1回だけ（2回目のアクセスで行が増えない）', v2.ss.getSheetByName('tags').getLastRow() - 1 === 129);
+  const cl = (name, cats, types) => call({ action: 'classifyGenres', name, categories: cats || '', types: types || [] }).tags.join(',');
+  const cases = [
+    ['中華そば らんまん', 'グルメ', 'ラーメン'], ['ブロッケンバーガー', 'グルメ', 'ハンバーガー'], ['あわじ島アイスクリーム専用第二駐車場', 'その他', '駐車場'],
+    ['麺屋 そば吉', 'グルメ', 'そば'], ['麺屋RiSA', 'グルメ', 'ラーメン'], ['カンデオホテルズ大阪ザ・タワー', '宿', ''], ['五稜郭タワー', '観光地', '展望台・タワー'],
+    ['〒510-0943 三重県四日市市西日野町６０４', 'グルメ', ''], ['ラッキーピエロ 五稜郭公園前店', 'グルメ', ''], ['台湾ラーメン江楽', 'グルメ', 'ラーメン'],
+    ['Grill＆Bar SILLY BILLY with craftbeer', 'グルメ', 'バー,クラフトビール'], ['姫路城', '観光地', '城'], ['トラストパーク太融寺 駐車場', 'その他', '駐車場'],
+    ['京うどん錦', 'グルメ', 'うどん'], ['なにかの店', 'グルメ', '寿司', ['sushi_restaurant']]
+  ];
+  const bad = cases.filter(c => cl(c[0], c[1], c[3]) !== c[2]).map(c => c[0] + '→' + cl(c[0], c[1], c[3]));
+  check('G3 classifyGenres の判定（誤爆しない：中華そば≠そば・バーガー≠バー・駐車場は駐車場だけ・住所名は判定しない 等15例）', bad.length === 0, bad.join(' | '));
+  // 確認カード：自動判定タグを外して保存 → 外したまま（GAS が勝手に戻さない）
+  await page.evaluate(() => { closeAllViews(); switchTab('add'); });
+  await page.fill('#addQuery', 'テスト'); await page.click('#page-add .search-row .btn >> nth=0');
+  await page.waitForSelector('#addCandidates .spot-row[data-i="1"]');
+  await page.click('#addCandidates .spot-row[data-i="1"]');
+  await page.waitForSelector('.view .fSave');
+  const cardTxt = await page.textContent('.view .view-body');
+  const grpOpen = await page.$eval('.view .fTags details[data-g="麺"]', d => d.open);
+  check('G4a 確認カードに自動判定のジャンル（ラーメン）を表示・グループ別（麺が開いている）', /ジャンル＝ラーメン/.test(cardTxt) && grpOpen, cardTxt.match(/自動判定[^<]{0,40}/) && cardTxt.match(/自動判定[^<]{0,40}/)[0]);
+  await page.screenshot({ path: path.join(OUT, '43-confirm-genres.png') });
+  await page.click('.view .fTags .toggle-chip[data-v="ラーメン"]');
+  await page.click('.view .fTags .toggle-chip[data-v="つけ麺"]');
+  await page.click('.view .fSave');
+  await page.waitForFunction(() => !document.querySelector('.view .fSave') || document.querySelector('#failBanner.show'));
+  const nr = spotsSheet().find(r => r[2] === 'テスト中華そば 四日市店');
+  check('G4b 確認カードでラーメンを外し、つけ麺を付けて保存 → そのとおり保存（再判定で戻さない）', nr && nr[C('tags')] === 'つけ麺' && nr[C('rep_tag')] === 'つけ麺', nr && nr[C('tags')]);
+  if (nr) { call({ action: 'deleteSpot', id: nr[0] }); await page.evaluate(id => { state.spots = state.spots.filter(s => s.id !== id); }, nr[0]); }
+  // 手入力（判定前）→ addSpot で GAS が判定して合体、座標は住所から補完
+  dialogs.length = 0;
+  await page.evaluate(() => { closeAllViews(); openNewManual(); });
+  const warnTxt = await page.$eval('.view .notice.warn', e => e.textContent).catch(() => '');
+  await page.fill('.view .fName', 'テスト焼肉 じゅうじゅう');
+  await page.fill('.view .fAddr', '三重県四日市市テスト住所1-1');
+  await page.click('.view .fTags details[data-g="属性"] summary');
+  await page.click('.view .fTags .toggle-chip[data-v="デート"]');
+  await page.click('.view .fCats .toggle-chip[data-v="グルメ"]');
+  await page.click('.view .fSave');
+  await page.waitForFunction(() => !document.querySelector('.view .fSave'));
+  const mr = spotsSheet().find(r => r[2] === 'テスト焼肉 じゅうじゅう');
+  check('C1 座標なしの新規は確認画面で「地図に表示されません」と明示', /地図に表示されません/.test(warnTxt), warnTxt.slice(0, 40));
+  check('G5 手入力の新規：GAS が店名から判定して本人のタグと合体（デート＋焼肉）', mr && mr[C('tags')] === 'デート/焼肉' && mr[C('rep_tag')] === '焼肉', mr && mr[C('tags')] + ' rep=' + mr[C('rep_tag')]);
+  check('C2 保存前の座標補完：住所 → ジオコーディングで座標が入り地図に出る', mr && mr[C('lat')] === '34.95' && mr[C('coord_source')] === 'Nominatim', mr && mr[C('lat')] + ' ' + mr[C('coord_source')]);
+  // 座標が取れない新規 → 確認して保存するか選べる
+  dialogs.length = 0;
+  await page.evaluate(() => { closeAllViews(); openNewManual(); });
+  await page.fill('.view .fName', '座標の無いテスト店');
+  page.removeAllListeners('dialog');
+  page.on('dialog', async d => { dialogs.push(d.message()); if (/座標が見つかりませんでした/.test(d.message())) await d.dismiss(); else await d.accept(); });
+  await page.click('.view .fSave');
+  await page.waitForTimeout(800);
+  const stillOpen = !!(await page.$('.view .fSave'));
+  page.removeAllListeners('dialog');
+  page.on('dialog', async d => { dialogs.push(d.message()); if (d.type() === 'prompt') await d.accept('テスト地域'); else await d.accept(); });
+  check('C3 座標が見つからない新規は「地図には表示されません。保存しますか？」で止められる（「選び直す」導線あり）', stillOpen && dialogs.some(d => /座標が見つかりませんでした/.test(d)) && !!(await page.$('.view .fRepick')), dialogs.join('|').slice(0, 80));
+  await page.click('.view .fRepick');
+  await page.waitForFunction(() => /候補|登録済み/.test(document.getElementById('addCandidates').textContent));
+  check('C3b 「店名で検索して選び直す」→ 追加タブで入力中の店名を検索', await page.$eval('#addQuery', e => e.value) === '座標の無いテスト店' && await page.evaluate(() => state.currentTab) === 'add');
+  await page.evaluate(() => closeAllViews());
+  // 座標の自動補完（設定タブ）：URL に座標がある行・店名で Places 検索できる行
+  call({ action: 'importSpots', rows: [{ name: 'URLに座標がある店', maps_url: 'https://www.google.com/maps/search/35.1234,136.5678', categories: 'その他', prefecture: '三重県' }], dedupeWithinBatch: true });
+  await page.evaluate(() => syncFromCloud(false, true));
+  const noc = await page.evaluate(() => state.spots.filter(s => !hasCoord(s)).map(s => s.name));
+  await page.evaluate(() => switchTab('settings'));
+  await page.click('button:has-text("📍 座標を自動補完")');
+  await page.waitForFunction(() => /座標を補完しました/.test(document.getElementById('maintResult').textContent));
+  const after = await page.evaluate(() => state.spots.filter(s => !hasCoord(s)).length);
+  const urlRow = spotsSheet().find(r => r[2] === 'URLに座標がある店');
+  check('C4 ［座標を自動補完］で座標なしスポットを補完（URL→' + noc.length + '件中）', after === 0 && urlRow[C('lat')] === '35.1234' && urlRow[C('coord_source')] === 'URL', noc.join(',') + ' → 残り' + after);
+  // 地図：件数表示とリセット
+  await page.evaluate(() => openMapWith({ pref: '京都府', cat: 'カフェ' }));
+  await page.waitForTimeout(400);
+  const mc = await page.textContent('#mapCount');
+  await page.click('button:has-text("絞り込みリセット")');
+  await page.waitForTimeout(300);
+  const mc2 = await page.textContent('#mapCount');
+  const all = spotsSheet().length - 1;
+  check('C5 地図上部「全◯件中 ◯件を表示中」＋リセットで全件に戻る', mc === '全' + all + '件中 11件を表示中' && mc2 === '全' + all + '件中 ' + all + '件を表示中' && await page.$eval('#mapPref', e => e.value) === '', mc + ' → ' + mc2);
+  await page.screenshot({ path: path.join(OUT, '44-map-count.png') });
+  // ジャンル再判定（設定タブ）
+  const udon = csvSpots.find(s => s.name === '手打ち ごえもんうどん').id;
+  await page.evaluate(() => switchTab('settings'));
+  await page.click('button:has-text("ジャンル再判定")');
+  await page.waitForFunction(() => /個のタグを追加しました/.test(document.getElementById('maintResult').textContent));
+  const rr = await page.textContent('#maintResult');
+  check('G6a ［ジャンル再判定］で不足タグを追加（「◯件のスポットに◯個のタグを追加しました」）', /^\d+件のスポットに\d+個のタグを追加しました/.test(rr) && rowOf(udon)[C('tags')].split('/').includes('うどん') && rowOf(udon)[C('rep_tag')] === 'うどん', rr.slice(0, 40) + ' / ' + rowOf(udon)[C('tags')]);
+  const keepRep = rowOf('SP0001')[C('rep_tag')];
+  const again = call({ action: 'reclassifyAll' });
+  check('G6b 再実行しても追加0件（追加のみ・削除なし・手で付けたタグや代表タグはそのまま）', again.spots === 0 && rowOf('SP0001')[C('rep_tag')] === keepRep, JSON.stringify({ s: again.spots, a: again.added }));
+  // ジャンルタブ・地図のグループ表示
+  await page.evaluate(() => switchTab('genre'));
+  const heads = await page.$$eval('#genreTags .grp-name', h => h.map(x => x.textContent.replace(/（.*/, '')));
+  check('G7 ジャンルタブはグループ見出し（麺／和食／肉／各国／カフェ・甘味／酒／癒し／観光／アウトドア／宿／買い物／実用／属性…）', ['麺', '和食', '肉', '各国', 'カフェ・甘味', '酒', '癒し', '観光', 'アウトドア', '宿', '買い物', '実用', '属性'].every(g => heads.includes(g)) && heads.indexOf('麺') < heads.indexOf('属性'), heads.join(','));
+  await page.screenshot({ path: path.join(OUT, '45-genre-groups.png'), fullPage: false });
+  await page.evaluate(() => switchTab('map'));
+  const og = await page.$$eval('#mapTag optgroup', o => o.map(x => x.label));
+  check('G8 地図のタグ選択もグループ（optgroup）', og.includes('麺') && og.includes('地域'), og.slice(0, 5).join(','));
+
+  // ---- 項目6 上部UI ----
+  const ui = await page.evaluate(() => {
+    const meta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content;
+    const hdr = document.querySelector('header');
+    const mf = document.getElementById('mapFilters');
+    const alpha = c => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return 1; const p = m[1].split(',').map(Number); return p.length > 3 ? p[3] : 1; };
+    openMemories();
+    const back = document.querySelector('.view .back').getBoundingClientRect();
+    const vh = document.querySelector('.view .view-header');
+    const res = { meta, backH: back.height, mfTop: getComputedStyle(mf).top, hdrH: hdr.offsetHeight, hdrA: alpha(getComputedStyle(hdr).backgroundColor), vhA: alpha(getComputedStyle(vh).backgroundColor), vhH: vh.offsetHeight };
+    closeAllViews();
+    return res;
+  });
+  check('U1 ステータスバーは不透明（black）', ui.meta === 'black', ui.meta);
+  check('U2 戻るボタンの高さ44px以上', ui.backH >= 44, ui.backH + 'px');
+  check('U3 地図フィルターの sticky 位置＝ヘッダーの実高さ（重なり・隙間なし）', ui.mfTop === ui.hdrH + 'px', ui.mfTop + ' vs ' + ui.hdrH);
+  check('U4 ヘッダー類の背景は完全に不透明', ui.hdrA === 1 && ui.vhA === 1);
+  await page.evaluate(() => { closeAllViews(); openPref('京都府'); });
+  await page.screenshot({ path: path.join(OUT, '46-view-header.png'), clip: { x: 0, y: 0, width: 390, height: 200 } });
+  await page.evaluate(() => { closeAllViews(); switchTab('settings'); hideFailBanner(); });
+}
+
 // ==================== v2.0.1：PIN の記憶・GAS とパスワードを合わせる ====================
 async function testV201(page, env) {
   // ここに来る時点：アプリのパスワード＝Zz#9876_new、GAS の SECRET_PIN＝PIN（不一致）
-  check('R0 doGet：版と「SECRET_PIN が初期値か」だけ返す（PIN の値は返さない）', env.doGet().version === '2.0.1' && env.doGet().pin_default === false && !JSON.stringify(env.doGet()).includes(PIN));
+  check('R0 doGet：版と「SECRET_PIN が初期値か」だけ返す（PIN の値は返さない）', env.doGet().version === (V3 ? '3.0' : '2.0.1') && env.doGet().pin_default === false && !JSON.stringify(env.doGet()).includes(PIN));
   const env0 = require('./gasmock').makeEnv({ gasPath: path.join(REPO, 'gas-v' + VER + '.gs'), pin: '0000', fetch: () => {} });
   check('R0b SECRET_PIN が 0000 のままなら pin_default=true', env0.doGet().pin_default === true);
   const auth = env.doPost(JSON.stringify({ action: 'getAll', pin: 'nope' }));
   check('R0c AUTH のメッセージに原因（新バージョンでデプロイ）を表示', /新バージョン/.test(auth.message), auth.message);
   await page.click('#syncBadge');   // 同期（showAlert）→ 不一致なら直す画面が開く
   await page.waitForSelector('.view .gpGo');
-  await page.waitForFunction(() => /v2\.0\.1/.test(document.querySelector('.view:last-child .view-body').textContent));
+  await page.waitForFunction(() => /GAS（v\d/.test(document.querySelector('.view:last-child .view-body').textContent));
   const fixTxt = await page.textContent('.view:last-child .view-body');
   check('R1 「PINが一致しません」時は原因の説明つき「GAS とパスワードを合わせる」画面が開く', /SECRET_PIN が違う状態/.test(fixTxt) && /新バージョン/.test(fixTxt), fixTxt.slice(0, 90));
   await page.screenshot({ path: path.join(OUT, '30-gas-pin-fix.png') });
@@ -332,7 +606,8 @@ async function testV2(page, env, dialogs, browser) {
   check('GAS接続（空のDB）', true, await page.textContent('#syncBadge'));
   // シート初期化の確認
   const tagsSheet = env.ss.getSheetByName('tags'); const cfgSheet = env.ss.getSheetByName('config');
-  check('tags タブ初期化（31行＝ジャンル18＋項目6＋地域7）', tagsSheet.getLastRow() - 1 === 31, String(tagsSheet.getLastRow() - 1));
+  check(V3 ? 'tags タブ初期化（129行＝ジャンル114＋旧ジャンル2＋項目6＋地域7、8列）' : 'tags タブ初期化（31行＝ジャンル18＋項目6＋地域7）',
+    tagsSheet.getLastRow() - 1 === (V3 ? 129 : 31) && (!V3 || tagsSheet._data[0].length === 8), String(tagsSheet.getLastRow() - 1));
   check('config タブ初期化', cfgSheet._data.some(r => r[0] === 'places_api_key'));
   check('spots ヘッダーがCSVと完全一致', JSON.stringify(env.ss.getSheetByName('spots')._data[0]) === JSON.stringify(H));
 
@@ -458,7 +733,9 @@ async function testV2(page, env, dialogs, browser) {
   dialogs.length = 0;
   await page.click('.view .fSave');
   await page.waitForTimeout(500);
-  check('V5b 保存時に確認＋GASが重複エラー（DUPLICATE）', dialogs.some(d => /同じ place_id/.test(d)) && dialogs.some(d => /登録済みのスポット/.test(d)), dialogs.join(' | '));
+  const dupMsg = V3 ? await page.textContent('#failBody') : dialogs.join(' | ');
+  check('V5b 保存時に確認＋GASが重複エラー（DUPLICATE）', dialogs.some(d => /同じ place_id/.test(d)) && (V3 ? /スポットの保存に失敗/.test(dupMsg) && /登録済み/.test(dupMsg) : dialogs.some(d => /登録済みのスポット/.test(d))), dupMsg);
+  if (V3) await page.evaluate(() => hideFailBanner());
   check('V5c 件数は 529 のまま', env.ss.getSheetByName('spots').getLastRow() - 1 === 529);
   await page.click('.view .back');
 
@@ -541,6 +818,7 @@ async function testV2(page, env, dialogs, browser) {
   check('同一セッションの再読込ではPIN不要', true);
 
   if (V2) await testV2(page, env, dialogs, browser);
+  if (V3) await testV3(page, env, dialogs);
 
   // パスワード変更（設定タブ）：空白・短すぎはエラー、変更後は GAS と不一致で AUTH 表示
   await page.click('.nav-item[data-tab="settings"]');
@@ -556,7 +834,9 @@ async function testV2(page, env, dialogs, browser) {
   check('P5c アプリ側だけ変更すると GAS と不一致で同期不可（AUTH）', /パスワード不一致/.test(badge), badge);
   if (V201) await testV201(page, env);
 
-  check('コンソールエラーなし', errors.length === 0, errors.join(' | '));
+  // v3.0 の L3／L8 でわざと通信を切った分（ERR_EMPTY_RESPONSE）は除く
+  const realErrors = errors.filter(e => !/ERR_EMPTY_RESPONSE/.test(e));
+  check('コンソールエラーなし', realErrors.length === 0, realErrors.join(' | '));
   fs.writeFileSync(path.join(OUT, 'results.json'), JSON.stringify(results, null, 1));
   console.log('\n' + results.filter(r => r.ok).length + '/' + results.length + ' passed');
   await browser.close(); server.close();

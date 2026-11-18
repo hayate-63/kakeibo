@@ -1,0 +1,2435 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="スポット帳">
+<meta name="theme-color" content="#1e293b">
+<link rel="apple-touch-icon" id="touchIcon" href="">
+<title>スポット帳 v3.0</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --primary: #1e293b;
+    --accent: #6366f1;
+    --accent-light: #e0e7ff;
+    --ok: #10b981;
+    --ok-bg: #d1fae5;
+    --warn: #d97706;
+    --warn-bg: #fef3c7;
+    --danger: #ef4444;
+    --danger-bg: #fee2e2;
+    --text: #0f172a;
+    --subtext: #64748b;
+    --border: #e2e8f0;
+    --nav-h: 64px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    max-width: 768px;
+    margin: 0 auto;
+    font-size: 14px;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  input, select, textarea { font-family: inherit; font-size: 16px; }
+  header {
+    min-height: 52px;
+    background: var(--primary); color: #fff;
+    padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top));
+    display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; z-index: 500;
+  }
+  header h1 { font-size: 16px; font-weight: 700; }
+  .sync-badge { font-size: 11px; background: rgba(255,255,255,0.15); padding: 4px 10px; border-radius: 99px; font-weight: 600; border: none; color: #fff; }
+  .sync-badge.online { background: #059669; }
+  .sync-badge.syncing { background: var(--warn); }
+  .sync-badge.error { background: var(--danger); }
+
+  main { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 10px); }
+  .page { display: none; padding: 12px; }
+  .page.active { display: block; }
+  #page-map { padding: 0; }
+
+  .card { background: var(--card); border-radius: 14px; padding: 14px; margin-bottom: 12px; border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+  .card-title { font-size: 14px; font-weight: 700; color: var(--primary); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .muted { color: var(--subtext); font-size: 12px; }
+  .empty { color: var(--subtext); font-size: 13px; padding: 14px; text-align: center; background: #f8fafc; border-radius: 10px; border: 1px dashed var(--border); }
+
+  .search-row { display: flex; gap: 8px; }
+  .search-row input { flex: 1; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; min-width: 0; }
+  .btn { background: var(--accent); color: #fff; border: none; padding: 10px 14px; border-radius: 10px; font-weight: 700; font-size: 13px; white-space: nowrap; }
+  .btn.secondary { background: var(--accent-light); color: var(--accent); }
+  .btn.dark { background: var(--primary); }
+  .btn.ghost { background: #f1f5f9; color: var(--text); }
+  .btn.danger { background: var(--danger-bg); color: var(--danger); }
+  .btn.ok { background: var(--ok); }
+  .btn.small { padding: 6px 10px; font-size: 12px; border-radius: 8px; }
+  .btn[disabled] { opacity: .45; cursor: default; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn-row .btn { flex: 1; }
+
+  /* 都道府県グリッド */
+  .region-block { margin-bottom: 12px; }
+  .region-name { font-size: 12px; font-weight: 700; color: var(--subtext); margin: 4px 2px 6px; }
+  .pref-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
+  .pref-btn { position: relative; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 9px 4px; font-size: 13px; font-weight: 600; color: var(--text); text-align: center; }
+  .pref-btn.zero { color: #94a3b8; background: #f8fafc; }
+  .pref-btn .badge { display: inline-block; margin-left: 4px; min-width: 20px; padding: 1px 5px; border-radius: 99px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; }
+  .pref-btn.zero .badge { background: #cbd5e1; }
+
+  /* チップ */
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; background: #f1f5f9; color: #334155; border: 1px solid transparent; white-space: nowrap; }
+  .chip.cat { background: var(--accent-light); color: #4338ca; }
+  .chip.tag { background: #fff7ed; color: #c2410c; }
+  .chip.region { background: #ecfeff; color: #0e7490; }
+  .chip.status-done { background: var(--ok-bg); color: #047857; }
+  .chip.warn { background: var(--warn-bg); color: #92400e; }
+  .toggle-chip { padding: 6px 11px; border-radius: 99px; font-size: 12px; font-weight: 700; background: #fff; border: 1px solid var(--border); color: var(--subtext); }
+  .toggle-chip.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+  /* 一覧 */
+  .list-toolbar { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .list-toolbar select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: #fff; }
+  .spot-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .spot-row:last-child { border-bottom: none; }
+  .spot-emoji { flex: 0 0 38px; height: 38px; border-radius: 50%; background: #fff; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .spot-main { flex: 1; min-width: 0; }
+  .spot-name { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .spot-sub { font-size: 11px; color: var(--subtext); margin: 2px 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .spot-side { flex: 0 0 auto; text-align: right; font-size: 11px; color: var(--subtext); }
+  .stars { color: #f59e0b; letter-spacing: 1px; }
+
+  /* 県ページのタブ */
+  .cat-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; -webkit-overflow-scrolling: touch; }
+  .cat-tab { flex: 0 0 auto; padding: 8px 12px; border-radius: 10px; background: #fff; border: 1px solid var(--border); font-size: 13px; font-weight: 700; color: var(--subtext); }
+  .cat-tab.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .cat-tab .n { font-size: 11px; opacity: .8; margin-left: 3px; }
+
+  /* 下部ナビ */
+  nav.bottom-nav {
+    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 100%; max-width: 768px; height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: #fff; border-top: 1px solid var(--border);
+    display: flex; z-index: 900;
+  }
+  .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 10px; font-weight: 700; color: var(--subtext); background: none; border: none; }
+  .nav-item .ic { font-size: 21px; }
+  .nav-item.active { color: var(--accent); }
+
+  /* オーバーレイ画面（県ページ・詳細・編集など） */
+  .view {
+    position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+    width: 100%; max-width: 768px; height: calc(100% - var(--nav-h) - env(safe-area-inset-bottom));
+    background: var(--bg); z-index: 1000; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding-bottom: 30px;
+  }
+  /* v3.0 項目6：戻るボタンは最小44px、ヘッダーは不透明・セーフエリア分だけ下げる */
+  .view-header { position: sticky; top: 0; z-index: 5; background: var(--primary); color: #fff; display: flex; align-items: center; gap: 10px; min-height: calc(60px + env(safe-area-inset-top)); padding: 8px 12px; padding-top: calc(8px + env(safe-area-inset-top)); }
+  .view-header .back { background: rgba(255,255,255,.18); color: #fff; border: none; border-radius: 10px; padding: 10px 14px; min-height: 44px; min-width: 64px; font-weight: 700; font-size: 14px; }
+  .view-header .title { font-weight: 700; font-size: 15px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .view-body { padding: 12px; }
+
+  /* 詳細 */
+  .detail-hero { text-align: center; padding: 6px 0 10px; }
+  .detail-hero .big { width: 72px; height: 72px; border-radius: 50%; background: #fff; border: 2px solid var(--border); margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-size: 38px; box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+  .detail-hero h2 { font-size: 18px; }
+  .kv { display: grid; grid-template-columns: 88px 1fr; gap: 8px 10px; font-size: 13px; }
+  .kv .k { color: var(--subtext); font-weight: 600; }
+  .kv .v { word-break: break-all; white-space: pre-wrap; }
+
+  /* フォーム */
+  .form-row { margin-bottom: 12px; }
+  .form-row label.lbl { display: block; font-size: 12px; font-weight: 700; color: var(--subtext); margin-bottom: 5px; }
+  .form-row input[type=text], .form-row input[type=url], .form-row input[type=password], .form-row input[type=number], .form-row select, .form-row textarea {
+    width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff;
+  }
+  .form-row textarea { min-height: 80px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .star-input button { font-size: 26px; background: none; border: none; color: #cbd5e1; padding: 0 2px; }
+  .star-input button.on { color: #f59e0b; }
+  .notice { padding: 10px 12px; border-radius: 10px; font-size: 12px; line-height: 1.6; margin-bottom: 12px; }
+  .notice.warn { background: var(--warn-bg); color: #92400e; }
+  .notice.danger { background: var(--danger-bg); color: #991b1b; font-weight: 700; }
+  .notice.info { background: var(--accent-light); color: #3730a3; }
+
+  /* 地図 */
+  #mapWrap { position: relative; }
+  #mapFilters { background: #fff; padding: 8px 10px; border-bottom: 1px solid var(--border); position: sticky; top: var(--header-h, 52px); z-index: 450; }
+  .map-count { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--subtext); font-weight: 700; }
+  .map-count .btn { padding: 6px 12px; min-height: 32px; }
+  #mapFilters .chips-scroll { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; }
+  #mapFilters .chips-scroll .toggle-chip { flex: 0 0 auto; }
+  #mapFilters .selects { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  #mapFilters select { padding: 6px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; background: #fff; min-width: 0; }
+  #map { height: 56vh; min-height: 300px; background: #e5e7eb; }
+  .map-fab { position: absolute; right: 10px; z-index: 440; display: flex; flex-direction: column; gap: 6px; top: 10px; }
+  .map-fab button { width: 42px; height: 42px; border-radius: 50%; border: none; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.25); font-size: 19px; }
+  .map-fab button.on { background: var(--primary); color: #fff; }
+  .emoji-marker { width: 36px; height: 36px; border-radius: 50%; background: #fff; border: 2px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; font-size: 19px; line-height: 1; }
+  .emoji-marker.sel { box-shadow: 0 0 0 3px var(--accent), 0 1px 5px rgba(0,0,0,.4); }
+  /* v2.0 訪問済マーカー：色付き丸＋金色の縁＋チェックの小バッジ */
+  .emoji-marker.visited { position: relative; background: #fef3c7; border: 3px solid #d4a017; }
+  .emoji-marker.visited::after { content: "✓"; position: absolute; right: -6px; top: -6px; width: 16px; height: 16px; border-radius: 50%; background: var(--ok); color: #fff; font-size: 11px; font-weight: 800; line-height: 16px; text-align: center; border: 1.5px solid #fff; }
+  .emoji-marker.visited.sel { box-shadow: 0 0 0 3px var(--accent), 0 1px 5px rgba(0,0,0,.4); }
+  .spot-emoji.visited { background: #fef3c7; border: 2px solid #d4a017; }
+  .chip.visited { background: var(--ok-bg); color: #047857; }
+  .quick-btn { margin-top: 4px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--ok); background: #fff; color: #047857; font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .rate-face { font-size: 18px; }
+  .emoji-rate { display: flex; justify-content: space-between; gap: 4px; }
+  .emoji-rate button { flex: 1; background: #fff; border: 2px solid var(--border); border-radius: 12px; padding: 6px 0 4px; font-size: 30px; line-height: 1.1; filter: grayscale(.7); opacity: .65; }
+  .emoji-rate button small { display: block; font-size: 10px; color: var(--subtext); font-weight: 700; }
+  .emoji-rate button.on { border-color: var(--accent); background: var(--accent-light); filter: none; opacity: 1; }
+  .seg { display: flex; gap: 6px; }
+  .seg button { flex: 1; padding: 8px; border-radius: 10px; border: 1px solid var(--border); background: #fff; font-size: 16px; font-weight: 700; }
+  .seg button.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .progress { height: 10px; border-radius: 99px; background: #e2e8f0; overflow: hidden; margin-top: 6px; }
+  .progress > div { height: 100%; background: linear-gradient(90deg, #f59e0b, #d4a017); }
+  .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .summary-grid .sv { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 10px; text-align: center; }
+  .summary-grid .sv b { display: block; font-size: 20px; color: var(--primary); }
+  .summary-grid .sv span { font-size: 11px; color: var(--subtext); font-weight: 700; }
+  .tl-item { display: flex; gap: 10px; padding: 10px 2px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .tl-item:last-child { border-bottom: none; }
+  .tl-thumb { flex: 0 0 64px; height: 64px; border-radius: 10px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 28px; overflow: hidden; }
+  .tl-thumb img, .photo-grid img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tl-month { font-size: 12px; font-weight: 800; color: var(--subtext); margin: 12px 2px 2px; }
+  .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .photo-grid .ph { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: #f1f5f9; }
+  .photo-grid .ph button { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; border: none; background: rgba(15,23,42,.75); color: #fff; font-size: 13px; }
+  .photo-grid .ph .new { position: absolute; left: 4px; bottom: 4px; font-size: 10px; background: var(--accent); color: #fff; padding: 1px 6px; border-radius: 99px; font-weight: 700; }
+  .photo-add { aspect-ratio: 1; border-radius: 10px; border: 2px dashed var(--border); background: #fff; color: var(--subtext); font-size: 12px; font-weight: 700; }
+  .visit-row { display: flex; gap: 10px; align-items: center; padding: 9px 2px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .visit-row:last-child { border-bottom: none; }
+  .here-marker { width: 16px; height: 16px; border-radius: 50%; background: #2563eb; border: 3px solid #fff; box-shadow: 0 0 0 2px rgba(37,99,235,.4); }
+  #mapCard { display: none; margin: 10px 12px 0; }
+  #mapCard.show { display: block; }
+  .map-card-head { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
+  .map-card-head .big { flex: 0 0 56px; height: 56px; border-radius: 50%; background: #fff; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 30px; }
+  .map-card-close { background: none; border: none; font-size: 18px; color: var(--subtext); }
+  #mapRange { margin: 10px 12px; }
+
+  /* キュー */
+  .queue-item { border: 1px solid var(--border); border-radius: 12px; padding: 10px; margin-bottom: 10px; background: #fff; }
+  .list-check { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-top: 1px dashed var(--border); }
+  .list-check input { width: 22px; height: 22px; flex: 0 0 22px; }
+  .list-check .ln { flex: 1; font-weight: 700; font-size: 14px; }
+  .list-check.done .ln { color: var(--subtext); text-decoration: line-through; }
+
+  /* PINロック */
+  #lockScreen { position: fixed; inset: 0; background: var(--primary); color: #fff; z-index: 5000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 20px; }
+  #lockScreen.hidden { display: none; }
+  #lockScreen h2 { font-size: 18px; }
+  #lockScreen p { font-size: 12px; opacity: .8; text-align: center; line-height: 1.6; max-width: 320px; }
+  #lockForm { width: 100%; max-width: 320px; display: flex; flex-direction: column; gap: 10px; }
+  #lockForm input { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.95); color: var(--text); font-size: 16px; }
+  #lockForm button { padding: 12px; border-radius: 10px; border: none; background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; }
+  .remember-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #e2e8f0; }
+  .remember-row input { width: 20px; height: 20px; }
+  .lock-msg { min-height: 18px; font-size: 13px; color: #fca5a5; font-weight: 700; }
+
+  .toast { position: fixed; left: 50%; bottom: calc(var(--nav-h) + 20px); transform: translateX(-50%); background: rgba(15,23,42,.92); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; z-index: 6000; max-width: 90%; text-align: center; pointer-events: none; opacity: 0; transition: opacity .2s; }
+  .toast.show { opacity: 1; }
+  /* v3.0 項目2：成功トースト（緑・✓） */
+  .toast.ok { background: #059669; font-weight: 700; }
+  /* v3.0 項目1：保存中のスピナー（全画面・下の画面は押せない） */
+  #busy { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 4000; display: none; align-items: center; justify-content: center; touch-action: none; }
+  #busy.show { display: flex; }
+  #busy .busy-box { background: rgba(15,23,42,.9); color: #fff; border-radius: 16px; padding: 22px 28px; display: flex; flex-direction: column; align-items: center; gap: 12px; font-weight: 700; font-size: 14px; min-width: 140px; }
+  .spinner { width: 44px; height: 44px; border-radius: 50%; border: 4px solid rgba(255,255,255,.25); border-top-color: #fff; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* v3.0 項目2：失敗バナー（閉じるまで残る） */
+  #failBanner { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 10px); width: calc(100% - 24px); max-width: 744px; background: #fef2f2; border: 2px solid var(--danger); color: #991b1b; border-radius: 14px; padding: 12px 44px 12px 14px; z-index: 4500; box-shadow: 0 6px 20px rgba(0,0,0,.18); display: none; font-size: 13px; line-height: 1.6; }
+  #failBanner.show { display: block; }
+  /* バナーが出ている間は、下のボタン（保存など）をバナーより上までスクロールできるよう余白を足す */
+  body.banner-open .view { padding-bottom: 240px; }
+  body.banner-open main { padding-bottom: calc(var(--nav-h) + 240px); }
+  #failBanner b { display: block; font-size: 14px; }
+  #failBanner .fb-close { position: absolute; top: 6px; right: 6px; width: 36px; height: 36px; border: none; background: none; font-size: 20px; color: #991b1b; }
+  #failBanner .btn-row { margin-top: 8px; }
+  /* v3.0 項目3：名称検索＋ジャンルフィルター */
+  .flt { margin-bottom: 8px; }
+  .flt input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+  .flt-genres { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0 2px; -webkit-overflow-scrolling: touch; }
+  .flt-genres .toggle-chip { flex: 0 0 auto; }
+  .flt-genres .toggle-chip small { font-weight: 600; opacity: .7; margin-left: 2px; }
+  /* v3.0 項目4：ジャンルのグループ見出し */
+  .grp-name { font-size: 12px; font-weight: 800; color: var(--subtext); margin: 12px 2px 6px; }
+  .grp-name:first-child { margin-top: 0; }
+  .tag-groups details { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; background: #fff; }
+  .tag-groups summary { font-size: 13px; }
+  .tag-groups .chips { margin-top: 8px; }
+  .section-gap { height: 4px; }
+  details summary { cursor: pointer; font-weight: 700; font-size: 13px; color: var(--primary); }
+  code { background: #f1f5f9; padding: 1px 4px; border-radius: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<!-- ==================== PINロック ==================== -->
+<div id="lockScreen">
+  <h2 id="lockTitle">🔒 スポット帳</h2>
+  <p id="lockDesc">PINを入力してください</p>
+  <form id="lockForm" autocomplete="on">
+    <input type="text" name="username" value="spotbook" autocomplete="username" hidden>
+    <input type="password" id="lockPass" placeholder="パスワード" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <input type="password" id="lockPass2" placeholder="確認のためもう一度" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" hidden>
+    <label class="remember-row"><input type="checkbox" id="lockRemember" checked> この端末に記憶する（次回から入力不要）</label>
+    <button type="submit" id="lockBtn">ロック解除</button>
+  </form>
+  <div class="lock-msg" id="lockMsg"></div>
+</div>
+
+<header>
+  <h1>📍 スポット帳</h1>
+  <button class="sync-badge" id="syncBadge" onclick="syncFromCloud(true)">未接続</button>
+</header>
+
+<main>
+  <!-- ==================== タブ1 ホーム（探す） ==================== -->
+  <section id="page-home" class="page active">
+    <div class="card">
+      <div class="search-row">
+        <input type="search" id="homeSearch" placeholder="店名・住所・メモで検索" enterkeyhint="search">
+        <button class="btn" onclick="runHomeSearch()">検索</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>🗾 都道府県から探す</span><span class="muted" id="homeTotal"></span></div>
+      <div id="prefGrid"></div>
+    </div>
+
+    <div class="card" id="memoriesCard">
+      <div class="card-title"><span>📖 思い出ノート</span><button class="btn small" onclick="openMemories()">開く</button></div>
+      <div id="memoriesSummary"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        <span>📡 近くのスポット</span>
+        <button class="btn small secondary" onclick="locateAndRender()">現在地を取得</button>
+      </div>
+      <div id="nearList"><div class="empty">「現在地を取得」で近い順に表示します</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>👀 最近見た</span></div>
+      <div id="recentViewed"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>🆕 最近追加した</span></div>
+      <div id="recentAdded"></div>
+    </div>
+  </section>
+
+  <!-- ==================== タブ2 地図 ==================== -->
+  <section id="page-map" class="page">
+    <div id="mapFilters">
+      <div class="chips-scroll" id="mapCatChips"></div>
+      <div class="selects">
+        <select id="mapPref" onchange="onMapFilterChange(true)"></select>
+        <select id="mapTag" onchange="onMapFilterChange(true)"></select>
+        <select id="mapStatus" onchange="onMapFilterChange(false)">
+          <option value="">訪問：すべて</option>
+          <option value="visited">✅ 訪問済だけ</option>
+          <option value="unvisited">未訪問だけ</option>
+        </select>
+      </div>
+      <div class="map-count"><span id="mapCount"></span><button class="btn small ghost" onclick="resetMapFilters()">↺ 絞り込みリセット</button></div>
+    </div>
+    <div id="mapWrap">
+      <div id="map"></div>
+      <div class="map-fab">
+        <button id="btnLocate" title="現在地" onclick="locateOnMap()">◎</button>
+        <button id="btnSat" title="航空写真" onclick="toggleSatellite()">🛰️</button>
+      </div>
+    </div>
+    <div id="mapCard" class="card"></div>
+    <div id="mapRange" class="card">
+      <div class="card-title"><span id="mapRangeTitle">この範囲のスポット</span></div>
+      <div id="mapRangeList"></div>
+    </div>
+  </section>
+
+  <!-- ==================== タブ3 追加 ==================== -->
+  <section id="page-add" class="page">
+    <div class="card">
+      <div class="card-title"><span>🔎 アプリ内検索で追加</span></div>
+      <div class="search-row">
+        <input type="search" id="addQuery" placeholder="店名（＋地名）を入力" enterkeyhint="search">
+        <button class="btn" onclick="searchPlaces()">検索</button>
+      </div>
+      <div id="addCandidates" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>🔗 マップのリンクから追加</span></div>
+      <div class="search-row">
+        <input type="url" id="addUrl" placeholder="https://maps.app.goo.gl/...">
+        <button class="btn" onclick="resolveMapUrl()">読込</button>
+      </div>
+      <p class="muted" style="margin-top:6px;">Googleマップの「共有」でコピーしたURLを貼ってください。</p>
+      <div id="urlCandidates" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>✍️ 手入力で追加</span><button class="btn small secondary" onclick="openNewManual()">入力画面へ</button></div>
+      <div class="card-title" style="margin:6px 0 0;"><span style="color:var(--subtext)">📷 スクショから追加</span><button class="btn small ghost" disabled>v1.1で対応</button></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>📮 Google未保存キュー</span><span class="muted" id="gqCount"></span></div>
+      <p class="muted" style="margin-bottom:8px;">リスト名をタップ → Googleマップで開いて保存 → 戻ってチェック。全部チェックすると「済」になります。</p>
+      <div id="googleQueue"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>🧺 未処理キュー</span><span class="muted" id="uqCount"></span></div>
+      <p class="muted" style="margin-bottom:8px;">座標・都道府県が未設定のスポットと、メモに「要確認」があるスポットです。タップして編集で直してください。</p>
+      <div class="btn-row" style="margin-bottom:8px;"><button class="btn small secondary" onclick="runFillCoords()">📍 座標の無いスポットを自動補完</button></div>
+      <div id="unprocessedQueue"></div>
+    </div>
+  </section>
+
+  <!-- ==================== タブ4 ジャンル ==================== -->
+  <section id="page-genre" class="page">
+    <div class="card">
+      <div class="card-title"><span>🏷️ ジャンルタグ</span></div>
+      <div id="genreTags"></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span>🗺️ 地域タグ</span></div>
+      <div id="regionTags"></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span>📂 項目</span></div>
+      <div id="categoryTags"></div>
+    </div>
+  </section>
+
+  <!-- ==================== タブ5 設定 ==================== -->
+  <section id="page-settings" class="page">
+    <div class="card">
+      <div class="card-title"><span>🏷️ ジャンル・座標のメンテナンス</span></div>
+      <p class="muted" style="margin-bottom:8px;line-height:1.6;">［ジャンル再判定］全スポットの店名から足りないジャンルタグを追加します（追加のみ・削除はしません）。<br>［座標を自動補完］座標の無いスポットを、マップURL → place_id → 住所 → 店名の順で探して埋めます。<span id="noCoordCount"></span></p>
+      <div class="btn-row">
+        <button class="btn" onclick="runReclassify()">🏷️ ジャンル再判定</button>
+        <button class="btn secondary" onclick="runFillCoords()">📍 座標を自動補完</button>
+      </div>
+      <div id="maintResult" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>☁️ GAS 接続</span></div>
+      <div class="form-row">
+        <label class="lbl">GAS ウェブアプリURL</label>
+        <input type="url" id="gasUrlInput" placeholder="https://script.google.com/macros/s/xxxx/exec">
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="saveGasUrl()">保存して同期</button>
+        <button class="btn ghost" onclick="syncFromCloud(true)">再読み込み</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>🔑 Places APIキー</span><span class="muted" id="apiKeyState"></span></div>
+      <p class="muted" style="margin-bottom:8px;">新規追加時の検索・自動判定に使います。キーはスプレッドシートの config に保存され、アプリには返されません。</p>
+      <div class="form-row"><input type="password" id="apiKeyInput" placeholder="AIza..." autocomplete="off"></div>
+      <div class="btn-row">
+        <button class="btn" onclick="saveApiKey()">保存</button>
+        <button class="btn danger" onclick="clearApiKey()">削除</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>🔒 パスワード（PIN）変更</span></div>
+      <p class="muted" style="margin-bottom:8px;">アプリ側のパスワードを変更します（英数字・記号OK、4〜64文字、空白不可）。GAS 側の <code>SECRET_PIN</code> も同じ値に書き換えて再デプロイしてください（一致しないと同期できません）。</p>
+      <div class="two-col">
+        <div class="form-row"><label class="lbl">現在のパスワード</label><input type="password" id="pinOld" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+        <div class="form-row"><label class="lbl">新しいパスワード（4文字以上）</label><input type="password" id="pinNew" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+      </div>
+      <button class="btn dark" onclick="changePin()">パスワードを変更</button>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
+        <div class="card-title" style="margin-bottom:6px;"><span style="font-size:13px;">📱 この端末に記憶</span><span class="muted" id="rememberState"></span></div>
+        <p class="muted" style="margin-bottom:8px;">記憶すると、アプリを開くたびのパスワード入力が不要になります（この端末だけ）。</p>
+        <div class="btn-row"><button class="btn secondary" id="rememberBtn" onclick="toggleRemember()">記憶する</button></div>
+      </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
+        <div class="card-title" style="margin-bottom:6px;"><span style="font-size:13px;">🔗 GAS とパスワードを合わせる</span></div>
+        <p class="muted" style="margin-bottom:8px;">「PINが一致しません」と出る時に使います。GAS の SECRET_PIN を入れて接続できたら、アプリのパスワードもその値にそろえます（今のパスワードは不要）。</p>
+        <button class="btn ghost" onclick="openGasPinFix()">GAS の SECRET_PIN で接続し直す</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>💾 データの入出力（CSV）</span></div>
+      <div class="btn-row" style="margin-bottom:10px;">
+        <button class="btn secondary" onclick="exportCsv()">⬇️ CSVエクスポート</button>
+        <button class="btn secondary" onclick="document.getElementById('csvInput').click()">⬆️ CSVインポート</button>
+      </div>
+      <div class="btn-row" style="margin-bottom:10px;">
+        <button class="btn ghost" onclick="exportVisitsCsv()">⬇️ 訪問記録CSVエクスポート（バックアップ用）</button>
+      </div>
+      <input type="file" id="csvInput" accept=".csv,text/csv" multiple style="display:none" onchange="importCsvFiles(event)">
+      <p class="muted" style="line-height:1.6;">
+        ・spots 形式（spots-import-v10.csv など）：そのまま取り込み（初期投入用）。<br>
+        ・Google Takeout の保存済みCSV（複数可）：ファイル名＝リスト名から都道府県・項目・タグを推定し、アプリに無いスポットだけ追加します。<br>
+        どちらも place_id とマップURLで重複を判定します。
+      </p>
+      <div id="importResult" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>🗺️ 地図タイルの提供元（上級者向け）</summary>
+        <div style="margin-top:10px;">
+          <div class="form-row"><label class="lbl">標準地図 URL</label><input type="text" id="tileStdUrl"></div>
+          <div class="form-row"><label class="lbl">標準地図 出典表示</label><input type="text" id="tileStdAttr"></div>
+          <div class="form-row"><label class="lbl">航空写真 URL</label><input type="text" id="tileSatUrl"></div>
+          <div class="form-row"><label class="lbl">航空写真 出典表示</label><input type="text" id="tileSatAttr"></div>
+          <div class="btn-row">
+            <button class="btn" onclick="saveTiles()">保存</button>
+            <button class="btn ghost" onclick="resetTiles()">初期値に戻す</button>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>ℹ️ このアプリ</span></div>
+      <p class="muted" style="line-height:1.7;">スポット帳 v3.0 ／ 登録件数 <span id="infoCount">0</span> 件 ／ 訪問記録 <span id="infoVisits">0</span> 件<br>
+      地図：Leaflet ＋ OpenStreetMap ／ Esri World Imagery</p>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn ghost" onclick="lockNow()">🔒 今すぐロック（記憶も解除）</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<nav class="bottom-nav">
+  <button class="nav-item active" data-tab="home" onclick="switchTab('home')"><span class="ic">🏠</span>ホーム</button>
+  <button class="nav-item" data-tab="map" onclick="switchTab('map')"><span class="ic">🗺️</span>地図</button>
+  <button class="nav-item" data-tab="add" onclick="switchTab('add')"><span class="ic">➕</span>追加</button>
+  <button class="nav-item" data-tab="genre" onclick="switchTab('genre')"><span class="ic">🏷️</span>ジャンル</button>
+  <button class="nav-item" data-tab="settings" onclick="switchTab('settings')"><span class="ic">⚙️</span>設定</button>
+</nav>
+
+<div id="viewStack"></div>
+<div class="toast" id="toast"></div>
+<div id="busy" aria-live="polite"><div class="busy-box"><div class="spinner"></div><div id="busyLabel">保存中…</div></div></div>
+<div id="failBanner" role="alert"><button class="fb-close" aria-label="閉じる" onclick="hideFailBanner()">✕</button><div id="failBody"></div></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+"use strict";
+// ======================================================================
+// 定数
+// ======================================================================
+const APP_VERSION = "3.0";
+const LS = {
+  gasUrl: "spotbook_gas_url",
+  pinHash: "spotbook_pin_hash",
+  cache: "spotbook_cache_v1",
+  recent: "spotbook_recent_viewed",
+  pinSession: "spotbook_pin_session",
+  pinSaved: "spotbook_pin_saved"
+};
+const SPOT_HEADERS = ["id","place_id","name","prefecture","city","categories","tags","regions","rep_tag","address","lat","lng","maps_url","status","rating","memo","google_saved","coord_source","source_lists","created_at","updated_at"];
+const MAIN_CATS = ["カフェ","宿","グルメ","観光地","服","その他"];
+const PREF_TAB_CATS = ["カフェ","宿","グルメ","観光地"];   // 県ページで常時表示
+const FUKU_PREFS = ["愛知県","大阪府","京都府","東京都"];   // 服タブを常時表示する県
+const REGIONS = [
+  ["北海道・東北", ["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県"]],
+  ["関東", ["茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県"]],
+  ["中部", ["新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県"]],
+  ["近畿", ["三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県"]],
+  ["中国", ["鳥取県","島根県","岡山県","広島県","山口県"]],
+  ["四国", ["徳島県","香川県","愛媛県","高知県"]],
+  ["九州・沖縄", ["福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"]]
+];
+const PREFS47 = REGIONS.flatMap(r => r[1]);
+const DEFAULT_TILES = {
+  tile_std_url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  tile_std_attr: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  tile_sat_url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  tile_sat_attr: "Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+};
+// GAS 未接続でキャッシュも無いときだけ使う表示用の予備（正はスプレッドシートの tags タブ）
+const FALLBACK_TAGS = [
+  ["ラーメン","🍜",1,"ジャンル",2],["焼肉","🥩",2,"ジャンル",3],["うなぎ","📌",3,"ジャンル",1],["寿司","🍣",4,"ジャンル",4],
+  ["中華","🥟",5,"ジャンル",5],["すき焼き","🥓",6,"ジャンル",6],["サウナ","🧖",7,"ジャンル",7],["キャンプ場","🏕️",8,"ジャンル",8],
+  ["スキー場","🏂",9,"ジャンル",9],["ガソスタ","⛽",10,"ジャンル",13],["駐車場","🅿️",11,"ジャンル",14],["美容","💉",12,"ジャンル",10],
+  ["景色","🌇",13,"ジャンル",11],["病院","🏥",14,"ジャンル",15],["車 写真撮影場所","📸",15,"ジャンル",12],["Friend","🏠",16,"ジャンル",16],
+  ["定期","💳",17,"ジャンル",""],["コーティング周辺","🚗",18,"ジャンル",""],
+  ["カフェ","☕",1,"項目",""],["宿","🏨",2,"項目",""],["グルメ","🍽️",3,"項目",""],["観光地","🌇",4,"項目",""],["服","👕",5,"項目",""],["その他","📍",6,"項目",""]
+].map(r => ({ name: r[0], emoji: r[1], order: r[2], type: r[3], repPriority: r[4] }));
+
+// ======================================================================
+// 状態
+// ======================================================================
+const state = {
+  spots: [],
+  visits: [],           // v2.0 訪問ログ
+  tags: [],
+  config: {},
+  gasUrl: "",
+  pin: "",
+  here: null,           // {lat, lng}
+  viewStack: [],
+  currentTab: "home",
+  map: null,
+  mapLayers: null,
+  cluster: null,
+  hereMarker: null,
+  satellite: false,
+  mapCats: new Set(),   // 空＝すべて
+  selectedId: null,
+  markerById: {}
+};
+
+// ======================================================================
+// ユーティリティ
+// ======================================================================
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function splitList(s) { return String(s || "").split("/").map(x => x.trim()).filter(Boolean); }
+function joinList(a) { return Array.from(new Set(a.filter(Boolean))).join("/"); }
+function norm(s) { return String(s || "").normalize("NFKC").toLowerCase(); }
+function toast(msg, ms) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), ms || 2200);
+}
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function hasCoord(s) { return s.lat !== "" && s.lng !== "" && !isNaN(Number(s.lat)) && !isNaN(Number(s.lng)) && s.lat != null && s.lng != null; }
+function distanceKm(a, b) {
+  const R = 6371, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+function spotDistance(s) {
+  if (!state.here || !hasCoord(s)) return null;
+  return distanceKm(state.here, { lat: Number(s.lat), lng: Number(s.lng) });
+}
+function fmtDist(km) {
+  if (km == null) return "";
+  return km < 1 ? Math.round(km * 1000) + "m" : (km < 100 ? km.toFixed(1) : Math.round(km)) + "km";
+}
+function stars(r) { const n = Number(r) || 0; return n ? "★".repeat(n) + "☆".repeat(5 - n) : ""; }
+function prefShort(p) { return p === "北海道" ? "北海道" : String(p || "").replace(/[都府県]$/, ""); }
+async function sha256(s) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("spotbook:" + s));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// タグマスタ
+function tagMaster() { return state.tags.length ? state.tags : FALLBACK_TAGS; }
+function tagInfo(name) { return tagMaster().find(t => t.name === name); }
+function tagsOfType(type) { return tagMaster().filter(t => t.type === type).sort((a, b) => a.order - b.order); }
+function emojiFor(name) { const t = tagInfo(name); return t && t.emoji ? t.emoji : ""; }
+function spotEmoji(s) {
+  if (s.rep_tag && emojiFor(s.rep_tag)) return emojiFor(s.rep_tag);
+  const cats = splitList(s.categories);
+  for (const c of cats) { const e = emojiFor(c); if (e) return e; }
+  return emojiFor("その他") || "📍";
+}
+/** 代表タグの自動決定（tags タブの「代表優先順」が小さいものが優先。空欄のタグは対象外） */
+function autoRepTag(tags) {
+  const cands = tagMaster().filter(t => t.repPriority !== "" && t.repPriority != null && tags.includes(t.name))
+    .sort((a, b) => Number(a.repPriority) - Number(b.repPriority));
+  return cands.length ? cands[0].name : "";
+}
+function getSpot(id) { return state.spots.find(s => s.id === id); }
+// v3.0：ジャンルのグループ（ジャンルタブ・編集画面・地図の絞り込みで見出しに使う）
+const GROUP_ORDER = ["麺", "和食", "肉", "各国", "カフェ・甘味", "酒", "癒し", "観光", "アウトドア", "宿", "買い物", "実用", "属性", "その他"];
+const FOOD_GROUPS = ["麺", "和食", "肉", "各国"];   // ここのジャンルが付いたら項目「グルメ」も付ける
+function tagGroup(name) { const t = tagInfo(name); return (t && t.group) || "その他"; }
+/** ジャンル名の配列をグループごとにまとめる → [[グループ名, [名前…]], …] */
+function groupGenres(names) {
+  const m = {};
+  names.forEach(n => { const g = tagGroup(n); (m[g] = m[g] || []).push(n); });
+  const ord = n => { const t = tagInfo(n); return t ? Number(t.order) || 0 : 9999; };
+  return GROUP_ORDER.concat(Object.keys(m).filter(g => !GROUP_ORDER.includes(g))).filter(g => m[g]).map(g => [g, m[g].sort((a, b) => ord(a) - ord(b))]);
+}
+
+// ---------- v2.0 訪問ログ ----------
+const VISIT_HEADERS = ["visit_id","spot_id","date","rating","menu","price","companions","people","comment","photos","repeat","created_at","updated_at"];
+const RATING_FACES = ["", "😫", "😞", "😐", "😋", "🤩"];
+const RATING_LABELS = ["", "もう行かない", "いまいち", "ふつう", "よかった", "最高"];
+const REPEAT_OPTS = ["◎", "○", "×"];
+const MAX_PHOTOS = 5;
+function face(r) { return RATING_FACES[Number(r)] || ""; }
+function getVisit(id) { return state.visits.find(v => v.visit_id === id); }
+function cmpVisitDesc(a, b) { return String(b.date).localeCompare(String(a.date)) || String(b.visit_id).localeCompare(String(a.visit_id)); }
+let _visitIndex = null;
+function visitIndex() {
+  if (_visitIndex) return _visitIndex;
+  const m = {};
+  state.visits.forEach(v => { (m[v.spot_id] = m[v.spot_id] || []).push(v); });
+  Object.values(m).forEach(a => a.sort(cmpVisitDesc));
+  return (_visitIndex = m);
+}
+function invalidateVisits() { _visitIndex = null; }
+function visitsOf(spotId) { return visitIndex()[spotId] || []; }
+function lastVisit(spotId) { return visitsOf(spotId)[0] || null; }
+function isVisited(s) { return visitsOf(s.id).length > 0; }
+function yen(n) { return Number(n).toLocaleString("ja-JP") + "円"; }
+function perPerson(v) {
+  const p = Number(v.price), n = Number(v.people);
+  return v.price !== "" && v.people !== "" && p >= 0 && n > 0 ? "1人あたり約" + yen(Math.round(p / n)) : "";
+}
+function photoIds(v) { return splitList(v && v.photos); }
+function photoUrl(id, size) { return "https://drive.google.com/thumbnail?id=" + encodeURIComponent(id) + "&sz=w" + (size || 400); }
+function photoImg(id, size) { return '<img loading="lazy" alt="" src="' + esc(photoUrl(id, size)) + '">'; }
+
+// ======================================================================
+// GAS 通信（家計簿と同じ POST text/plain JSON。action で分岐、{status:"ok"|"error"} で応答）
+// ======================================================================
+// ---- v3.0 項目1・2：スピナーと結果表示。api() を通る全アクションに自動で付く ----
+const ACTION_UI = {
+  getAll: { label: "同期中…", ok: d => "同期しました（" + (d.spots || []).length + "件）", fail: "同期", retry: () => syncFromCloud(true) },
+  addSpot: { label: "保存中…", ok: "スポットを保存しました", fail: "スポットの保存", form: true },
+  updateSpot: { label: "保存中…", ok: "スポットを更新しました", fail: "スポットの更新", form: true },
+  deleteSpot: { label: "保存中…", ok: "スポットを削除しました", fail: "スポットの削除" },
+  importSpots: { label: "保存中…", ok: d => d.added + "件を取り込みました", fail: "取り込み" },
+  setConfig: { label: "保存中…", ok: (d, p) => p && p.key === "queue_checks" ? "チェックを保存しました" : "設定を保存しました", fail: "設定の保存" },
+  addVisit: { label: "保存中…", ok: "訪問記録を保存しました", fail: "訪問記録の保存", form: true },
+  updateVisit: { label: "保存中…", ok: "訪問記録を保存しました", fail: "訪問記録の保存", form: true },
+  deleteVisit: { label: "保存中…", ok: "訪問記録を削除しました", fail: "訪問記録の削除" },
+  uploadPhoto: { label: "写真を保存中…", fail: "写真のアップロード", form: true },
+  deletePhoto: { label: "保存中…" },
+  reclassifyAll: { label: "ジャンル判定中…", ok: d => d.spots + "件のスポットに" + d.added + "個のタグを追加しました", fail: "ジャンル再判定" },
+  fillCoords: { label: "座標を補完中…", fail: "座標の自動補完" },
+  resolveCoords: { label: "座標を補完中…" },
+  classifyGenres: { label: "ジャンル判定中…" },
+  searchPlace: { label: "検索中…" },
+  resolveUrl: { label: "検索中…" },
+  ping: { label: "確認中…" }
+};
+const BUSY_MIN_MS = 300;
+const busy = { n: 0, since: 0 };
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function showBusy(label) {
+  busy.n++;
+  if (busy.n === 1) { busy.since = Date.now(); document.getElementById("busy").classList.add("show"); }
+  document.getElementById("busyLabel").textContent = label;
+}
+async function hideBusy() {
+  const wait = BUSY_MIN_MS - (Date.now() - busy.since);
+  if (wait > 0) await sleep(wait);
+  busy.n = Math.max(0, busy.n - 1);
+  if (!busy.n) document.getElementById("busy").classList.remove("show");
+}
+function okToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = "✓ " + msg; t.classList.add("show", "ok");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show", "ok"), 2500);
+}
+function failReason(e) {
+  if (e.code === "AUTH") return "パスワードが一致しません。設定タブで確認してください。";
+  if (e.code === "NETWORK") return "通信できませんでした。電波の良い場所で再試行してください。";
+  return e.message || "原因不明のエラーです";
+}
+function showFailBanner(what, e, retry, form) {
+  const body = document.getElementById("failBody");
+  body.innerHTML = "<b>⚠️ " + esc(what) + "に失敗しました</b>" + esc(failReason(e)) +
+    (form ? '<br><span style="color:#7f1d1d;">入力内容はそのまま残っています。直してもう一度保存してください。</span>' : "") +
+    '<div class="btn-row">' + (retry ? '<button class="btn small danger fbRetry">🔄 再試行</button>' : "") +
+    (e.code === "AUTH" ? '<button class="btn small ghost fbAuth">🔗 パスワードを合わせる</button>' : "") + "</div>";
+  const r = body.querySelector(".fbRetry"); if (r) r.onclick = () => { hideFailBanner(); retry(); };
+  const a = body.querySelector(".fbAuth"); if (a) a.onclick = () => { hideFailBanner(); openGasPinFix(); };
+  document.getElementById("failBanner").classList.add("show");
+  document.body.classList.add("banner-open");
+}
+function hideFailBanner() { document.getElementById("failBanner").classList.remove("show"); document.body.classList.remove("banner-open"); }
+/** GAS 呼び出しの入口。スピナー表示 → 通信 → スピナーを消す → 成功トースト／失敗バナー */
+async function api(action, params, opts) {
+  opts = opts || {};
+  const ui = ACTION_UI[action] || {};
+  showBusy(opts.label || ui.label || "通信中…");
+  let data, err;
+  try { data = await apiRaw(action, params); } catch (e) { err = e; }
+  finally { await hideBusy(); }
+  if (err) {
+    if (!opts.quiet && ui.fail) showFailBanner(ui.fail, err, opts.retry || ui.retry, ui.form);
+    throw err;
+  }
+  if (!opts.quiet && !opts.noToast && ui.ok) okToast(typeof ui.ok === "function" ? ui.ok(data, params) : ui.ok);
+  return data;
+}
+async function apiRaw(action, params) {
+  if (!state.gasUrl) {
+    const e = new Error("GAS のURLが未設定です（設定タブで登録してください）"); e.code = "NO_URL"; throw e;
+  }
+  let res;
+  try {
+    res = await fetch(state.gasUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(Object.assign({ action: action, pin: state.pin }, params || {}))
+    });
+  } catch (err) {
+    const e = new Error("通信に失敗しました。電波状況と GAS のURL・公開設定（全員）を確認してください。"); e.code = "NETWORK"; throw e;
+  }
+  let data;
+  try { data = await res.json(); } catch (err) {
+    const e = new Error("GAS の応答を読めませんでした（URLが正しいか確認してください）"); e.code = "BAD_RESPONSE"; throw e;
+  }
+  if (data.status !== "ok") {
+    const e = new Error(data.message || "GAS でエラーが発生しました"); e.code = data.code; e.data = data; throw e;
+  }
+  return data;
+}
+function setBadge(text, mode) {
+  const b = document.getElementById("syncBadge");
+  b.textContent = text; b.className = "sync-badge " + (mode || "");
+}
+function saveCache() {
+  try {
+    localStorage.setItem(LS.cache, JSON.stringify({ spots: state.spots, visits: state.visits, tags: state.tags, config: state.config, ts: Date.now() }));
+  } catch (e) { /* 容量超過などは無視（次回は GAS から取得） */ }
+}
+function loadCache() {
+  try {
+    const c = JSON.parse(localStorage.getItem(LS.cache) || "null");
+    if (c) { state.spots = c.spots || []; state.visits = c.visits || []; state.tags = c.tags || []; state.config = c.config || {}; invalidateVisits(); }
+  } catch (e) { /* 壊れたキャッシュは無視 */ }
+}
+async function syncFromCloud(showAlert, quiet) {
+  if (!state.gasUrl) {
+    setBadge("未接続", "");
+    if (showAlert) { switchTab("settings"); toast("GAS のURLを設定してください"); }
+    return;
+  }
+  setBadge("🔄 同期中", "syncing");
+  try {
+    const d = await api("getAll", {}, { noToast: !!quiet });
+    state.spots = d.spots || [];
+    state.visits = d.visits || [];
+    invalidateVisits();
+    state.tags = (d.tags || []).map(t => Object.assign({}, t, { repPriority: t.repPriority === "" ? "" : t.repPriority }));
+    state.config = d.config || {};
+    saveCache();
+    setBadge("☁️ " + state.spots.length + "件", "online");
+    hideFailBanner();
+    renderAll();
+  } catch (e) {
+    setBadge(e.code === "AUTH" ? "⚠️ パスワード不一致" : "⚠️ 同期エラー", "error");
+    if (e.code === "AUTH" && showAlert) openGasPinFix();
+  }
+}
+/** GAS の状態（doGet）を見る。v2.0.1 以降の GAS は SECRET_PIN が初期値のままかを返す */
+async function gasDiagnose() {
+  try {
+    const r = await fetch(state.gasUrl, { method: "GET" });
+    return await r.json();
+  } catch (e) { return null; }
+}
+/** 「PINが一致しません」の解消画面：原因の説明＋SECRET_PIN を入れて接続→アプリ側もそろえる */
+function openGasPinFix() {
+  if (!state.gasUrl) { alert("先に GAS のURLを保存してください"); return; }
+  if (state.viewStack.some(v => v.gasPinFix)) return;
+  let diag = null, checked = false;
+  pushView({
+    static: true, gasPinFix: true,
+    title: "🔗 GAS とパスワードを合わせる",
+    render(body, view) {
+      const d = diag;
+      let cause = "";
+      if (checked && !d) cause = '<div class="notice warn">GAS の状態を確認できませんでした（URL・電波を確認）。</div>';
+      else if (d && d.pin_default) cause = '<div class="notice danger">GAS 側の SECRET_PIN が初期値「0000」のまま動いています。<br>GAS エディタで SECRET_PIN を書き換えて保存したあと、<b>デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ</b> をしてください。保存しただけでは反映されません。</div>';
+      else if (d && d.version) cause = '<div class="notice info">GAS（v' + esc(d.version) + '）は動いています。アプリのパスワードと GAS の SECRET_PIN が違う状態です。</div>';
+      else if (d) cause = '<div class="notice warn">GAS が古い版のまま動いています。GAS を書き換えた場合は「新バージョン」でデプロイし直してください。</div>';
+      body.innerHTML = cause +
+        '<div class="card"><p style="font-size:13px;line-height:1.7;margin-bottom:10px;">よくある原因：<br>' +
+        "① GAS の SECRET_PIN を書き換えて<b>保存しただけ</b>（新バージョンでデプロイしていない）<br>" +
+        "② アプリを最初に開いた時に決めたパスワードが、SECRET_PIN と違う<br>" +
+        "③ 大文字・小文字、全角・半角、記号（' ’ など）の違い</p>" +
+        '<div class="form-row"><label class="lbl">GAS の SECRET_PIN と同じ文字列</label><input type="password" class="gpPin" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false"></div>' +
+        '<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:12px;"><input type="checkbox" class="gpRemember" checked> この端末に記憶する</label>' +
+        '<div class="btn-row"><button class="btn gpGo">この値で接続する</button></div><div class="lock-msg gpMsg" style="color:var(--danger);margin-top:8px;"></div></div>';
+      const go = async () => {
+        const v = body.querySelector(".gpPin").value;
+        const msg = body.querySelector(".gpMsg");
+        const err = pinFormatError(v);
+        if (err) { msg.textContent = err; return; }
+        msg.textContent = "接続中…";
+        const prev = state.pin;
+        state.pin = v;
+        try {
+          await api("ping");
+          await adoptPin(v, body.querySelector(".gpRemember").checked);
+          popView();
+          await syncFromCloud(false);
+        } catch (e) {
+          state.pin = prev;
+          msg.textContent = e.code === "AUTH" ? "GAS の SECRET_PIN と一致しません。上の原因①〜③を確認してください" : e.message;
+        }
+      };
+      body.querySelector(".gpGo").onclick = go;
+      body.querySelector(".gpPin").addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    }
+  });
+  gasDiagnose().then(d => { diag = d; checked = true; const v = state.viewStack.find(x => x.gasPinFix); if (v) drawView(v); });
+}
+function replaceSpotLocal(spot) {
+  const i = state.spots.findIndex(s => s.id === spot.id);
+  if (i >= 0) state.spots[i] = spot; else state.spots.push(spot);
+  saveCache();
+}
+
+// ======================================================================
+// PIN ロック（アプリ側でロック＋GAS 側でも SECRET_PIN と照合）
+// ======================================================================
+const lock = { mode: "unlock" };
+const PIN_MIN = 4, PIN_MAX = 64;
+/** パスワード形式チェック：4〜64文字・空白なし（文字種は制限しない）。OKなら空文字 */
+function pinFormatError(p) {
+  if (p.length < PIN_MIN) return PIN_MIN + "文字以上にしてください";
+  if (p.length > PIN_MAX) return PIN_MAX + "文字以内にしてください";
+  if (/\s/.test(p)) return "空白（スペース）は使えません";
+  return "";
+}
+function getSavedPin() { try { return localStorage.getItem(LS.pinSaved) || ""; } catch (e) { return ""; } }
+function setSavedPin(v) { try { if (v) localStorage.setItem(LS.pinSaved, v); else localStorage.removeItem(LS.pinSaved); } catch (e) { /* 無視 */ } }
+/** パスワードを確定：ハッシュ保存＋セッション保持＋（希望時）端末に記憶 */
+async function adoptPin(v, remember) {
+  localStorage.setItem(LS.pinHash, await sha256(v));
+  state.pin = v;
+  sessionStorage.setItem(LS.pinSession, v);
+  setSavedPin(remember ? v : "");
+  renderSettings();
+}
+function initLock() {
+  // Enter キー（キーボードの「開く／実行」）でも確定できるよう form の submit で受ける
+  document.getElementById("lockForm").addEventListener("submit", e => { e.preventDefault(); submitLock(); });
+  const hash = localStorage.getItem(LS.pinHash);
+  // 端末に記憶している場合（v2.0.1）、または同じタブ内の再読み込みなら再入力を求めない
+  const cand = getSavedPin() || sessionStorage.getItem(LS.pinSession);
+  if (hash && cand) {
+    sha256(cand).then(h => { if (h === hash) { state.pin = cand; sessionStorage.setItem(LS.pinSession, cand); unlock(); } else { setSavedPin(""); showLock("unlock"); } });
+    return;
+  }
+  showLock(hash ? "unlock" : "setup");
+}
+function toggleRemember() {
+  if (getSavedPin()) { setSavedPin(""); toast("記憶を解除しました（次回から入力が必要）"); }
+  else if (state.pin) { setSavedPin(state.pin); toast("この端末に記憶しました（次回から入力不要）"); }
+  renderSettings();
+}
+function showLock(mode) {
+  lock.mode = mode;
+  const setup = mode === "setup";
+  const p1 = document.getElementById("lockPass"), p2 = document.getElementById("lockPass2");
+  document.getElementById("lockScreen").classList.remove("hidden");
+  document.getElementById("lockTitle").textContent = setup ? "🔐 パスワードを設定" : "🔒 スポット帳";
+  document.getElementById("lockDesc").innerHTML = setup
+    ? "4文字以上のパスワードを決めてください（英数字・記号OK、空白不可）。<br>GAS の SECRET_PIN と同じ文字列にします。"
+    : "パスワードを入力してください";
+  p1.value = ""; p2.value = "";
+  p1.placeholder = setup ? "新しいパスワード" : "パスワード";
+  p1.setAttribute("autocomplete", setup ? "new-password" : "current-password");
+  p2.hidden = !setup;
+  document.getElementById("lockBtn").textContent = setup ? "設定する" : "ロック解除";
+  document.getElementById("lockMsg").textContent = "";
+  setTimeout(() => p1.focus(), 50);
+}
+async function submitLock() {
+  const msg = document.getElementById("lockMsg");
+  const p1 = document.getElementById("lockPass"), p2 = document.getElementById("lockPass2");
+  const v = p1.value;
+  if (lock.mode === "setup") {
+    const err = pinFormatError(v);
+    if (err) { msg.textContent = err; return; }
+    if (v !== p2.value) { msg.textContent = "確認用と一致しません"; p2.value = ""; p2.focus(); return; }
+    localStorage.setItem(LS.pinHash, await sha256(v));
+    state.pin = v; sessionStorage.setItem(LS.pinSession, v);
+    setSavedPin(document.getElementById("lockRemember").checked ? v : "");
+    unlock();
+    return;
+  }
+  if (!v) { msg.textContent = "パスワードを入力してください"; return; }
+  if ((await sha256(v)) === localStorage.getItem(LS.pinHash)) {
+    state.pin = v; sessionStorage.setItem(LS.pinSession, v);
+    setSavedPin(document.getElementById("lockRemember").checked ? v : "");
+    unlock();
+  } else {
+    msg.textContent = "パスワードが違います"; p1.value = ""; p1.focus();
+  }
+}
+let unlocked = false;
+function unlock() {
+  document.getElementById("lockScreen").classList.add("hidden");
+  if (unlocked) return;
+  unlocked = true;
+  startApp();
+}
+function lockNow() {
+  sessionStorage.removeItem(LS.pinSession);
+  setSavedPin("");
+  state.pin = ""; unlocked = false;
+  location.reload();
+}
+async function changePin() {
+  const o = document.getElementById("pinOld").value, n = document.getElementById("pinNew").value;
+  if ((await sha256(o)) !== localStorage.getItem(LS.pinHash)) { alert("現在のパスワードが違います"); return; }
+  const err = pinFormatError(n);
+  if (err) { alert("新しいパスワード：" + err); return; }
+  localStorage.setItem(LS.pinHash, await sha256(n));
+  state.pin = n; sessionStorage.setItem(LS.pinSession, n);
+  if (getSavedPin()) setSavedPin(n);
+  document.getElementById("pinOld").value = ""; document.getElementById("pinNew").value = "";
+  alert("アプリ側のパスワードを変更しました。\nGAS の SECRET_PIN も同じ値に書き換えて、デプロイを更新してください。");
+}
+
+// ======================================================================
+// 起動
+// ======================================================================
+function startApp() {
+  state.gasUrl = localStorage.getItem(LS.gasUrl) || "";
+  document.getElementById("gasUrlInput").value = state.gasUrl;
+  loadCache();
+  renderAll();
+  if (state.gasUrl) syncFromCloud(false); else setBadge("未接続", "");
+  document.getElementById("homeSearch").addEventListener("keydown", e => { if (e.key === "Enter") runHomeSearch(); });
+  document.getElementById("addQuery").addEventListener("keydown", e => { if (e.key === "Enter") searchPlaces(); });
+}
+function syncHeaderHeight() {
+  const h = document.querySelector("header");
+  if (h) document.documentElement.style.setProperty("--header-h", h.offsetHeight + "px");
+}
+window.addEventListener("resize", syncHeaderHeight);
+window.addEventListener("orientationchange", () => setTimeout(syncHeaderHeight, 300));
+function makeTouchIcon() {
+  try {
+    const c = document.createElement("canvas"); c.width = c.height = 180;
+    const g = c.getContext("2d");
+    g.fillStyle = "#1e293b"; g.fillRect(0, 0, 180, 180);
+    g.fillStyle = "#fff"; g.beginPath(); g.arc(90, 90, 62, 0, Math.PI * 2); g.fill();
+    g.font = "76px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("📍", 90, 96);
+    document.getElementById("touchIcon").href = c.toDataURL("image/png");
+  } catch (e) { /* アイコン生成失敗は無視 */ }
+}
+
+function switchTab(tab) {
+  closeAllViews();
+  state.currentTab = tab;
+  document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab));
+  document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.tab === tab));
+  window.scrollTo(0, 0);
+  if (tab === "map") ensureMap();
+  renderTab(tab);
+}
+function renderAll() {
+  renderTab(state.currentTab);
+  document.getElementById("infoCount").textContent = state.spots.length;
+  document.getElementById("infoVisits").textContent = state.visits.length;
+  refreshViews();
+}
+function renderTab(tab) {
+  if (tab === "home") renderHome();
+  else if (tab === "map") renderMap(false);
+  else if (tab === "add") renderAddQueues();
+  else if (tab === "genre") renderGenre();
+  else if (tab === "settings") renderSettings();
+}
+
+// ======================================================================
+// オーバーレイ画面（県ページ・一覧・詳細・編集）
+// ======================================================================
+function pushView(view) {
+  const el = document.createElement("div");
+  el.className = "view";
+  el.innerHTML = '<div class="view-header"><button class="back">‹ 戻る</button><div class="title"></div></div><div class="view-body"></div>';
+  el.querySelector(".back").onclick = () => popView();
+  document.getElementById("viewStack").appendChild(el);
+  view.el = el;
+  state.viewStack.push(view);
+  drawView(view);
+  return view;
+}
+function drawView(view) {
+  view.el.querySelector(".title").textContent = typeof view.title === "function" ? view.title() : view.title;
+  const body = view.el.querySelector(".view-body");
+  const y = view.el.scrollTop;
+  view.render(body, view);
+  view.el.scrollTop = y;
+}
+function popView() {
+  const v = state.viewStack.pop();
+  if (v) { if (v.onClose) v.onClose(); v.el.remove(); }
+  refreshViews();
+  renderTab(state.currentTab);
+}
+function closeAllViews() {
+  while (state.viewStack.length) { const v = state.viewStack.pop(); v.el.remove(); }
+}
+function refreshViews() {
+  state.viewStack.forEach(v => { if (!v.static) drawView(v); });
+}
+
+// ======================================================================
+// 一覧（共通）
+// ======================================================================
+const SORTS = { distance: "距離順", name: "名前順", created: "登録日順", rating: "評価順" };
+function sortSpots(list, key) {
+  const a = list.slice();
+  if (key === "distance") {
+    a.sort((x, y) => { const dx = spotDistance(x), dy = spotDistance(y); return (dx == null ? 1e9 : dx) - (dy == null ? 1e9 : dy); });
+  } else if (key === "name") {
+    a.sort((x, y) => x.name.localeCompare(y.name, "ja"));
+  } else if (key === "rating") {
+    // v2.0：直近の訪問評価 → 訪問回数 → 名前（未訪問は後ろ）
+    const lr = s => { const v = lastVisit(s.id); return v ? Number(v.rating) || 0 : 0; };
+    a.sort((x, y) => lr(y) - lr(x) || visitsOf(y.id).length - visitsOf(x.id).length || x.name.localeCompare(y.name, "ja"));
+  } else {
+    a.sort((x, y) => String(y.created_at).localeCompare(String(x.created_at)) || String(y.id).localeCompare(String(x.id)));
+  }
+  return a;
+}
+function spotRowHtml(s) {
+  const cats = splitList(s.categories).map(c => '<span class="chip cat">' + esc(c) + "</span>").join("");
+  const tags = splitList(s.tags).map(t => '<span class="chip tag">' + esc(emojiFor(t)) + esc(t) + "</span>").join("");
+  const regions = splitList(s.regions).map(r => '<span class="chip region">' + esc(r) + "</span>").join("");
+  const d = spotDistance(s);
+  const lv = lastVisit(s.id);
+  const status = lv ? '<span class="chip visited">✅ 訪問済 ' + esc(lv.date.slice(2).replace(/-/g, "/")) + " " + esc(face(lv.rating)) + "</span>" : "";
+  return '<div class="spot-row" data-id="' + esc(s.id) + '">' +
+    '<div class="spot-emoji' + (lv ? " visited" : "") + '">' + esc(spotEmoji(s)) + "</div>" +
+    '<div class="spot-main"><div class="spot-name">' + esc(s.name) + "</div>" +
+    '<div class="spot-sub">' + esc([s.prefecture, s.city].filter(Boolean).join(" ") || s.address || "住所未設定") + "</div>" +
+    '<div class="chips">' + cats + tags + regions + status + "</div></div>" +
+    '<div class="spot-side">' + (d != null ? esc(fmtDist(d)) + "<br>" : "") +
+    '<button class="quick-btn" data-quick="' + esc(s.id) + '">行った！</button></div></div>';
+}
+function bindRows(container) {
+  container.querySelectorAll(".spot-row").forEach(r => r.onclick = () => openDetail(r.dataset.id));
+  bindQuick(container);
+}
+function bindQuick(container) {
+  container.querySelectorAll(".quick-btn[data-quick]").forEach(b => b.onclick = e => { e.stopPropagation(); openQuickVisit(b.dataset.quick); });
+}
+/** 名称検索・ジャンルの選択肢（そのリストに含まれるジャンルだけ、グループ順） */
+function genreChoices(spots) {
+  const cnt = {};
+  spots.forEach(s => splitList(s.tags).forEach(t => cnt[t] = (cnt[t] || 0) + 1));
+  return { cnt: cnt, names: groupGenres(Object.keys(cnt)).flatMap(x => x[1]) };
+}
+function filterBarHtml(holder, choices, placeholder) {
+  return '<div class="flt"><input type="search" class="fltQ" placeholder="' + esc(placeholder || "店名で絞り込み") + '" value="' + esc(holder.q || "") + '">' +
+    (choices.names.length ? '<div class="flt-genres">' + choices.names.map(n => '<button type="button" class="toggle-chip' + ((holder.genres || []).includes(n) ? " on" : "") + '" data-g="' + esc(n) + '">' +
+      esc(emojiFor(n) + n) + "<small>" + choices.cnt[n] + "</small></button>").join("") + "</div>" : "") + "</div>";
+}
+/** 名称（部分一致）×ジャンル（選んだどれかを含む＝OR）。spotOf で訪問記録などからスポットを引く */
+function matchNameGenre(s, holder) {
+  if (!s) return false;
+  if (holder.q && !norm(s.name).includes(norm(holder.q))) return false;
+  if (holder.genres && holder.genres.length && !splitList(s.tags).some(t => holder.genres.includes(t))) return false;
+  return true;
+}
+function bindFilterBar(container, holder, draw) {
+  const q = container.querySelector(".fltQ");
+  if (q) q.oninput = e => { holder.q = e.target.value; draw(); };
+  container.querySelectorAll(".flt-genres .toggle-chip").forEach(b => b.onclick = () => {
+    const g = b.dataset.g; holder.genres = holder.genres || [];
+    holder.genres = holder.genres.includes(g) ? holder.genres.filter(x => x !== g) : holder.genres.concat(g);
+    b.classList.toggle("on", holder.genres.includes(g)); draw();
+  });
+}
+/** 並び替え付き一覧を container に描画。holder.filters=true で名称検索＋ジャンルフィルターを出す（県ページ） */
+function renderSortableList(container, spots, holder, emptyText) {
+  holder.sortKey = holder.sortKey || "created";
+  holder.vf = holder.vf || "";
+  const all = spots;
+  const opts = Object.keys(SORTS).map(k => '<option value="' + k + '"' + (holder.sortKey === k ? " selected" : "") + ">" + SORTS[k] + "</option>").join("");
+  const vopts = [["", "すべて"], ["visited", "✅ 訪問済だけ"], ["unvisited", "未訪問だけ"]].map(([k, l]) => '<option value="' + k + '"' + (holder.vf === k ? " selected" : "") + ">" + l + "</option>").join("");
+  container.innerHTML = (holder.filters && all.length ? filterBarHtml(holder, genreChoices(all)) : "") +
+    '<div class="list-toolbar"><span class="muted lcnt"></span><span style="display:flex;gap:6px;"><select class="vfSel">' + vopts + '</select><select class="sortSel">' + opts + "</select></span></div>" +
+    '<div class="listArea"></div>';
+  const area = container.querySelector(".listArea"), cntEl = container.querySelector(".lcnt");
+  const draw = () => {
+    let shown = holder.vf === "visited" ? all.filter(isVisited) : holder.vf === "unvisited" ? all.filter(s => !isVisited(s)) : all;
+    if (holder.filters) shown = shown.filter(s => matchNameGenre(s, holder));
+    const filtered = shown.length !== all.length;
+    cntEl.textContent = filtered ? all.length + "件中 " + shown.length + "件を表示" : shown.length + " 件";
+    area.innerHTML = shown.length ? '<div class="list">' + sortSpots(shown, holder.sortKey).map(spotRowHtml).join("") + "</div>"
+      : '<div class="empty">' + esc(filtered && all.length ? "条件に合うスポットはありません" : (emptyText || "まだ0件")) + "</div>";
+    bindRows(area);
+  };
+  container.querySelector(".sortSel").onchange = async e => {
+    holder.sortKey = e.target.value;
+    if (holder.sortKey === "distance" && !state.here) { await getLocation(); }
+    draw();
+  };
+  container.querySelector(".vfSel").onchange = e => { holder.vf = e.target.value; draw(); };
+  bindFilterBar(container, holder, draw);
+  draw();
+}
+
+// ======================================================================
+// タブ1 ホーム
+// ======================================================================
+function countByPref() {
+  const m = {};
+  state.spots.forEach(s => { m[s.prefecture] = (m[s.prefecture] || 0) + 1; });
+  return m;
+}
+function renderHome() {
+  const cnt = countByPref();
+  document.getElementById("homeTotal").textContent = "全 " + state.spots.length + " 件";
+  let html = REGIONS.map(([rn, prefs]) =>
+    '<div class="region-block"><div class="region-name">' + esc(rn) + '</div><div class="pref-grid">' +
+    prefs.map(p => { const n = cnt[p] || 0; return '<button class="pref-btn' + (n ? "" : " zero") + '" data-pref="' + esc(p) + '">' + esc(prefShort(p)) + '<span class="badge">' + n + "</span></button>"; }).join("") +
+    "</div></div>").join("");
+  const others = Object.keys(cnt).filter(p => !PREFS47.includes(p));
+  if (others.length) {
+    html += '<div class="region-block"><div class="region-name">海外・都道府県不明</div><div class="pref-grid">' +
+      others.map(p => '<button class="pref-btn" data-pref="' + esc(p) + '">' + esc(p || "（未設定）") + '<span class="badge">' + cnt[p] + "</span></button>").join("") + "</div></div>";
+  }
+  const grid = document.getElementById("prefGrid");
+  grid.innerHTML = html;
+  grid.querySelectorAll(".pref-btn").forEach(b => b.onclick = () => openPref(b.dataset.pref));
+
+  // 思い出ノート（v2.0）
+  const sm = memorySummary();
+  const lastV = state.visits.slice().sort(cmpVisitDesc)[0];
+  const lastS = lastV && getSpot(lastV.spot_id);
+  document.getElementById("memoriesSummary").innerHTML = state.visits.length
+    ? '<p class="muted">訪問 ' + sm.spots + " スポット ／ のべ " + sm.visits + " 回 ／ " + sm.prefs + " 都道府県</p>" +
+      (lastS ? '<p style="margin-top:6px;font-size:13px;">最近：' + esc(face(lastV.rating)) + " " + esc(lastS.name) + '<span class="muted">（' + esc(lastV.date) + "）</span></p>" : "")
+    : '<div class="empty">まだ記録がありません。スポットの「行った！」から記録できます</div>';
+
+  // 近くのスポット
+  const near = document.getElementById("nearList");
+  if (state.here) {
+    const list = state.spots.filter(hasCoord).map(s => [s, spotDistance(s)]).sort((a, b) => a[1] - b[1]).slice(0, 10).map(x => x[0]);
+    near.innerHTML = list.length ? list.map(spotRowHtml).join("") + '<button class="btn small ghost" style="margin-top:8px;width:100%;" id="nearMore">もっと見る（距離順の一覧）</button>' : '<div class="empty">座標のあるスポットがありません</div>';
+    bindRows(near);
+    const more = document.getElementById("nearMore");
+    if (more) more.onclick = () => openSpotList("近くのスポット", () => state.spots.filter(hasCoord), "distance");
+  }
+  // 最近見た
+  const rv = getRecent().map(getSpot).filter(Boolean);
+  const rvEl = document.getElementById("recentViewed");
+  rvEl.innerHTML = rv.length ? rv.slice(0, 8).map(spotRowHtml).join("") : '<div class="empty">まだありません</div>';
+  bindRows(rvEl);
+  // 最近追加した
+  const ra = sortSpots(state.spots, "created").slice(0, 8);
+  const raEl = document.getElementById("recentAdded");
+  raEl.innerHTML = ra.length ? ra.map(spotRowHtml).join("") : '<div class="empty">まだありません（設定タブで GAS を接続してください）</div>';
+  bindRows(raEl);
+}
+function runHomeSearch() {
+  const q = document.getElementById("homeSearch").value.trim();
+  if (!q) return;
+  const words = norm(q).split(/\s+/).filter(Boolean);
+  openSpotList("検索：" + q, () => state.spots.filter(s => {
+    const hay = norm(s.name + " " + s.address + " " + s.memo + " " + s.prefecture + " " + s.city);
+    return words.every(w => hay.includes(w));
+  }), "name", "見つかりませんでした");
+}
+function getRecent() { try { return JSON.parse(localStorage.getItem(LS.recent) || "[]"); } catch (e) { return []; } }
+function pushRecent(id) {
+  const a = getRecent().filter(x => x !== id); a.unshift(id);
+  try { localStorage.setItem(LS.recent, JSON.stringify(a.slice(0, 20))); } catch (e) { /* 無視 */ }
+}
+async function getLocation() {
+  if (!navigator.geolocation) { toast("この端末では現在地を取得できません"); return null; }
+  return new Promise(resolve => {
+    navigator.geolocation.getCurrentPosition(p => {
+      state.here = { lat: p.coords.latitude, lng: p.coords.longitude };
+      resolve(state.here);
+    }, () => { toast("現在地を取得できませんでした（位置情報の許可を確認）"); resolve(null); }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  });
+}
+async function locateAndRender() {
+  toast("現在地を取得中…");
+  if (await getLocation()) { renderHome(); refreshViews(); }
+}
+
+// 汎用一覧画面
+function openSpotList(title, getter, sortKey, emptyText, extra) {
+  const holder = { sortKey: sortKey || "created" };
+  pushView({
+    title: title,
+    render(body) {
+      body.innerHTML = (extra ? '<div class="btn-row" style="margin-bottom:10px;">' + extra.html + "</div>" : "") + '<div class="card listHost"></div>';
+      if (extra) extra.bind(body);
+      renderSortableList(body.querySelector(".listHost"), getter(), holder, emptyText);
+    }
+  });
+}
+
+// 県ページ
+function openPref(pref) {
+  const holder = { sortKey: "created", cat: "すべて", filters: true, q: "", genres: [] };
+  pushView({
+    title: () => (pref || "都道府県未設定") + "（" + state.spots.filter(s => s.prefecture === pref).length + "件）",
+    render(body) {
+      const all = state.spots.filter(s => s.prefecture === pref);
+      const countCat = c => all.filter(s => splitList(s.categories).includes(c)).length;
+      const tabs = ["すべて"].concat(PREF_TAB_CATS);
+      if (FUKU_PREFS.includes(pref) || countCat("服") > 0) tabs.push("服");
+      if (countCat("その他") > 0) tabs.push("その他");
+      if (!tabs.includes(holder.cat)) holder.cat = "すべて";
+      body.innerHTML = '<div class="cat-tabs">' + tabs.map(c => {
+        const n = c === "すべて" ? all.length : countCat(c);
+        return '<button class="cat-tab' + (holder.cat === c ? " on" : "") + '" data-cat="' + esc(c) + '">' + esc((c === "すべて" ? "" : emojiFor(c)) + c) + '<span class="n">' + n + "</span></button>";
+      }).join("") + "</div>" +
+        (function () {
+          const scope = holder.cat === "すべて" ? all : all.filter(s => splitList(s.categories).includes(holder.cat));
+          const done = scope.filter(isVisited).length, tot = scope.length;
+          const pct = tot ? Math.round(done / tot * 100) : 0;
+          return '<div class="card" style="padding:12px;"><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;">' +
+            "<span>🏆 " + esc(prefShort(pref) + " " + (holder.cat === "すべて" ? "全体" : holder.cat)) + " 訪問済</span><span>" + done + "／" + tot + " 件（" + pct + '%）</span></div><div class="progress"><div style="width:' + pct + '%"></div></div></div>';
+        })() +
+        '<div class="btn-row" style="margin-bottom:10px;"><button class="btn secondary toMap">🗺️ この県を地図で見る</button></div>' +
+        '<div class="card listHost"></div>';
+      body.querySelectorAll(".cat-tab").forEach(b => b.onclick = () => { holder.cat = b.dataset.cat; drawView(state.viewStack[state.viewStack.length - 1]); });
+      body.querySelector(".toMap").onclick = () => openMapWith({ pref: pref, cat: holder.cat === "すべて" ? "" : holder.cat });
+      const list = holder.cat === "すべて" ? all : all.filter(s => splitList(s.categories).includes(holder.cat));
+      renderSortableList(body.querySelector(".listHost"), list, holder, holder.cat === "すべて" ? "まだ0件" : prefShort(pref) + " の" + holder.cat + "はまだ0件");
+    }
+  });
+}
+
+// ======================================================================
+// 詳細・編集
+// ======================================================================
+function navUrl(s) {
+  const p = new URLSearchParams({ api: "1" });
+  if (hasCoord(s)) p.set("destination", s.lat + "," + s.lng); else p.set("destination", [s.name, s.address].filter(Boolean).join(" "));
+  if (s.place_id) p.set("destination_place_id", s.place_id);
+  return "https://www.google.com/maps/dir/?" + p.toString();
+}
+function mapsUrl(s) {
+  if (s.maps_url) return s.maps_url;
+  const p = new URLSearchParams({ api: "1", query: hasCoord(s) ? s.lat + "," + s.lng : [s.name, s.address].filter(Boolean).join(" ") });
+  if (s.place_id) p.set("query_place_id", s.place_id);
+  return "https://www.google.com/maps/search/?" + p.toString();
+}
+function openExternal(url) { window.open(url, "_blank", "noopener"); }
+
+function openDetail(id) {
+  pushRecent(id);
+  pushView({
+    title: () => (getSpot(id) || {}).name || "スポット",
+    render(body) {
+      const s = getSpot(id);
+      if (!s) { body.innerHTML = '<div class="empty">このスポットは削除されました</div>'; return; }
+      const tags = splitList(s.tags);
+      const d = spotDistance(s);
+      const auto = autoRepTag(tags);
+      const repOpts = '<option value="__auto">自動（' + esc(auto ? emojiFor(auto) + auto : "項目の絵文字") + "）</option>" +
+        tags.map(t => '<option value="' + esc(t) + '"' + (s.rep_tag === t && s.rep_tag !== auto ? " selected" : "") + ">" + esc(emojiFor(t) + " " + t) + "</option>").join("");
+      body.innerHTML =
+        '<div class="card"><div class="detail-hero"><div class="big">' + esc(spotEmoji(s)) + "</div><h2>" + esc(s.name) + "</h2>" +
+        '<div class="chips" style="justify-content:center;margin-top:8px;">' +
+        splitList(s.categories).map(c => '<span class="chip cat">' + esc(emojiFor(c) + c) + "</span>").join("") +
+        tags.map(t => '<span class="chip tag">' + esc(emojiFor(t) + t) + "</span>").join("") +
+        splitList(s.regions).map(r => '<span class="chip region">' + esc(r) + "</span>").join("") + "</div></div>" +
+        '<div class="btn-row"><button class="btn ok bNav">🚗 ナビ開始</button><button class="btn dark bMaps">📍 Googleマップで開く</button></div>' +
+        '<div class="btn-row" style="margin-top:8px;"><button class="btn secondary bEdit">✏️ 編集</button><button class="btn ghost bMap"' + (hasCoord(s) ? "" : " disabled") + ">🗺️ 地図で表示</button></div></div>" +
+        visitsCardHtml(s) +
+        '<div class="card"><div class="kv">' +
+        '<div class="k">住所</div><div class="v">' + esc(s.address || "（未設定）") + "</div>" +
+        '<div class="k">都道府県</div><div class="v">' + esc([s.prefecture, s.city].filter(Boolean).join(" ")) + "</div>" +
+        '<div class="k">距離</div><div class="v">' + (d != null ? esc(fmtDist(d)) : '<a href="#" class="bLoc">現在地から計算</a>') + "</div>" +
+        '<div class="k">評価</div><div class="v">' + (lastVisit(s.id) ? '<span class="rate-face">' + esc(face(lastVisit(s.id).rating)) + "</span> " + esc(RATING_LABELS[Number(lastVisit(s.id).rating)] || "") + '<span class="muted">（直近の訪問）</span>' : "未訪問") +
+        (s.rating ? '<br><span class="stars">' + esc(stars(s.rating)) + '</span><span class="muted">（v1.0の★）</span>' : "") + "</div>" +
+        '<div class="k">状態</div><div class="v">' + esc(isVisited(s) ? "✅ 訪問済（" + visitsOf(s.id).length + "回訪問）" : "行きたい") + "</div>" +
+        '<div class="k">メモ</div><div class="v">' + esc(s.memo || "") + "</div>" +
+        '<div class="k">Google保存</div><div class="v">' + esc(s.google_saved) + "</div>" +
+        '<div class="k">登録日</div><div class="v">' + esc(s.created_at) + (s.updated_at && s.updated_at !== s.created_at ? "（更新 " + esc(s.updated_at) + "）" : "") + "</div>" +
+        '<div class="k">ID</div><div class="v muted">' + esc(s.id) + (s.source_lists ? " ／ 移行元：" + esc(s.source_lists) : "") + "</div>" +
+        "</div></div>" +
+        '<div class="card"><div class="form-row" style="margin:0;"><label class="lbl">マーカーの絵文字（代表タグ）</label><select class="repSel">' + repOpts + "</select></div>" +
+        '<p class="muted" style="margin-top:6px;">表示上の都合だけで、所属（項目・タグ）は変わりません。</p></div>';
+      body.querySelector(".bNav").onclick = () => openExternal(navUrl(s));
+      body.querySelector(".bMaps").onclick = () => openExternal(mapsUrl(s));
+      body.querySelector(".bEdit").onclick = () => openEdit(s, false);
+      body.querySelector(".bMap").onclick = () => openMapWith({ focusId: s.id });
+      body.querySelector(".bVisit").onclick = () => openVisitForm(s.id, null);
+      body.querySelectorAll(".visit-row").forEach(r => r.onclick = () => openVisitDetail(r.dataset.vid));
+      const bl = body.querySelector(".bLoc");
+      if (bl) bl.onclick = async e => { e.preventDefault(); if (await getLocation()) refreshViews(); };
+      body.querySelector(".repSel").onchange = async e => {
+        const v = e.target.value === "__auto" ? auto : e.target.value;
+        await saveSpot(Object.assign({}, s, { rep_tag: v }), false, true);
+      };
+    }
+  });
+}
+
+/** 編集・確認カード（isNew=true で新規追加の確認カード） */
+function openEdit(spot, isNew, note) {
+  const f = Object.assign({}, spot);
+  const openGroups = new Set();
+  const tagsGenre = tagsOfType("ジャンル").map(t => t.name);
+  const regionMaster = tagsOfType("地域").map(t => t.name);
+  let repMode = (!f.rep_tag || f.rep_tag === autoRepTag(splitList(f.tags))) ? "__auto" : f.rep_tag;
+  pushView({
+    static: true,
+    title: isNew ? "確認して保存" : "編集：" + (spot.name || ""),
+    render(body) {
+      const cats = splitList(f.categories), tags = splitList(f.tags), regions = splitList(f.regions);
+      const dup = f.place_id ? state.spots.find(s => s.place_id === f.place_id && s.id !== f.id) : null;
+      const prefOpts = ['<option value="">（未設定）</option>'].concat(PREFS47.map(p => '<option' + (f.prefecture === p ? " selected" : "") + ">" + esc(p) + "</option>"));
+      if (f.prefecture && !PREFS47.includes(f.prefecture)) prefOpts.push('<option selected>' + esc(f.prefecture) + "</option>");
+      const allRegions = Array.from(new Set(regionMaster.concat(regions)));
+      const allTags = Array.from(new Set(tagsGenre.concat(tags)));
+      tags.forEach(t => openGroups.add(tagGroup(t)));
+      const chip = t => '<button type="button" class="toggle-chip' + (tags.includes(t) ? " on" : "") + '" data-v="' + esc(t) + '">' + esc(emojiFor(t) + t) + "</button>";
+      const auto = autoRepTag(tags);
+      body.innerHTML =
+        (dup ? '<div class="notice danger">⚠️ この場所は登録済みです：' + esc(dup.name) + "（" + esc(dup.id) + '）<br><a href="#" class="openDup">登録済みのスポットを開く</a></div>' : "") +
+        (note ? '<div class="notice info">' + note + "</div>" : "") +
+        (isNew && !hasCoord(f) ? '<div class="notice warn">📍 座標が取れなかったため、このままでは<b>地図に表示されません</b>。保存時に自動補完を試します。' +
+          '<br><button type="button" class="btn small secondary fRepick" style="margin-top:6px;">🔎 店名で検索して選び直す</button></div>' : "") +
+        '<div class="card">' +
+        '<div class="form-row"><label class="lbl">店名</label><input type="text" class="fName" value="' + esc(f.name) + '"></div>' +
+        '<div class="form-row"><label class="lbl">項目（複数可）</label><div class="chips fCats">' +
+        MAIN_CATS.map(c => '<button type="button" class="toggle-chip' + (cats.includes(c) ? " on" : "") + '" data-v="' + esc(c) + '">' + esc(emojiFor(c) + c) + "</button>").join("") + "</div></div>" +
+        '<div class="form-row"><label class="lbl">ジャンルタグ（複数可）' + (f._autoTags && f._autoTags.length ? "　自動判定：" + esc(f._autoTags.join("・")) : "") + '</label>' +
+        '<div class="chips" style="margin-bottom:6px;">' + (tags.length ? tags.map(t => '<span class="chip tag">' + esc(emojiFor(t) + t) + "</span>").join("") : '<span class="muted">（なし）</span>') + "</div>" +
+        '<div class="tag-groups fTags">' + groupGenres(allTags).map(([g, ns]) => '<details data-g="' + esc(g) + '"' + (openGroups.has(g) ? " open" : "") + "><summary>" + esc(g) +
+          '<span class="muted">（' + ns.filter(n => tags.includes(n)).length + "／" + ns.length + "）</span></summary><div class=\"chips\">" + ns.map(chip).join("") + "</div></details>").join("") + "</div></div>" +
+        '<div class="form-row"><label class="lbl">マーカーの絵文字（代表タグ）</label><select class="fRep"><option value="__auto">自動（' + esc(auto ? emojiFor(auto) + auto : "項目の絵文字") + "）</option>" +
+        tags.map(t => '<option value="' + esc(t) + '"' + (repMode === t ? " selected" : "") + ">" + esc(emojiFor(t) + " " + t) + "</option>").join("") + "</select></div>" +
+        '<div class="form-row"><label class="lbl">地域タグ</label><div class="chips fRegions">' +
+        allRegions.map(r => '<button type="button" class="toggle-chip' + (regions.includes(r) ? " on" : "") + '" data-v="' + esc(r) + '">' + esc(r) + "</button>").join("") +
+        '<button type="button" class="toggle-chip addRegion">＋追加</button></div></div>' +
+        '<div class="two-col"><div class="form-row"><label class="lbl">都道府県</label><select class="fPref">' + prefOpts.join("") + "</select></div>" +
+        '<div class="form-row"><label class="lbl">市区町村</label><input type="text" class="fCity" value="' + esc(f.city) + '"></div></div>' +
+        '<div class="form-row"><label class="lbl">住所</label><input type="text" class="fAddr" value="' + esc(f.address) + '"></div>' +
+        '<div class="two-col"><div class="form-row"><label class="lbl">状態（訪問記録から自動）</label><div style="padding:10px 2px;font-weight:700;">' +
+        esc(f.id && isVisited(f) ? "✅ 訪問済（" + visitsOf(f.id).length + "回）" : "行きたい") + "</div></div>" +
+        '<div class="form-row"><label class="lbl">Google保存</label><select class="fGs">' +
+        ["未", "済", "対象外"].map(v => "<option" + (f.google_saved === v ? " selected" : "") + ">" + v + "</option>").join("") + "</select></div></div>" +
+        '<div class="form-row"><label class="lbl">メモ</label><textarea class="fMemo">' + esc(f.memo) + "</textarea></div>" +
+        "</div>" +
+        '<div class="card"><details' + (hasCoord(f) ? "" : " open") + '><summary>座標・URL・ID</summary><div style="margin-top:10px;">' +
+        '<div class="two-col"><div class="form-row"><label class="lbl">緯度</label><input type="text" inputmode="decimal" class="fLat" value="' + esc(f.lat) + '"></div>' +
+        '<div class="form-row"><label class="lbl">経度</label><input type="text" inputmode="decimal" class="fLng" value="' + esc(f.lng) + '"></div></div>' +
+        '<div class="form-row"><label class="lbl">マップURL</label><input type="url" class="fUrl" value="' + esc(f.maps_url) + '"></div>' +
+        '<div class="form-row"><label class="lbl">place_id</label><input type="text" class="fPid" value="' + esc(f.place_id) + '"></div>' +
+        '<button type="button" class="btn small secondary fResolve">🔎 店名で検索して座標・place_idを補完</button>' +
+        '<p class="muted" style="margin-top:6px;">座標の出典：' + esc(f.coord_source || "（なし）") + "</p>" +
+        "</div></details></div>" +
+        '<div class="btn-row"><button class="btn fSave">' + (isNew ? "💾 保存" : "💾 更新") + "</button></div>" +
+        (isNew ? "" : '<div class="btn-row" style="margin-top:10px;"><button class="btn danger fDel">🗑️ このスポットを削除</button></div>');
+
+      const $ = sel => body.querySelector(sel);
+      const syncFields = () => {
+        f.name = $(".fName").value.trim(); f.prefecture = $(".fPref").value; f.city = $(".fCity").value.trim();
+        f.address = $(".fAddr").value.trim(); f.google_saved = $(".fGs").value;
+        f.memo = $(".fMemo").value; f.lat = $(".fLat").value.trim(); f.lng = $(".fLng").value.trim();
+        f.maps_url = $(".fUrl").value.trim(); f.place_id = $(".fPid").value.trim(); repMode = $(".fRep").value;
+      };
+      const rerender = () => { syncFields(); drawView(state.viewStack[state.viewStack.length - 1]); };
+      const toggler = (sel, key) => body.querySelectorAll(sel + " .toggle-chip[data-v]").forEach(b => b.onclick = () => {
+        const a = splitList(f[key]); const v = b.dataset.v;
+        f[key] = joinList(a.includes(v) ? a.filter(x => x !== v) : a.concat(v));
+        rerender();
+      });
+      toggler(".fCats", "categories"); toggler(".fTags", "tags"); toggler(".fRegions", "regions");
+      body.querySelectorAll(".fTags details").forEach(d => d.addEventListener("toggle", () => { if (d.open) openGroups.add(d.dataset.g); else openGroups.delete(d.dataset.g); }));
+      const rp = body.querySelector(".fRepick");
+      if (rp) rp.onclick = () => {
+        const nm = $(".fName").value.trim();
+        if (!nm) { alert("店名を入れてから押してください"); return; }
+        closeAllViews(); switchTab("add"); document.getElementById("addQuery").value = nm; searchPlaces();
+      };
+      $(".addRegion").onclick = () => { const r = prompt("地域タグ名（例：淡路島）"); if (r && r.trim()) { f.regions = joinList(splitList(f.regions).concat(r.trim())); rerender(); } };
+      $(".fPid").onchange = rerender;
+      const od = body.querySelector(".openDup"); if (od) od.onclick = e => { e.preventDefault(); openDetail(dup.id); };
+      $(".fResolve").onclick = async () => {
+        syncFields();
+        const q = [f.name, f.prefecture, f.city].filter(Boolean).join(" ");
+        if (!q) { alert("店名を入れてください"); return; }
+        try {
+          toast("検索中…");
+          const r = await api("searchPlace", { query: q });
+          if (!r.candidates.length) { alert("候補が見つかりませんでした"); return; }
+          const c = r.candidates[0];
+          if (!confirm("この候補で補完しますか？\n\n" + c.name + "\n" + c.address)) return;
+          const det = await api("searchPlace", { placeId: c.place_id });
+          const p = det.place;
+          f.place_id = p.place_id; f.lat = String(p.lat); f.lng = String(p.lng); f.coord_source = "Places";
+          if (!f.address) f.address = p.address;
+          if (!f.prefecture) f.prefecture = p.prefecture || prefFromAddress(p.address);
+          if (!f.city) f.city = p.city || "";
+          if (!f.maps_url) f.maps_url = p.maps_url;
+          drawView(state.viewStack[state.viewStack.length - 1]);
+        } catch (e) { alert(e.message); }
+      };
+      $(".fSave").onclick = async () => {
+        syncFields();
+        if (!f.name) { alert("店名を入れてください"); return; }
+        if ((f.lat && isNaN(Number(f.lat))) || (f.lng && isNaN(Number(f.lng)))) { alert("緯度・経度は数値で入れてください"); return; }
+        if (!splitList(f.categories).length) f.categories = "その他";
+        f.rep_tag = repMode === "__auto" ? autoRepTag(splitList(f.tags)) : (splitList(f.tags).includes(repMode) ? repMode : autoRepTag(splitList(f.tags)));
+        if (dup && isNew && !confirm("⚠️ 同じ place_id のスポットが登録済みです（" + dup.id + "）。\nGAS 側でも重複として拒否されます。続けますか？")) return;
+        // v3.0 項目5：新規で座標が無ければ、保存前に自動補完を試す
+        if (isNew && !hasCoord(f)) {
+          let found = null;
+          try { const r = await api("resolveCoords", { spot: f }); found = r.found ? r.coords : null; } catch (e) { /* 見つからない扱い */ }
+          if (found) {
+            f.lat = String(found.lat); f.lng = String(found.lng); f.coord_source = found.coord_source;
+            if (!f.address && found.address) f.address = String(found.address).replace(/^日本、\s*/, "");
+            if (!f.prefecture && found.prefecture) f.prefecture = found.prefecture;
+            if (!f.city && found.city) f.city = found.city;
+          } else if (!confirm("座標が見つかりませんでした。地図には表示されません（未処理キューに入ります）。\nこのまま保存しますか？")) return;
+        }
+        const ok = await saveSpot(f, isNew);
+        if (ok) { popView(); if (isNew) { openDetail(ok.id); } }
+      };
+      const del = body.querySelector(".fDel");
+      if (del) del.onclick = async () => {
+        if (!confirm("「" + f.name + "」を削除します。元に戻せません。よろしいですか？")) return;
+        try {
+          setBadge("🗑️ 削除中", "syncing");
+          await api("deleteSpot", { id: f.id });
+          state.spots = state.spots.filter(s => s.id !== f.id); saveCache();
+          setBadge("☁️ " + state.spots.length + "件", "online");
+          popView(); popView();
+        } catch (e) { setBadge("⚠️ エラー", "error"); }
+      };
+    }
+  });
+}
+/** 保存（新規＝addSpot／更新＝updateSpot）。成功したらスポットを返す */
+async function saveSpot(spot, isNew, quiet) {
+  const payload = {};
+  SPOT_HEADERS.forEach(h => payload[h] = spot[h] == null ? "" : String(spot[h]));
+  try {
+    setBadge("⬆️ 保存中", "syncing");
+    const r = await api(isNew ? "addSpot" : "updateSpot", { spot: payload, classified: !!spot._classified });
+    replaceSpotLocal(r.spot);
+    setBadge("☁️ " + state.spots.length + "件", "online");
+    renderTab(state.currentTab); refreshViews();
+    if (state.map) renderMap(false);
+    return r.spot;
+  } catch (e) {
+    setBadge("⚠️ 未保存", "error");
+    return null;
+  }
+}
+
+// ======================================================================
+// タブ2 地図（Leaflet＋OSM／Esri、markercluster）
+// ======================================================================
+function cfg(k) { return state.config[k] || DEFAULT_TILES[k] || ""; }
+function ensureMap() {
+  if (state.map) { setTimeout(() => state.map.invalidateSize(), 50); return; }
+  if (typeof L === "undefined") {
+    document.getElementById("map").innerHTML = '<div class="empty" style="margin:20px;">地図ライブラリを読み込めませんでした（電波状況を確認して再読み込みしてください）</div>';
+    return;
+  }
+  const map = L.map("map", { zoomControl: true, preferCanvas: false }).setView([35.0, 136.5], 7);
+  state.map = map;
+  buildTileLayers();
+  state.cluster = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 50, spiderfyOnMaxZoom: true });
+  map.addLayer(state.cluster);
+  map.on("moveend", renderMapRange);
+  map.on("click", () => selectMarker(null));
+  buildMapFilterControls();
+  setTimeout(() => map.invalidateSize(), 50);
+}
+function buildTileLayers() {
+  const map = state.map;
+  if (state.mapLayers) { map.removeLayer(state.mapLayers.std); map.removeLayer(state.mapLayers.sat); }
+  state.mapLayers = {
+    std: L.tileLayer(cfg("tile_std_url"), { maxZoom: 19, attribution: cfg("tile_std_attr") }),
+    sat: L.tileLayer(cfg("tile_sat_url"), { maxZoom: 19, attribution: cfg("tile_sat_attr") })
+  };
+  (state.satellite ? state.mapLayers.sat : state.mapLayers.std).addTo(map);
+}
+function toggleSatellite() {
+  if (!state.map) return;
+  state.satellite = !state.satellite;
+  state.map.removeLayer(state.satellite ? state.mapLayers.std : state.mapLayers.sat);
+  (state.satellite ? state.mapLayers.sat : state.mapLayers.std).addTo(state.map);
+  document.getElementById("btnSat").classList.toggle("on", state.satellite);
+}
+function buildMapFilterControls() {
+  const chips = document.getElementById("mapCatChips");
+  const cats = ["すべて"].concat(MAIN_CATS);
+  chips.innerHTML = cats.map(c => '<button class="toggle-chip" data-cat="' + esc(c) + '">' + esc((c === "すべて" ? "" : emojiFor(c)) + c) + "</button>").join("");
+  chips.querySelectorAll(".toggle-chip").forEach(b => b.onclick = () => {
+    const c = b.dataset.cat;
+    if (c === "すべて") state.mapCats.clear();
+    else if (state.mapCats.has(c)) state.mapCats.delete(c); else state.mapCats.add(c);
+    onMapFilterChange(false);
+  });
+  fillMapSelects();
+}
+function fillMapSelects() {
+  const ps = document.getElementById("mapPref"), ts = document.getElementById("mapTag");
+  const pv = ps.value, tv = ts.value;
+  const cnt = countByPref();
+  const prefs = PREFS47.filter(p => cnt[p]).concat(Object.keys(cnt).filter(p => p && !PREFS47.includes(p)));
+  ps.innerHTML = '<option value="">都道府県：すべて</option>' + prefs.map(p => '<option value="' + esc(p) + '">' + esc(p) + "（" + cnt[p] + "）</option>").join("");
+  const used = new Set(); state.spots.forEach(s => splitList(s.tags).concat(splitList(s.regions)).forEach(t => used.add(t)));
+  const opt = t => '<option value="' + esc(t) + '">' + esc(emojiFor(t) + t) + "</option>";
+  ts.innerHTML = '<option value="">タグ：すべて</option>' +
+    groupGenres(tagsOfType("ジャンル").map(t => t.name).filter(t => used.has(t) || t === tv)).map(([g, ns]) => '<optgroup label="' + esc(g) + '">' + ns.map(opt).join("") + "</optgroup>").join("") +
+    '<optgroup label="地域">' + tagsOfType("地域").map(t => t.name).map(opt).join("") + "</optgroup>";
+  if (pv && !prefs.includes(pv)) ps.insertAdjacentHTML("beforeend", '<option value="' + esc(pv) + '">' + esc(pv) + "（0）</option>");
+  ps.value = pv; ts.value = tv;
+}
+function mapFilteredSpots() {
+  const pref = document.getElementById("mapPref").value;
+  const tag = document.getElementById("mapTag").value;
+  const st = document.getElementById("mapStatus").value;
+  return state.spots.filter(s => {
+    if (!hasCoord(s)) return false;
+    if (pref && s.prefecture !== pref) return false;
+    if (tag && !splitList(s.tags).includes(tag) && !splitList(s.regions).includes(tag)) return false;
+    if (st === "visited" && !isVisited(s)) return false;
+    if (st === "unvisited" && isVisited(s)) return false;
+    if (state.mapCats.size && !splitList(s.categories).some(c => state.mapCats.has(c))) return false;
+    return true;
+  });
+}
+function markerIcon(s, sel) {
+  return L.divIcon({ className: "", html: '<div class="emoji-marker' + (isVisited(s) ? " visited" : "") + (sel ? " sel" : "") + '">' + esc(spotEmoji(s)) + "</div>", iconSize: [36, 36], iconAnchor: [18, 18] });
+}
+function renderMap(fit) {
+  if (!state.map) return;
+  fillMapSelects();
+  document.querySelectorAll("#mapCatChips .toggle-chip").forEach(b => {
+    const c = b.dataset.cat;
+    b.classList.toggle("on", c === "すべて" ? state.mapCats.size === 0 : state.mapCats.has(c));
+  });
+  const list = mapFilteredSpots();
+  state.cluster.clearLayers();
+  state.markerById = {};
+  const markers = list.map(s => {
+    const m = L.marker([Number(s.lat), Number(s.lng)], { icon: markerIcon(s, s.id === state.selectedId), title: s.name });
+    m.on("click", ev => { L.DomEvent.stopPropagation(ev); selectMarker(s.id); });
+    state.markerById[s.id] = m;
+    return m;
+  });
+  state.cluster.addLayers(markers);
+  if (fit && list.length) {
+    const b = L.latLngBounds(list.map(s => [Number(s.lat), Number(s.lng)]));
+    state.map.fitBounds(b.pad(0.15), { maxZoom: 15 });
+  }
+  if (state.selectedId && !state.markerById[state.selectedId]) selectMarker(null);
+  else renderMapCard();
+  renderMapRange();
+  const noCoord = state.spots.filter(s => !hasCoord(s)).length;
+  document.getElementById("mapCount").textContent = "全" + state.spots.length + "件中 " + list.length + "件を表示中" + (noCoord ? "（座標なし" + noCoord + "件は地図に出ません）" : "");
+}
+function onMapFilterChange(fit) { renderMap(fit); }
+function resetMapFilters() {
+  document.getElementById("mapPref").value = ""; document.getElementById("mapTag").value = ""; document.getElementById("mapStatus").value = "";
+  state.mapCats.clear();
+  renderMap(true);
+}
+function selectMarker(id) {
+  const prev = state.selectedId;
+  state.selectedId = id;
+  [prev, id].forEach(x => { if (x && state.markerById[x] && getSpot(x)) state.markerById[x].setIcon(markerIcon(getSpot(x), x === id)); });
+  renderMapCard();
+}
+function renderMapCard() {
+  const el = document.getElementById("mapCard");
+  const s = state.selectedId && getSpot(state.selectedId);
+  if (!s) { el.classList.remove("show"); el.innerHTML = ""; return; }
+  const d = spotDistance(s);
+  el.innerHTML = '<div class="map-card-head"><div class="big">' + esc(spotEmoji(s)) + '</div><div style="flex:1;min-width:0;">' +
+    '<div class="spot-name" style="white-space:normal;font-size:16px;">' + esc(s.name) + "</div>" +
+    '<div class="chips" style="margin-top:4px;">' + splitList(s.categories).map(c => '<span class="chip cat">' + esc(c) + "</span>").join("") +
+    splitList(s.tags).map(t => '<span class="chip tag">' + esc(emojiFor(t) + t) + "</span>").join("") + "</div></div>" +
+    '<button class="map-card-close" title="閉じる">✕</button></div>' +
+    '<div class="kv" style="margin-bottom:10px;">' +
+    '<div class="k">住所</div><div class="v">' + esc(s.address || [s.prefecture, s.city].join(" ")) + "</div>" +
+    '<div class="k">距離</div><div class="v">' + (d != null ? esc(fmtDist(d)) : "（現在地未取得）") + "</div>" +
+    '<div class="k">評価</div><div class="v">' + (lastVisit(s.id) ? '<span class="rate-face">' + esc(face(lastVisit(s.id).rating)) + "</span> ✅ 訪問済（" + visitsOf(s.id).length + "回・直近 " + esc(lastVisit(s.id).date) + "）" : "未訪問") + "</div>" +
+    (s.memo ? '<div class="k">メモ</div><div class="v">' + esc(s.memo) + "</div>" : "") + "</div>" +
+    '<div class="btn-row"><button class="btn ok cNav">🚗 ナビ開始</button><button class="btn dark cMaps">📍 Googleマップ</button><button class="btn secondary cDet">詳細・編集</button></div>' +
+    '<div class="btn-row" style="margin-top:8px;"><button class="btn ghost cQuick">✅ 行った！（評価だけ記録）</button></div>';
+  el.querySelector(".map-card-close").onclick = () => selectMarker(null);
+  el.querySelector(".cNav").onclick = () => openExternal(navUrl(s));
+  el.querySelector(".cMaps").onclick = () => openExternal(mapsUrl(s));
+  el.querySelector(".cDet").onclick = () => openDetail(s.id);
+  el.querySelector(".cQuick").onclick = () => openQuickVisit(s.id);
+  el.classList.add("show");
+}
+function renderMapRange() {
+  if (!state.map) return;
+  const b = state.map.getBounds();
+  const c = state.map.getCenter();
+  const inRange = mapFilteredSpots().filter(s => b.contains([Number(s.lat), Number(s.lng)]));
+  inRange.sort((x, y) => distanceKm(c, { lat: +x.lat, lng: +x.lng }) - distanceKm(c, { lat: +y.lat, lng: +y.lng }));
+  document.getElementById("mapRangeTitle").textContent = "この範囲のスポット（" + inRange.length + "件）";
+  const el = document.getElementById("mapRangeList");
+  const LIMIT = 50;
+  el.innerHTML = inRange.length ? inRange.slice(0, LIMIT).map(spotRowHtml).join("") + (inRange.length > LIMIT ? '<p class="muted" style="padding:8px;">ほか ' + (inRange.length - LIMIT) + " 件（地図を拡大すると絞り込めます）</p>" : "")
+    : '<div class="empty">この範囲にスポットはありません</div>';
+  el.querySelectorAll(".spot-row").forEach(r => r.onclick = () => {
+    const s = getSpot(r.dataset.id);
+    state.map.setView([+s.lat, +s.lng], Math.max(state.map.getZoom(), 16));
+    selectMarker(s.id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  bindQuick(el);
+}
+async function locateOnMap() {
+  if (!state.map) return;
+  toast("現在地を取得中…");
+  const h = await getLocation();
+  if (!h) return;
+  if (state.hereMarker) state.map.removeLayer(state.hereMarker);
+  state.hereMarker = L.marker([h.lat, h.lng], { icon: L.divIcon({ className: "", html: '<div class="here-marker"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }), zIndexOffset: 1000 }).addTo(state.map);
+  state.map.setView([h.lat, h.lng], 14);
+  document.getElementById("btnLocate").classList.add("on");
+  renderMapCard(); renderMapRange();
+}
+/** 他の画面から地図を条件付きで開く */
+function openMapWith(o) {
+  switchTab("map");
+  if (!state.map) return;
+  const ps = document.getElementById("mapPref"), ts = document.getElementById("mapTag");
+  ps.value = ""; ts.value = ""; document.getElementById("mapStatus").value = "";
+  state.mapCats.clear();
+  if (o.pref) { fillMapSelects(); if (![...ps.options].some(x => x.value === o.pref)) ps.insertAdjacentHTML("beforeend", '<option value="' + esc(o.pref) + '">' + esc(o.pref) + "</option>"); ps.value = o.pref; }
+  if (o.tag) ts.value = o.tag;
+  if (o.cat) state.mapCats.add(o.cat);
+  if (o.focusId) {
+    const s = getSpot(o.focusId);
+    state.selectedId = o.focusId;
+    renderMap(false);
+    if (s && hasCoord(s)) state.map.setView([+s.lat, +s.lng], 16);
+    return;
+  }
+  state.selectedId = null;
+  renderMap(true);
+}
+
+// ======================================================================
+// v2.0 訪問記録・思い出ノート・写真
+// ======================================================================
+function visitsCardHtml(s) {
+  const vs = visitsOf(s.id);
+  return '<div class="card"><div class="card-title"><span>📖 訪問記録' + (vs.length ? "（" + vs.length + "回訪問）" : "") + "</span>" +
+    '<button class="btn small ok bVisit">✅ 訪問を記録</button></div>' +
+    (vs.length ? vs.map(v => '<div class="visit-row" data-vid="' + esc(v.visit_id) + '"><div class="tl-thumb" style="flex-basis:48px;height:48px;font-size:24px;">' +
+      (photoIds(v).length ? photoImg(photoIds(v)[0], 200) : esc(face(v.rating))) + '</div><div style="flex:1;min-width:0;"><div style="font-weight:700;">' + esc(face(v.rating)) + " " + esc(v.date) +
+      (v.repeat ? '<span class="muted">　また行きたい ' + esc(v.repeat) + "</span>" : "") + '</div><div class="spot-sub">' + esc([v.menu, v.price !== "" ? yen(v.price) : "", v.companions].filter(Boolean).join(" ／ ") || v.comment || "") + "</div></div></div>").join("")
+      : '<div class="empty">まだ訪問記録はありません</div>') + "</div>";
+}
+function memorySummary() {
+  const spots = new Set(state.visits.map(v => v.spot_id));
+  const prefs = new Set();
+  spots.forEach(id => { const s = getSpot(id); if (s && s.prefecture) prefs.add(s.prefecture); });
+  const total = state.visits.reduce((a, v) => a + (v.price !== "" && !isNaN(Number(v.price)) ? Number(v.price) : 0), 0);
+  return { spots: spots.size, visits: state.visits.length, prefs: prefs.size, total: total };
+}
+/** 思い出ノート：サマリー＋タイムライン（訪問日の新しい順） */
+function openMemories() {
+  const holder = { q: "", genres: [] };
+  pushView({
+    title: "📖 思い出ノート",
+    render(body) {
+      const sm = memorySummary();
+      const list = state.visits.slice().sort(cmpVisitDesc);
+      let html = '<div class="card"><div class="summary-grid">' +
+        '<div class="sv"><b>' + sm.spots + "</b><span>訪問したスポット</span></div>" +
+        '<div class="sv"><b>' + sm.visits + "</b><span>訪問のべ回数</span></div>" +
+        '<div class="sv"><b>' + sm.prefs + "</b><span>行った都道府県</span></div>" +
+        '<div class="sv"><b>' + esc(yen(sm.total)) + "</b><span>使った金額の合計</span></div></div></div>";
+      if (!list.length) { body.innerHTML = html + '<div class="empty">まだ記録がありません。スポットの詳細や一覧の「行った！」から記録できます</div>'; return; }
+      // v3.0：名称検索＋ジャンル（訪問したスポットのタグで判定）。サマリーは全体のまま
+      const visitedSpots = Array.from(new Set(list.map(v => v.spot_id))).map(getSpot).filter(Boolean);
+      body.innerHTML = html + '<div class="card"><div class="mfHost">' + filterBarHtml(holder, genreChoices(visitedSpots)) + '</div><div class="muted mcnt" style="margin:2px 2px 4px;"></div><div class="tlArea"></div></div>';
+      const draw = () => {
+        const shown = list.filter(v => matchNameGenre(getSpot(v.spot_id), holder) || (!getSpot(v.spot_id) && !holder.q && !holder.genres.length));
+        body.querySelector(".mcnt").textContent = shown.length !== list.length ? list.length + "件中 " + shown.length + "件を表示" : "全" + list.length + "件";
+        body.querySelector(".tlArea").innerHTML = shown.length ? timelineHtml(shown) : '<div class="empty">条件に合う記録はありません</div>';
+        body.querySelectorAll(".tl-item").forEach(r => r.onclick = () => openVisitDetail(r.dataset.vid));
+      };
+      bindFilterBar(body.querySelector(".mfHost"), holder, draw);
+      draw();
+    }
+  });
+}
+function timelineHtml(list) {
+      let html = "";
+      let month = "";
+      list.forEach(v => {
+        const s = getSpot(v.spot_id) || { name: "（削除されたスポット）" };
+        const m = v.date.slice(0, 7);
+        if (m !== month) { month = m; html += '<div class="tl-month">' + esc(m.replace("-", "年") + "月") + "</div>"; }
+        const ex = v.comment.length > 40 ? v.comment.slice(0, 40) + "…" : v.comment;
+        html += '<div class="tl-item" data-vid="' + esc(v.visit_id) + '"><div class="tl-thumb">' + (photoIds(v).length ? photoImg(photoIds(v)[0], 300) : esc(face(v.rating))) + "</div>" +
+          '<div style="flex:1;min-width:0;"><div class="spot-name">' + esc(face(v.rating)) + " " + esc(s.name) + "</div>" +
+          '<div class="spot-sub">' + esc(v.date) + (v.price !== "" ? " ／ " + esc(yen(v.price)) : "") + (v.companions ? " ／ " + esc(v.companions) + "と" : "") + "</div>" +
+          (ex ? '<div style="font-size:12px;color:#334155;">' + esc(ex) + "</div>" : "") + "</div></div>";
+      });
+      return html;
+}
+function openVisitDetail(vid) {
+  pushView({
+    title: () => { const v = getVisit(vid), s = v && getSpot(v.spot_id); return s ? s.name + " の訪問" : "訪問記録"; },
+    render(body) {
+      const v = getVisit(vid);
+      if (!v) { body.innerHTML = '<div class="empty">この訪問記録は削除されました</div>'; return; }
+      const s = getSpot(v.spot_id);
+      const pp = perPerson(v);
+      body.innerHTML = '<div class="card"><div class="detail-hero"><div class="big">' + esc(face(v.rating)) + "</div><h2>" + esc(s ? s.name : "（削除されたスポット）") + "</h2>" +
+        '<p class="muted">' + esc(v.date) + " ／ " + esc(RATING_LABELS[Number(v.rating)] || "") + "</p></div>" +
+        (photoIds(v).length ? '<div class="photo-grid" style="margin-bottom:12px;">' + photoIds(v).map(id => '<a class="ph" href="' + esc(photoUrl(id, 1600)) + '" target="_blank" rel="noopener">' + photoImg(id, 600) + "</a>").join("") + "</div>" : "") +
+        '<div class="kv">' +
+        '<div class="k">何を</div><div class="v">' + esc(v.menu || "—") + "</div>" +
+        '<div class="k">金額</div><div class="v">' + (v.price !== "" ? esc(yen(v.price)) + (pp ? '<span class="muted">（' + esc(pp) + "）</span>" : "") : "—") + "</div>" +
+        '<div class="k">誰と</div><div class="v">' + esc(v.companions || "—") + (v.people ? "（" + esc(v.people) + "人）" : "") + "</div>" +
+        '<div class="k">また行きたい</div><div class="v">' + esc(v.repeat || "—") + "</div>" +
+        '<div class="k">コメント</div><div class="v">' + esc(v.comment || "—") + "</div>" +
+        "</div></div>" +
+        '<div class="btn-row"><button class="btn secondary vEdit">✏️ 編集</button>' + (s ? '<button class="btn ghost vSpot">📍 スポットを見る</button>' : "") + "</div>" +
+        '<div class="btn-row" style="margin-top:10px;"><button class="btn danger vDel">🗑️ この訪問記録を削除</button></div>';
+      body.querySelector(".vEdit").onclick = () => openVisitForm(v.spot_id, v);
+      const vs = body.querySelector(".vSpot"); if (vs) vs.onclick = () => openDetail(v.spot_id);
+      body.querySelector(".vDel").onclick = () => deleteVisit(v);
+    }
+  });
+}
+async function deleteVisit(v) {
+  const n = photoIds(v).length;
+  if (!confirm(v.date + " の訪問記録を削除します" + (n ? "（写真 " + n + " 枚もゴミ箱へ移します）" : "") + "。よろしいですか？")) return;
+  try {
+    setBadge("🗑️ 削除中", "syncing");
+    const r = await api("deleteVisit", { visit_id: v.visit_id });
+    state.visits = state.visits.filter(x => x.visit_id !== v.visit_id); invalidateVisits();
+    if (r.spot) replaceSpotLocal(r.spot); else saveCache();
+    setBadge("☁️ " + state.spots.length + "件", "online");
+    popView();
+  } catch (e) { setBadge("⚠️ エラー", "error"); }
+}
+function replaceVisitLocal(v) {
+  const i = state.visits.findIndex(x => x.visit_id === v.visit_id);
+  if (i >= 0) state.visits[i] = v; else state.visits.push(v);
+  invalidateVisits(); saveCache();
+}
+/** 画像を長辺1600px・JPEG に圧縮して base64（data URL）にする */
+async function compressImage(file, maxSide, quality) {
+  maxSide = maxSide || 1600; quality = quality || 0.82;
+  let src;
+  try { src = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch (e) {
+    src = await new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error("画像を読み込めませんでした")); img.src = URL.createObjectURL(file); });
+  }
+  const w0 = src.width, h0 = src.height;
+  const k = Math.min(1, maxSide / Math.max(w0, h0));
+  const w = Math.round(w0 * k), h = Math.round(h0 * k);
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, w, h); g.drawImage(src, 0, 0, w, h);
+  return { dataUrl: c.toDataURL("image/jpeg", quality), width: w, height: h };
+}
+/** クイック記録：日付＋評価だけ（出先用）。写真やコメントは後から編集で足す */
+function openQuickVisit(spotId) {
+  const s = getSpot(spotId); if (!s) return;
+  const f = { date: todayStr(), rating: "" };
+  pushView({
+    static: true,
+    title: "行った！ " + s.name,
+    render(body) {
+      body.innerHTML = '<div class="card"><div class="form-row"><label class="lbl">訪問日</label><input type="date" class="qDate" value="' + esc(f.date) + '"></div>' +
+        '<div class="form-row"><label class="lbl">評価（タップで記録）</label><div class="emoji-rate">' +
+        [1, 2, 3, 4, 5].map(n => '<button type="button" data-n="' + n + '">' + RATING_FACES[n] + "<small>" + RATING_LABELS[n] + "</small></button>").join("") + "</div></div>" +
+        '<p class="muted">評価をタップするとすぐ保存します。写真・コメントは後から「編集」で足せます。</p></div>' +
+        '<div class="btn-row"><button class="btn ghost qFull">📝 詳しく書く（写真・金額など）</button></div>';
+      body.querySelectorAll(".emoji-rate button").forEach(b => b.onclick = async () => {
+        f.date = body.querySelector(".qDate").value; f.rating = b.dataset.n;
+        if (!f.date) { alert("訪問日を入れてください"); return; }
+        b.classList.add("on");
+        const v = await saveVisit({ spot_id: spotId, date: f.date, rating: f.rating, menu: "", price: "", companions: "", people: "", comment: "", photos: "", repeat: "" }, true, [], []);
+        if (v) popView();
+        else b.classList.remove("on");
+      });
+      body.querySelector(".qFull").onclick = () => { f.date = body.querySelector(".qDate").value; popView(); openVisitForm(spotId, null, f.date); };
+    }
+  });
+}
+/** 訪問記録フォーム（新規・編集）。必須は日付と評価だけ */
+function openVisitForm(spotId, visit, presetDate) {
+  const s = getSpot(spotId);
+  const isNew = !visit;
+  const f = Object.assign({ visit_id: "", spot_id: spotId, date: presetDate || todayStr(), rating: "", menu: "", price: "", companions: "", people: "", comment: "", photos: "", repeat: "", created_at: "", updated_at: "" }, visit || {});
+  let kept = photoIds(f);            // 残す既存写真の fileId
+  const removed = [];                // 外した既存写真（保存成功後に deletePhoto）
+  const added = [];                  // 追加する写真 {dataUrl, name}
+  let busy = false;
+  pushView({
+    static: true,
+    title: (isNew ? "訪問を記録：" : "訪問を編集：") + (s ? s.name : ""),
+    render(body) {
+      const pp = perPerson(f);
+      const nPh = kept.length + added.length;
+      body.innerHTML = '<div class="card">' +
+        '<div class="form-row"><label class="lbl">訪問日 *</label><input type="date" class="vDate" value="' + esc(f.date) + '"></div>' +
+        '<div class="form-row"><label class="lbl">評価 *</label><div class="emoji-rate">' +
+        [1, 2, 3, 4, 5].map(n => '<button type="button" data-n="' + n + '" class="' + (f.rating === String(n) ? "on" : "") + '">' + RATING_FACES[n] + "<small>" + RATING_LABELS[n] + "</small></button>").join("") + "</div></div>" +
+        '<div class="form-row"><label class="lbl">何を食べたか・何をしたか</label><input type="text" class="vMenu" value="' + esc(f.menu) + '"></div>' +
+        '<div class="two-col"><div class="form-row"><label class="lbl">金額（合計・円）</label><input type="text" inputmode="numeric" class="vPrice" value="' + esc(f.price) + '"></div>' +
+        '<div class="form-row"><label class="lbl">人数</label><input type="text" inputmode="numeric" class="vPeople" value="' + esc(f.people) + '"></div></div>' +
+        '<p class="muted vPP" style="margin:-6px 0 10px;">' + esc(pp) + "</p>" +
+        '<div class="form-row"><label class="lbl">誰と行ったか</label><input type="text" class="vComp" value="' + esc(f.companions) + '"></div>' +
+        '<div class="form-row"><label class="lbl">コメント</label><textarea class="vComment">' + esc(f.comment) + "</textarea></div>" +
+        '<div class="form-row"><label class="lbl">また行きたいか（任意）</label><div class="seg">' +
+        REPEAT_OPTS.map(o => '<button type="button" data-r="' + o + '" class="' + (f.repeat === o ? "on" : "") + '">' + o + "</button>").join("") + "</div></div>" +
+        '<div class="form-row"><label class="lbl">写真（' + nPh + "／" + MAX_PHOTOS + '枚）</label><div class="photo-grid">' +
+        kept.map(id => '<div class="ph">' + photoImg(id, 300) + '<button type="button" data-rm="' + esc(id) + '">✕</button></div>').join("") +
+        added.map((a, i) => '<div class="ph"><img src="' + a.dataUrl + '" alt=""><span class="new">新規</span><button type="button" data-rmn="' + i + '">✕</button></div>').join("") +
+        (nPh < MAX_PHOTOS ? '<button type="button" class="photo-add">＋ 写真を追加</button>' : "") +
+        '</div><input type="file" accept="image/*" multiple class="vFile" style="display:none"></div>' +
+        "</div>" +
+        '<div class="btn-row"><button class="btn vSave">💾 ' + (isNew ? "記録する" : "更新する") + "</button></div>";
+      const $ = q => body.querySelector(q);
+      const sync = () => {
+        f.date = $(".vDate").value; f.menu = $(".vMenu").value.trim(); f.price = $(".vPrice").value.replace(/[,，円\s]/g, "");
+        f.people = $(".vPeople").value.trim(); f.companions = $(".vComp").value.trim(); f.comment = $(".vComment").value;
+      };
+      const redraw = () => { sync(); drawView(state.viewStack[state.viewStack.length - 1]); };
+      body.querySelectorAll(".emoji-rate button").forEach(b => b.onclick = () => { f.rating = b.dataset.n; redraw(); });
+      body.querySelectorAll(".seg button").forEach(b => b.onclick = () => { f.repeat = f.repeat === b.dataset.r ? "" : b.dataset.r; redraw(); });
+      [".vPrice", ".vPeople"].forEach(q => $(q).oninput = () => { sync(); $(".vPP").textContent = perPerson(f); });
+      body.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { kept = kept.filter(x => x !== b.dataset.rm); removed.push(b.dataset.rm); redraw(); });
+      body.querySelectorAll("[data-rmn]").forEach(b => b.onclick = () => { added.splice(Number(b.dataset.rmn), 1); redraw(); });
+      const add = $(".photo-add"); if (add) add.onclick = () => $(".vFile").click();
+      $(".vFile").onchange = async e => {
+        const files = Array.from(e.target.files || []);
+        const room = MAX_PHOTOS - kept.length - added.length;
+        if (files.length > room) toast("写真は " + MAX_PHOTOS + " 枚までです（" + room + " 枚だけ追加）");
+        sync();
+        for (const file of files.slice(0, room)) {
+          try { const c = await compressImage(file); added.push({ dataUrl: c.dataUrl, name: (s ? s.id : "spot") + "-" + f.date + ".jpg" }); }
+          catch (err) { alert(err.message); }
+        }
+        drawView(state.viewStack[state.viewStack.length - 1]);
+      };
+      $(".vSave").onclick = async () => {
+        if (busy) return;
+        sync();
+        if (!f.date) { alert("訪問日を入れてください"); return; }
+        if (!f.rating) { alert("評価（絵文字）を選んでください"); return; }
+        if (f.price !== "" && !/^\d+$/.test(f.price)) { alert("金額は数字（円）で入れてください"); return; }
+        if (f.people !== "" && !/^[1-9]\d*$/.test(f.people)) { alert("人数は1以上の数字で入れてください"); return; }
+        busy = true; $(".vSave").disabled = true;
+        const v = await saveVisit(f, isNew, kept, added, removed);
+        busy = false;
+        if (v) popView();
+        else { const b = $(".vSave"); if (b) b.disabled = false; }
+      };
+    }
+  });
+}
+/**
+ * 保存：新しい写真を先に Drive へアップロード → addVisit／updateVisit →
+ * 成功したら外した写真を deletePhoto。保存に失敗したら今回アップロードした写真を片付ける。
+ */
+async function saveVisit(f, isNew, kept, added, removed) {
+  const uploaded = [];
+  try {
+    for (let i = 0; i < (added || []).length; i++) {
+      setBadge("📷 写真 " + (i + 1) + "/" + added.length, "syncing");
+      const r = await api("uploadPhoto", { data: added[i].dataUrl, name: added[i].name });
+      uploaded.push(r.fileId);
+    }
+    setBadge("⬆️ 保存中", "syncing");
+    const payload = {};
+    VISIT_HEADERS.forEach(h => payload[h] = f[h] == null ? "" : String(f[h]));
+    payload.photos = (kept || []).concat(uploaded).join("/");
+    const r = await api(isNew ? "addVisit" : "updateVisit", { visit: payload });
+    replaceVisitLocal(r.visit);
+    (r.spots || [r.spot]).filter(Boolean).forEach(replaceSpotLocal);
+    for (const id of (removed || [])) { try { await api("deletePhoto", { fileId: id }); } catch (e) { /* 掃除の失敗は記録に影響させない */ } }
+    setBadge("☁️ " + state.spots.length + "件", "online");
+    renderTab(state.currentTab); refreshViews();
+    if (state.map) renderMap(false);
+    return r.visit;
+  } catch (e) {
+    for (const id of uploaded) { try { await api("deletePhoto", { fileId: id }); } catch (x) { /* 無視 */ } }
+    setBadge("⚠️ 未保存", "error");
+    return null;
+  }
+}
+function exportVisitsCsv() {
+  const head = VISIT_HEADERS.concat(["spot_name"]);
+  const rows = state.visits.slice().sort((a, b) => a.visit_id.localeCompare(b.visit_id)).map(v => VISIT_HEADERS.map(h => csvField(v[h])).concat(csvField((getSpot(v.spot_id) || {}).name || "")).join(","));
+  const blob = new Blob(["\uFEFF" + [head.join(",")].concat(rows).join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "visits-export-" + todayStr() + ".csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+// ======================================================================
+// タブ4 ジャンル
+// ======================================================================
+function renderGenre() {
+  const cntTag = {}, cntReg = {}, cntCat = {};
+  state.spots.forEach(s => {
+    splitList(s.tags).forEach(t => cntTag[t] = (cntTag[t] || 0) + 1);
+    splitList(s.regions).forEach(t => cntReg[t] = (cntReg[t] || 0) + 1);
+    splitList(s.categories).forEach(t => cntCat[t] = (cntCat[t] || 0) + 1);
+  });
+  const block = (names, cnt, kind) => names.length ? '<div class="pref-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));">' + names.map(n =>
+    '<button class="pref-btn' + (cnt[n] ? "" : " zero") + '" style="text-align:left;padding:10px;" data-kind="' + kind + '" data-name="' + esc(n) + '">' + esc((emojiFor(n) || "") + " " + n) + '<span class="badge">' + (cnt[n] || 0) + "</span></button>").join("") + "</div>"
+    : '<div class="empty">まだありません</div>';
+  const genreNames = Array.from(new Set(tagsOfType("ジャンル").map(t => t.name).concat(Object.keys(cntTag))));
+  const regionNames = Array.from(new Set(tagsOfType("地域").map(t => t.name).concat(Object.keys(cntReg))));
+  document.getElementById("genreTags").innerHTML = groupGenres(genreNames).map(([g, ns]) =>
+    '<div class="grp-name">' + esc(g) + "（" + ns.reduce((a, n) => a + (cntTag[n] ? 1 : 0), 0) + "／" + ns.length + "）</div>" + block(ns, cntTag, "tag")).join("");
+  document.getElementById("regionTags").innerHTML = block(regionNames, cntReg, "region");
+  document.getElementById("categoryTags").innerHTML = block(MAIN_CATS, cntCat, "cat");
+  document.querySelectorAll("#page-genre .pref-btn").forEach(b => b.onclick = () => openTagPage(b.dataset.kind, b.dataset.name));
+}
+function openTagPage(kind, name) {
+  const key = kind === "tag" ? "tags" : kind === "region" ? "regions" : "categories";
+  const getter = () => state.spots.filter(s => splitList(s[key]).includes(name));
+  openSpotList((emojiFor(name) || "") + " " + name, getter, "created", "まだ0件", {
+    html: '<button class="btn secondary toMap">🗺️ 地図で見る</button>',
+    bind: body => body.querySelector(".toMap").onclick = () => kind === "cat" ? openMapWith({ cat: name }) : openMapWith({ tag: name })
+  });
+}
+
+// ======================================================================
+// タブ3 追加：自動判定
+// ======================================================================
+// Places の種別 → 項目
+const TYPE_CAT_RULES = [
+  ["カフェ", t => /^(cafe|coffee_shop|bakery|tea_house|dessert_shop|confectionery|ice_cream_shop|juice_shop|donut_shop|cat_cafe|dog_cafe|chocolate_shop|cake_shop|pastry_shop)$/.test(t)],
+  ["宿", t => /^(lodging|hotel|motel|inn|japanese_inn|budget_japanese_inn|ryokan|hostel|bed_and_breakfast|guest_house|resort_hotel|extended_stay_hotel|cottage|farmstay|private_guest_room|camping_cabin)$/.test(t)],
+  ["グルメ", t => /^(restaurant|food|meal_takeaway|meal_delivery|food_court|bar|pub|izakaya|bar_and_grill|diner|steak_house|buffet_restaurant|fine_dining_restaurant)$/.test(t) || /_restaurant$/.test(t)],
+  ["観光地", t => /^(tourist_attraction|museum|park|national_park|state_park|amusement_park|aquarium|zoo|art_gallery|historical_landmark|historical_place|monument|observation_deck|botanical_garden|garden|beach|hiking_area|cultural_landmark|place_of_worship|shinto_shrine|buddhist_temple|church|castle|scenic_spot|visitor_center|theme_park|water_park|wildlife_park|plaza|marina)$/.test(t)],
+  ["服", t => /^(clothing_store|shoe_store|womens_clothing_store|mens_clothing_store)$/.test(t)]
+];
+// Places の種別 → ジャンルタグ（タグマスタに存在するものだけ付与）
+const TYPE_TAG_RULES = [
+  ["ラーメン", /^ramen_restaurant$/], ["焼肉", /^(yakiniku_restaurant|korean_barbecue_restaurant)$/], ["寿司", /^sushi_restaurant$/],
+  ["中華", /^chinese_restaurant$/], ["駐車場", /^(parking|parking_lot|parking_garage)$/], ["ガソスタ", /^gas_station$/],
+  ["病院", /^hospital$/], ["キャンプ場", /^(campground|camping_cabin|rv_park)$/], ["スキー場", /^ski_resort$/], ["サウナ", /^sauna$/],
+  ["うなぎ", /^unagi_restaurant$/], ["すき焼き", /^sukiyaki_restaurant$/]
+];
+// 店名キーワード辞書（設計メモ §8：種別が取れない場合の推定）
+const NAME_RULES = [
+  [/カフェ|喫茶|珈琲|コーヒー|coffee|café|cafe|ベーカリー|パン屋/i, ["カフェ"], []],
+  [/ホテル|旅館|民宿|ゲストハウス|ペンション|hotel|hostel|ryokan|温泉宿|ヴィラ/i, ["宿"], []],
+  [/ラーメン|らーめん|拉麺|中華そば|つけ麺|担々麺/, ["グルメ"], ["ラーメン"]],
+  [/焼肉|焼き肉|ホルモン/, ["グルメ"], ["焼肉"]],
+  [/寿司|鮨|すし|鮓/, ["グルメ"], ["寿司"]],
+  [/うなぎ|鰻|ひつまぶし/, ["グルメ"], ["うなぎ"]],
+  [/すき焼|すきやき/, ["グルメ"], ["すき焼き"]],
+  [/中華料理|中国料理|餃子|飯店|小籠包/, ["グルメ"], ["中華"]],
+  [/サウナ|スパ銭|健康ランド/, [], ["サウナ"]],
+  [/キャンプ場|キャンプ/, [], ["キャンプ場"]],
+  [/スキー場|スノーパーク|スキーリゾート/, [], ["スキー場"]],
+  [/駐車場|パーキング|parking/i, [], ["駐車場"]],
+  [/ガソリンスタンド|ENEOS|エネオス|出光|コスモ石油|apollostation/i, [], ["ガソスタ"]],
+  [/美容外科|美容皮膚科|美容クリニック|美容医療/, [], ["美容"]],
+  [/病院|医療センター/, [], ["病院"]]
+];
+function prefFromAddress(addr) {
+  addr = String(addr || "");
+  let best = "", pos = 1e9;
+  PREFS47.forEach(p => { const i = addr.indexOf(p); if (i >= 0 && i < pos) { pos = i; best = p; } });
+  return best;
+}
+function cityFromAddress(addr, pref) {
+  if (!pref) return "";
+  const a = String(addr || ""); const i = a.indexOf(pref);
+  if (i < 0) return "";
+  const m = a.slice(i + pref.length).match(/^(.+?郡.+?[町村]|.+?市.+?区|.+?[市区町村])/);
+  return m ? m[1] : "";
+}
+/** Places の結果 → 項目・タグ・都道府県の自動判定（排他にしない） */
+/**
+ * 項目・都道府県の判定（アプリ側）。ジャンルタグは v3.0 から GAS の classifyGenres が判定し、genreTags で渡す。
+ * 麺・和食・肉・各国のジャンルが付いたら項目「グルメ」も付ける。
+ */
+function judgePlace(p, genreTags) {
+  const types = (p.types || []).concat(p.primaryType ? [p.primaryType] : []);
+  const cats = new Set();
+  types.forEach(t => { TYPE_CAT_RULES.forEach(([c, f]) => { if (f(t)) cats.add(c); }); });
+  NAME_RULES.forEach(([re, cs]) => { if (re.test(p.name || "")) cs.forEach(c => cats.add(c)); });
+  const known = new Set(tagsOfType("ジャンル").map(t => t.name));
+  const tagList = (genreTags || []).filter(t => known.has(t));
+  if (tagList.some(t => FOOD_GROUPS.includes(tagGroup(t)))) cats.add("グルメ");
+  const prefecture = PREFS47.includes(p.prefecture) ? p.prefecture : (prefFromAddress(p.address) || p.prefecture || "");
+  return {
+    categories: cats.size ? MAIN_CATS.filter(c => cats.has(c)).join("/") : "その他",
+    tags: tagList.join("/"),
+    rep_tag: autoRepTag(tagList),
+    prefecture: prefecture,
+    city: p.city || cityFromAddress(p.address, prefecture)
+  };
+}
+function newSpotFromPlace(p, via, genreTags) {
+  const j = judgePlace(p, genreTags);
+  const d = todayStr();
+  return {
+    id: "", place_id: p.place_id || "", name: p.name || "", prefecture: j.prefecture, city: j.city,
+    categories: j.categories, tags: j.tags, regions: "", rep_tag: j.rep_tag,
+    address: (p.address || "").replace(/^日本、\s*/, ""), lat: p.lat === "" || p.lat == null ? "" : String(p.lat), lng: p.lng === "" || p.lng == null ? "" : String(p.lng),
+    maps_url: p.maps_url || (p.place_id ? "https://www.google.com/maps/place/?q=place_id:" + p.place_id : ""),
+    status: "行きたい", rating: "", memo: "", google_saved: "未", coord_source: p.coord_source || (p.lat ? "Places" : ""),
+    source_lists: "", created_at: d, updated_at: d, _via: via
+  };
+}
+function candidateHtml(c, i) {
+  const dup = c.place_id && state.spots.find(s => s.place_id === c.place_id);
+  return '<div class="spot-row" data-i="' + i + '"><div class="spot-emoji">' + esc(spotEmoji(judgePlace(c))) + "</div>" +
+    '<div class="spot-main"><div class="spot-name">' + esc(c.name || "（名称不明）") + '</div><div class="spot-sub" style="white-space:normal;">' + esc(c.address || "") + "</div>" +
+    (dup ? '<span class="chip warn">⚠️ 登録済み ' + esc(dup.id) + "</span>" : "") + "</div></div>";
+}
+async function searchPlaces() {
+  const q = document.getElementById("addQuery").value.trim();
+  const box = document.getElementById("addCandidates");
+  if (!q) return;
+  box.innerHTML = '<div class="empty">検索中…</div>';
+  try {
+    const r = await api("searchPlace", Object.assign({ query: q }, state.here ? { lat: state.here.lat, lng: state.here.lng } : {}));
+    if (!r.candidates.length) { box.innerHTML = '<div class="empty">候補が見つかりませんでした</div>'; return; }
+    box.innerHTML = r.candidates.map(candidateHtml).join("");
+    box.querySelectorAll(".spot-row").forEach(row => row.onclick = () => pickCandidate(r.candidates[Number(row.dataset.i)], "search"));
+  } catch (e) {
+    box.innerHTML = '<div class="notice warn">' + esc(e.message) + (e.code === "NO_API_KEY" ? '<br>APIキーが無い場合は「手入力で追加」から登録できます。' : "") + "</div>";
+  }
+}
+async function pickCandidate(c, via) {
+  let place = c;
+  if (c.place_id && !c.maps_url) {
+    try { place = (await api("searchPlace", { placeId: c.place_id })).place; } catch (e) { alert(e.message); return; }
+  }
+  // v3.0：ジャンルは GAS（tags タブの辞書）で判定。確認カードで付け外しできる
+  const types = (place.types || []).concat(place.primaryType ? [place.primaryType] : []);
+  let genres = [], classifyOk = true;
+  try { genres = (await api("classifyGenres", { name: place.name || "", types: types, categories: judgePlace(place).categories })).tags || []; }
+  catch (e) { classifyOk = false; }
+  const sp = newSpotFromPlace(place, via, genres);
+  sp._classified = classifyOk;      // 判定済み → addSpot で二重に足さない（外したタグを勝手に戻さない）
+  sp._autoTags = genres;
+  const j = judgePlace(place, genres);
+  const note = "自動判定：項目＝" + esc(j.categories) + "／ジャンル＝" + esc(genres.join("・") || "なし") + "／都道府県＝" + esc(j.prefecture || "不明") +
+    (classifyOk ? "" : "（ジャンル判定に失敗。保存時に GAS で判定します）") + "<br>違っていたらここで直してから保存してください。";
+  openEdit(sp, true, note);
+}
+async function resolveMapUrl() {
+  const url = document.getElementById("addUrl").value.trim();
+  const box = document.getElementById("urlCandidates");
+  if (!url) return;
+  box.innerHTML = '<div class="empty">リンクを解析中…</div>';
+  try {
+    const r = await api("resolveUrl", { url: url });
+    if (!r.candidates || !r.candidates.length) { box.innerHTML = '<div class="notice warn">' + esc(r.message || "スポットを特定できませんでした") + "</div>"; return; }
+    const head = r.resolvedBy === "url" ? '<p class="muted" style="margin-bottom:6px;">URL の座標から作成しました（Places 未使用）。place_id は空のままです。</p>' : "";
+    box.innerHTML = head + r.candidates.map(candidateHtml).join("");
+    box.querySelectorAll(".spot-row").forEach(row => row.onclick = () => {
+      const c = Object.assign({}, r.candidates[Number(row.dataset.i)]);
+      if (r.resolvedBy === "url") c.maps_url = c.maps_url || url;
+      pickCandidate(c, "link");
+    });
+  } catch (e) {
+    box.innerHTML = '<div class="notice warn">' + esc(e.message) + "</div>";
+  }
+}
+function openNewManual() {
+  const d = todayStr();
+  openEdit({ id: "", place_id: "", name: "", prefecture: "", city: "", categories: "", tags: "", regions: "", rep_tag: "", address: "", lat: "", lng: "", maps_url: "", status: "行きたい", rating: "", memo: "", google_saved: "未", coord_source: "", source_lists: "", created_at: d, updated_at: d }, true,
+    "手入力です。座標が無いと地図に出ないため、「座標・URL・ID」から補完するか緯度経度を入れてください。");
+}
+
+// ======================================================================
+// タブ3 追加：キュー（未処理キュー／Google未保存キュー）
+// ======================================================================
+function getQueueChecks() { try { return JSON.parse(state.config.queue_checks || "{}") || {}; } catch (e) { return {}; } }
+let queueSaveTimer = null;
+function setQueueChecks(obj) {
+  state.config.queue_checks = JSON.stringify(obj);
+  saveCache();
+  clearTimeout(queueSaveTimer);
+  queueSaveTimer = setTimeout(() => { api("setConfig", { key: "queue_checks", value: state.config.queue_checks }).catch(() => { /* 失敗はバナーで表示 */ }); }, 800);
+}
+/** 既存の Google リスト名の表記（全角スペース等）を source_lists から拾う */
+function existingListNames() {
+  const m = {};
+  state.spots.forEach(s => splitList(s.source_lists).forEach(l => { const k = l.replace(/[\s　]/g, ""); if (!m[k]) m[k] = l; }));
+  return m;
+}
+/** 保存先リスト名：都道府県×項目のリスト名＋ジャンルタグ名のリスト名 */
+function saveListNames(s, known) {
+  known = known || existingListNames();
+  const out = [];
+  const pref = s.prefecture;
+  if (PREFS47.includes(pref)) {
+    const short = prefShort(pref);
+    splitList(s.categories).filter(c => c !== "その他").forEach(c => {
+      const keys = [short + c].concat(c === "観光地" ? [short + "観光"] : []);
+      const hit = keys.map(k => known[k]).find(Boolean);
+      out.push(hit || short + " " + c);
+    });
+  }
+  splitList(s.tags).forEach(t => { const ti = tagInfo(t); if (!ti || ti.type === "ジャンル") out.push(known[t.replace(/[\s　]/g, "")] || t); });
+  return Array.from(new Set(out));
+}
+function renderAddQueues() {
+  // Google未保存キュー
+  const gq = state.spots.filter(s => s.google_saved === "未");
+  document.getElementById("gqCount").textContent = gq.length + " 件";
+  const checks = getQueueChecks();
+  const known = existingListNames();
+  const gEl = document.getElementById("googleQueue");
+  gEl.innerHTML = gq.length ? sortSpots(gq, "created").map(s => {
+    const lists = saveListNames(s, known);
+    const done = checks[s.id] || [];
+    return '<div class="queue-item" data-id="' + esc(s.id) + '"><div class="spot-row" data-id="' + esc(s.id) + '" style="border:none;padding:0 0 6px;">' +
+      '<div class="spot-emoji">' + esc(spotEmoji(s)) + '</div><div class="spot-main"><div class="spot-name">' + esc(s.name) + '</div><div class="spot-sub">' + esc(s.prefecture + " " + s.city) + "</div></div></div>" +
+      (lists.length ? lists.map(l => '<div class="list-check' + (done.includes(l) ? " done" : "") + '"><input type="checkbox" data-list="' + esc(l) + '"' + (done.includes(l) ? " checked" : "") + '><span class="ln" data-open="1">📂 ' + esc(l) + '</span><button class="btn small dark" data-open="1">開く</button></div>').join("")
+        : '<div class="muted" style="padding:6px;">保存先リスト名を決められません（項目が「その他」で都道府県・タグも無い）</div>') +
+      '<div class="btn-row" style="margin-top:6px;"><button class="btn small ghost qExclude">対象外にする</button><button class="btn small ok qDone">全部保存した（済）</button></div></div>';
+  }).join("") : '<div class="empty">未保存のスポットはありません</div>';
+  gEl.querySelectorAll(".queue-item").forEach(item => {
+    const id = item.dataset.id, s = getSpot(id);
+    item.querySelector(".spot-row").onclick = () => openDetail(id);
+    item.querySelectorAll("[data-open]").forEach(b => b.onclick = () => openExternal(mapsUrl(s)));
+    item.querySelectorAll("input[type=checkbox]").forEach(cb => cb.onchange = () => {
+      const all = getQueueChecks(); const a = new Set(all[id] || []);
+      if (cb.checked) a.add(cb.dataset.list); else a.delete(cb.dataset.list);
+      all[id] = [...a];
+      setQueueChecks(all);
+      const lists = saveListNames(s, known);
+      if (lists.length && lists.every(l => a.has(l))) {
+        if (confirm("「" + s.name + "」の保存先を全部チェックしました。Google保存＝済にしますか？")) { markGoogleSaved(s, "済"); return; }
+      }
+      renderAddQueues();
+    });
+    item.querySelector(".qExclude").onclick = () => markGoogleSaved(s, "対象外");
+    item.querySelector(".qDone").onclick = () => markGoogleSaved(s, "済");
+  });
+
+  // 未処理キュー
+  const uq = state.spots.filter(s => !hasCoord(s) || !s.prefecture || /要確認/.test(s.memo));
+  document.getElementById("uqCount").textContent = uq.length + " 件";
+  const uEl = document.getElementById("unprocessedQueue");
+  const noCoord = uq.filter(s => !hasCoord(s) || !s.prefecture), review = uq.filter(s => hasCoord(s) && s.prefecture);
+  uEl.innerHTML = uq.length ? (
+    (noCoord.length ? '<div class="region-name">座標・都道府県が未設定（' + noCoord.length + "）</div>" + noCoord.map(spotRowHtml).join("") : "") +
+    (review.length ? '<details style="margin-top:8px;"><summary>メモに「要確認」あり（' + review.length + "）</summary>" + review.map(spotRowHtml).join("") + "</details>" : "")
+  ) : '<div class="empty">未処理のスポットはありません</div>';
+  uEl.querySelectorAll(".spot-row").forEach(r => r.onclick = () => openEdit(getSpot(r.dataset.id), false));
+  bindQuick(uEl);
+}
+async function markGoogleSaved(s, val) {
+  const r = await saveSpot(Object.assign({}, s, { google_saved: val }), false, true);
+  if (r) {
+    const all = getQueueChecks(); if (all[s.id]) { delete all[s.id]; setQueueChecks(all); }
+    renderAddQueues();
+  }
+}
+
+// ======================================================================
+// タブ5 設定
+// ======================================================================
+/** ［ジャンル再判定］全スポットに足りないタグを追加（追加のみ） */
+async function runReclassify() {
+  if (!confirm("全スポットのジャンルを店名から判定し、足りないタグを追加します（削除はしません）。よろしいですか？")) return;
+  try {
+    const r = await api("reclassifyAll");
+    document.getElementById("maintResult").innerHTML = '<div class="notice info"><b>' + r.spots + "件のスポットに" + r.added + "個のタグを追加しました</b>（全" + r.total + "件を確認）" +
+      (r.details.length ? '<details style="margin-top:4px;"><summary>追加の内訳</summary>' + r.details.map(x => esc(x.name + "：" + x.added.join("・"))).join("<br>") + "</details>" : "") + "</div>";
+    await syncFromCloud(false, true);
+  } catch (e) { /* 失敗はバナーで表示 */ }
+}
+/** ［座標を自動補完］座標の無いスポットを少しずつ（GAS の時間制限内で）補完する */
+async function runFillCoords() {
+  const before = state.spots.filter(s => !hasCoord(s)).length;
+  if (!before) { okToast("座標の無いスポットはありません"); return; }
+  if (!confirm("座標の無いスポット " + before + " 件の座標を探して埋めます（マップURL → place_id → 住所 → 店名）。\n件数が多いと数分かかります。よろしいですか？")) return;
+  const skip = [], failedNames = [];
+  let filled = 0, apiKey = true;
+  try {
+    for (let round = 0; round < 50; round++) {
+      const r = await api("fillCoords", { limit: 20, skipIds: skip }, { label: "座標を補完中…（" + (filled + skip.length) + "／" + before + "）" });
+      apiKey = r.apiKey;
+      r.filled.forEach(sp => replaceSpotLocal(sp));
+      filled += r.filled.length;
+      r.failed.forEach(x => { skip.push(x.id); failedNames.push(x.name); });
+      if (!r.remaining || !r.processed) break;
+    }
+    okToast(filled + "件の座標を補完しました");
+    const el = document.getElementById("maintResult");
+    if (el) el.innerHTML = '<div class="notice info"><b>' + filled + "件の座標を補完しました</b>" + (failedNames.length ? "／見つからなかった " + failedNames.length + "件" : "") +
+      (apiKey ? "" : "<br>Places APIキーが未設定のため、マップURL・住所からだけ探しました。") +
+      (failedNames.length ? '<details style="margin-top:4px;"><summary>見つからなかったスポット</summary>' + failedNames.map(esc).join("<br>") + "</details>" : "") + "</div>";
+    renderTab(state.currentTab); refreshViews(); if (state.map) renderMap(false);
+  } catch (e) { /* 失敗はバナーで表示 */ }
+}
+function renderSettings() {
+  const nc = document.getElementById("noCoordCount");
+  if (nc) { const n = state.spots.filter(s => !hasCoord(s)).length; nc.textContent = n ? "（今 座標なし " + n + " 件）" : "（今 座標なし 0 件）"; }
+  const rs = document.getElementById("rememberState"), rb = document.getElementById("rememberBtn");
+  if (rs) { const on = !!getSavedPin(); rs.textContent = on ? "✅ 記憶中" : "記憶していません"; rb.textContent = on ? "記憶を解除する" : "この端末に記憶する"; }
+  document.getElementById("apiKeyState").textContent = state.config.places_api_key_set ? "✅ 設定済み" : "未設定";
+  ["tile_std_url", "tile_std_attr", "tile_sat_url", "tile_sat_attr"].forEach(k => {
+    const id = { tile_std_url: "tileStdUrl", tile_std_attr: "tileStdAttr", tile_sat_url: "tileSatUrl", tile_sat_attr: "tileSatAttr" }[k];
+    document.getElementById(id).value = cfg(k);
+  });
+}
+function saveGasUrl() {
+  const url = document.getElementById("gasUrlInput").value.trim();
+  if (!/^(https:\/\/|http:\/\/localhost[:/])/.test(url)) { alert("GAS のウェブアプリURL（https://script.google.com/macros/s/.../exec）を入れてください"); return; }
+  state.gasUrl = url; localStorage.setItem(LS.gasUrl, url);
+  syncFromCloud(true);
+}
+async function saveApiKey() {
+  const v = document.getElementById("apiKeyInput").value.trim();
+  if (!v) { alert("APIキーを入れてください"); return; }
+  try { await api("setConfig", { key: "places_api_key", value: v }); state.config.places_api_key_set = "1"; saveCache(); document.getElementById("apiKeyInput").value = ""; renderSettings(); }
+  catch (e) { /* 失敗はバナーで表示 */ }
+}
+async function clearApiKey() {
+  if (!confirm("Places APIキーを削除しますか？")) return;
+  try { await api("setConfig", { key: "places_api_key", value: "" }); state.config.places_api_key_set = ""; saveCache(); renderSettings(); }
+  catch (e) { /* 失敗はバナーで表示 */ }
+}
+async function saveTiles(reset) {
+  const vals = reset ? DEFAULT_TILES : {
+    tile_std_url: document.getElementById("tileStdUrl").value.trim(), tile_std_attr: document.getElementById("tileStdAttr").value.trim(),
+    tile_sat_url: document.getElementById("tileSatUrl").value.trim(), tile_sat_attr: document.getElementById("tileSatAttr").value.trim()
+  };
+  if (!vals.tile_std_attr || !vals.tile_sat_attr) { alert("出典表示（attribution）は必須です"); return; }
+  try {
+    for (const k of Object.keys(vals)) { await api("setConfig", { key: k, value: vals[k] }); state.config[k] = vals[k]; }
+    saveCache(); renderSettings(); if (state.map) buildTileLayers();
+  } catch (e) { /* 失敗はバナーで表示 */ }
+}
+function resetTiles() { if (confirm("地図タイルを初期値（OSM／Esri）に戻しますか？")) saveTiles(true); }
+
+// CSV
+function parseCsv(text) {
+  text = text.replace(/^﻿/, "");
+  const rows = []; let row = [], field = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else q = false; }
+      else field += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field); rows.push(row); row = []; field = "";
+    } else field += c;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.length > 1 || r[0] !== "");
+}
+function csvField(v) { v = String(v == null ? "" : v); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+function exportCsv() {
+  const lines = [SPOT_HEADERS.join(",")].concat(sortSpots(state.spots, "created").reverse().sort((a, b) => a.id.localeCompare(b.id)).map(s => SPOT_HEADERS.map(h => csvField(s[h])).join(",")));
+  const blob = new Blob(["﻿" + lines.join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "spots-export-" + todayStr() + ".csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+/** Takeout のリスト名（ファイル名）から都道府県・項目・タグ・地域を推定 */
+function guessFromListName(list) {
+  const n = list.replace(/[\s　]/g, "");
+  const out = { prefecture: "", categories: [], tags: [], regions: [] };
+  const p = PREFS47.find(pf => n.startsWith(prefShort(pf)) || n.startsWith(pf));
+  if (p) out.prefecture = p;
+  [["カフェ", /カフェ/], ["宿", /宿|ホテル/], ["グルメ", /グルメ|食べ物|ランチ|ディナー/], ["観光地", /観光/], ["服", /服/]].forEach(([c, re]) => { if (re.test(n)) out.categories.push(c); });
+  tagsOfType("ジャンル").forEach(t => { if (n === t.name.replace(/[\s　]/g, "")) { out.tags.push(t.name); } });
+  tagsOfType("地域").forEach(t => { if (n.includes(t.name)) out.regions.push(t.name); });
+  return out;
+}
+/** Google Takeout の列名（英語版・日本語版のどちらでも可）→ 列番号。無ければ -1 */
+const TAKEOUT_COLS = { title: ["title", "タイトル", "名前"], note: ["note", "メモ"], url: ["url"], comment: ["comment", "コメント"] };
+function takeoutCol(h, key) {
+  const names = TAKEOUT_COLS[key];
+  return h.findIndex(x => names.includes(String(x).replace(/^\uFEFF/, "").trim().toLowerCase()));
+}
+function takeoutRowsToSpots(rows, listName) {
+  const h = rows[0].map(x => x.trim());
+  const iT = takeoutCol(h, "title"), iN = takeoutCol(h, "note"), iU = takeoutCol(h, "url"), iC = takeoutCol(h, "comment");
+  const g = guessFromListName(listName);
+  const d = todayStr();
+  return rows.slice(1).filter(r => (r[iT] || r[iU] || "").trim()).map(r => {
+    const memo = [r[iN], iC >= 0 ? r[iC] : ""].map(x => (x || "").trim()).filter(Boolean).join(" / ");
+    const tags = g.tags;
+    return {
+      id: "", place_id: "", name: (r[iT] || "").trim(), prefecture: g.prefecture, city: "",
+      categories: g.categories.length ? g.categories.join("/") : (tags.length ? "" : "その他"), tags: tags.join("/"), regions: g.regions.join("/"),
+      rep_tag: autoRepTag(tags), address: "", lat: "", lng: "", maps_url: (r[iU] || "").trim(), status: "行きたい", rating: "",
+      memo: memo, google_saved: "済", coord_source: "", source_lists: listName, created_at: d, updated_at: d
+    };
+  });
+}
+async function importCsvFiles(ev) {
+  const files = Array.from(ev.target.files || []);
+  ev.target.value = "";
+  if (!files.length) return;
+  const out = document.getElementById("importResult");
+  let spotRows = [], takeout = [], unknown = [];
+  for (const f of files) {
+    const rows = parseCsv(await f.text());
+    if (!rows.length) continue;
+    const h = rows[0].map(x => x.trim());
+    if (SPOT_HEADERS.every(k => h.includes(k))) {
+      rows.slice(1).forEach(r => { const o = {}; SPOT_HEADERS.forEach(k => o[k] = r[h.indexOf(k)] == null ? "" : r[h.indexOf(k)]); spotRows.push(o); });
+    } else if (takeoutCol(h, "title") >= 0 && takeoutCol(h, "url") >= 0) {
+      takeout = takeout.concat(takeoutRowsToSpots(rows, f.name.replace(/\.csv$/i, "")));
+    } else unknown.push(f.name);
+  }
+  if (unknown.length) alert("形式が分からないため読み飛ばしました：\n" + unknown.join("\n"));
+  if (!spotRows.length && !takeout.length) return;
+  const msg = (spotRows.length ? "spots形式 " + spotRows.length + " 行" : "") + (spotRows.length && takeout.length ? "＋" : "") + (takeout.length ? "Takeout " + takeout.length + " 行" : "");
+  if (!confirm(msg + " を取り込みます（重複は自動で除外）。よろしいですか？")) return;
+  out.innerHTML = '<div class="empty">取り込み中…（数十秒かかることがあります）</div>';
+  try {
+    setBadge("⬆️ 取込中", "syncing");
+    const res = [];
+    // spots形式は1回で送る（CSV内の重複も含めて内容・件数を変えずに入れるため）
+    if (spotRows.length) res.push(["spots形式", await api("importSpots", { rows: spotRows, dedupeWithinBatch: false })]);
+    if (takeout.length) res.push(["Takeout", await api("importSpots", { rows: takeout, dedupeWithinBatch: true })]);
+    out.innerHTML = res.map(([k, r]) => '<div class="notice info"><b>' + esc(k) + "</b>：追加 " + r.added + " 件 ／ 重複などで除外 " + r.skipped + " 件 ／ 取り込み後の総数 " + r.total + " 件" +
+      (r.skippedDetail && r.skippedDetail.length ? '<details style="margin-top:4px;"><summary>除外の内訳</summary>' + r.skippedDetail.map(x => esc((x.name || "#" + x.index) + "：" + x.reason)).join("<br>") + "</details>" : "") + "</div>").join("");
+    await syncFromCloud(false, true);
+  } catch (e) {
+    setBadge("⚠️ エラー", "error");
+    out.innerHTML = '<div class="notice warn">' + esc(e.message) + "</div>";
+  }
+}
+
+// ======================================================================
+makeTouchIcon();
+syncHeaderHeight();
+initLock();
+</script>
+</body>
+</html>
