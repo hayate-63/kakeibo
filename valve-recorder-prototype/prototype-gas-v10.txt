@@ -1,0 +1,794 @@
+/**
+ * 自動弁→流量計積算値 記録ツール（仮実装 / Googleスプレッドシート＋Apps Script）
+ * 版：prototype-gas-v10（2026-11-19）
+ * 正となる仕様：設計メモ v0.6（design-memo-v06.txt）
+ *
+ * 本ファイルは Apps Script エディタの「コード.gs」にそのまま全文を貼り付けて使う。
+ * 関数名の対応（VBA本実装 ⇔ 仮実装）：
+ *   Btn_RecordAll  → recordAll
+ *   Btn_Preview1〜3 → previewSeries1〜3
+ *   Btn_Reset1〜3   → resetSeries1〜3
+ *   （仮実装専用）  → initPrototype
+ *   Workbook_Open  → onOpen
+ *
+ * コード内に直書きしてよいシート名は、設定系シート名「設定」「設定1」「設定2」「設定3」だけ（設計メモ §1）。
+ * それ以外のシート名・列記号・セル位置は、実行のたびに設定シートの §8-2 アドレス表から読む。
+ */
+
+// ============================================================
+// 定数：設定系シート名と §8-2 アドレス表（値は全てB列）
+// ============================================================
+
+var COMMON_SHEET_NAME = '設定';
+var SERIES_SHEET_NAMES = ['設定1', '設定2', '設定3'];
+var SETTING_VALUE_COL = 2; // B列＝設定値
+
+// 共通設定シート「設定」の行番号（§8-2）
+var COMMON_ROW = {
+  buttonSheet: 4,   // ボタンシート名
+  logSheet: 5,      // リセットログシート名
+  notifyOnOpen: 6,  // 開いた時の通知
+  confirm: 7,       // 実行前確認
+  stopFlag: 8,      // 記録停止フラグ
+  dupCheck: 9,      // 重複チェック
+  saveMethod: 10    // 記録後の保存方法
+};
+
+// 系列別設定シート「設定1」「設定2」「設定3」の行番号（§8-2。3枚とも同じ）
+var SERIES_ROW = {
+  name: 4,
+  enabled: 5,
+  dataSheet: 6,
+  dataStartRow: 7,
+  colValveTs: 8,
+  colValve: 9,
+  colFlowTs: 10,
+  colFlow: 11,
+  dest1Sheet: 12, dest1Cell: 13,
+  dest2Sheet: 14, dest2Cell: 15,
+  dest3Sheet: 16, dest3Cell: 17,
+  lookbackDays: 18,
+  toleranceSec: 19,
+  excludeStartCell: 20,
+  excludeEndCell: 21,
+  // 管理欄（触らない欄）
+  ptrTimestamp: 24,
+  ptrRow: 25,
+  lastRunAt: 26,
+  lastRunCount: 27
+};
+var SERIES_LAST_ROW = 27;
+
+var DATETIME_FORMAT_SHEET = 'yyyy/mm/dd hh:mm:ss'; // シートの表示書式
+var DATETIME_FORMAT_TEXT = 'yyyy/MM/dd HH:mm:ss';  // メッセージ表示用（Utilities.formatDate）
+var SAVE_AUTO = '自動保存';
+var SAVE_PROMPT = '保存を促す';
+var MENU_NAME = '記録ツール';
+
+// ============================================================
+// ボタン（メニュー）受け口
+// ============================================================
+
+function onOpen(e) {
+  // メニュー作成（VBA版のボタンの代替）
+  try {
+    SpreadsheetApp.getUi().createMenu(MENU_NAME)
+      .addItem('記録実行（全系列）', 'recordAll')
+      .addSeparator()
+      .addItem('プレビュー（系列1）', 'previewSeries1')
+      .addItem('プレビュー（系列2）', 'previewSeries2')
+      .addItem('プレビュー（系列3）', 'previewSeries3')
+      .addSeparator()
+      .addItem('リセット（系列1）', 'resetSeries1')
+      .addItem('リセット（系列2）', 'resetSeries2')
+      .addItem('リセット（系列3）', 'resetSeries3')
+      .addSeparator()
+      .addItem('テスト初期化（仮実装専用）', 'initPrototype')
+      .addToUi();
+  } catch (err) {
+    // メニューが作れなくても開くこと自体は邪魔しない
+  }
+
+  // 開いた時の通知（記録はしない。走査でエラーが出たら通知を諦めて静かに開く）
+  try {
+    notifyOnOpen_();
+  } catch (err) {
+    // 何もしない（通常業務の邪魔をしない）
+  }
+}
+
+function recordAll() { runSafely_('記録実行', function () { recordAll_(); }); }
+
+function previewSeries1() { runSafely_('プレビュー（系列1）', function () { preview_(1); }); }
+function previewSeries2() { runSafely_('プレビュー（系列2）', function () { preview_(2); }); }
+function previewSeries3() { runSafely_('プレビュー（系列3）', function () { preview_(3); }); }
+
+function resetSeries1() { runSafely_('リセット（系列1）', function () { reset_(1); }); }
+function resetSeries2() { runSafely_('リセット（系列2）', function () { reset_(2); }); }
+function resetSeries3() { runSafely_('リセット（系列3）', function () { reset_(3); }); }
+
+function initPrototype() { runSafely_('テスト初期化', function () { initPrototype_(); }); }
+
+// ============================================================
+// 記録実行（全系列共通）設計メモ §10
+// ============================================================
+
+function recordAll_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  var tz = ss.getSpreadsheetTimeZone();
+
+  // 1. 共通設定
+  var common = readCommon_(ss); // 異常なら例外 → runSafely_ がエラー表示
+
+  if (common.stopFlag) {
+    ui.alert('記録実行', '記録停止フラグがONのため、記録しませんでした。\n（共通設定「設定」シート B' + COMMON_ROW.stopFlag + '）', ui.ButtonSet.OK);
+    return;
+  }
+
+  var now = new Date();
+
+  // 1〜4. 系列ごとに設定読込・検証・走査・照合
+  var items = [];
+  for (var i = 1; i <= SERIES_SHEET_NAMES.length; i++) {
+    var item = { index: i, cfg: null, status: '', error: '', plan: null };
+    try {
+      var loaded = readSeries_(ss, i, { needDest: true });
+      if (loaded.skip === 'blank') { item.status = 'blank'; }
+      else if (loaded.skip === 'disabled') { item.status = 'disabled'; item.cfg = loaded.cfg; }
+      else {
+        item.cfg = loaded.cfg;
+        item.plan = scanSeries_(ss, loaded.cfg, now);
+        item.status = 'ok';
+      }
+    } catch (err) {
+      item.status = 'error';
+      item.error = errMsg_(err);
+    }
+    items.push(item);
+  }
+
+  // 5. 確認ダイアログ（実行前確認ONの時）
+  if (common.confirm) {
+    var lines = ['次の内容で記録します。よろしいですか？', ''];
+    var total = 0;
+    items.forEach(function (it) {
+      if (it.status === 'ok') {
+        var rec = countMatched_(it.plan);
+        var unm = it.plan.events.length - rec;
+        total += rec;
+        lines.push('・' + it.cfg.name + '：記録予定 ' + rec + '件' +
+          (unm > 0 ? '（照合できず記録しない ' + unm + '件）' : '') +
+          (rec > 0 ? '　期間 ' + periodText_(it.plan, tz) : ''));
+      } else if (it.status === 'disabled') {
+        lines.push('・' + it.cfg.name + '：有効フラグOFFのため対象外');
+      } else if (it.status === 'error') {
+        lines.push('・' + SERIES_SHEET_NAMES[it.index - 1] + '：設定に異常があるため記録しません（' + it.error + '）');
+      }
+      // blank は静かにスキップ（§12）
+    });
+    lines.push('');
+    lines.push('合計：' + total + '件');
+    var res = ui.alert('記録実行の確認', lines.join('\n'), ui.ButtonSet.YES_NO);
+    if (res !== ui.Button.YES) {
+      ui.alert('記録実行', 'キャンセルしました。どの系列も書き込み・ポインタ更新をしていません。', ui.ButtonSet.OK);
+      return;
+    }
+  }
+
+  // 6〜7. 系列ごとに記録 → 成功した系列だけポインタ更新
+  var result = ['記録実行の結果', ''];
+  var anyWritten = false;
+  items.forEach(function (it) {
+    if (it.status === 'blank') return;
+    if (it.status === 'disabled') { result.push('・' + it.cfg.name + '：有効フラグOFFのため対象外'); return; }
+    if (it.status === 'error') { result.push('・' + SERIES_SHEET_NAMES[it.index - 1] + '：設定異常のため記録しませんでした（' + it.error + '）'); return; }
+
+    var w;
+    try {
+      w = writeSeries_(ss, it.cfg, it.plan, common.dupCheck);
+    } catch (err) {
+      // 書き込み途中のエラー：ポインタは進めない（§4, §11）
+      result.push('・' + it.cfg.name + '：エラーのため中断。ポインタは更新していません。\n　' + errMsg_(err));
+      if (err && err.partialWritten) anyWritten = true;
+      return;
+    }
+    // 書き込み成功 → ポインタ更新（§4）
+    try {
+      updatePointerAfterRecord_(ss, it.cfg, it.plan, now, w.recordedEvents);
+    } catch (err) {
+      result.push('・' + it.cfg.name + '：記録は完了しましたが、ポインタ更新でエラー：' + errMsg_(err) +
+        '\n　（次回、重複チェックONなら二重記録は防がれます）');
+      if (w.recordedEvents > 0) anyWritten = true;
+      return;
+    }
+    if (w.recordedEvents > 0) anyWritten = true;
+    var unmatched = it.plan.events.length - countMatched_(it.plan);
+    var line = '・' + it.cfg.name + '：記録 ' + w.recordedEvents + '件';
+    var notes = [];
+    if (unmatched > 0) notes.push('照合できず記録しなかった ' + unmatched + '件');
+    if (w.duplicateEvents > 0) notes.push('重複のため書かなかった ' + w.duplicateEvents + '件');
+    if (w.partialDuplicates > 0) notes.push('一部の記録先だけ重複でスキップ ' + w.partialDuplicates + '件');
+    if (notes.length > 0) line += '（' + notes.join('、') + '）';
+    result.push(line);
+  });
+
+  // 8. 保存（Googleスプレッドシートは自動保存。設定値は読むが動作は自動保存固定：依頼メモ §5）
+  SpreadsheetApp.flush();
+  result.push('');
+  if (common.saveMethod === SAVE_PROMPT && anyWritten) {
+    result.push('※保存方法の設定は「' + SAVE_PROMPT + '」ですが、Googleスプレッドシートは自動保存のため保存済みです。');
+  }
+  ui.alert('記録実行', result.join('\n'), ui.ButtonSet.OK);
+}
+
+// ============================================================
+// プレビュー（系列ごと）設計メモ §10：手順2〜4のみ。書き込み禁止
+// ============================================================
+
+function preview_(index) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  var tz = ss.getSpreadsheetTimeZone();
+  var title = 'プレビュー（' + SERIES_SHEET_NAMES[index - 1] + '）';
+
+  var loaded = readSeries_(ss, index, { needDest: true });
+  if (loaded.skip === 'blank') {
+    ui.alert(title, SERIES_SHEET_NAMES[index - 1] + ' の系列名が空欄のため、未使用の系列です（処理対象外）。', ui.ButtonSet.OK);
+    return;
+  }
+  if (loaded.skip === 'disabled') {
+    ui.alert(title, loaded.cfg.name + ' は有効フラグOFFのため、プレビューの対象外です。', ui.ButtonSet.OK);
+    return;
+  }
+  var cfg = loaded.cfg;
+  var plan = scanSeries_(ss, cfg, new Date());
+  var rec = countMatched_(plan);
+
+  var lines = [];
+  lines.push(cfg.name + '（書き込みはしません）');
+  lines.push('走査範囲：' + plan.rangeText);
+  lines.push('記録予定：' + rec + '件');
+  if (rec > 0) lines.push('期間：' + periodText_(plan, tz));
+  var unm = plan.events.length - rec;
+  if (unm > 0) lines.push('照合できず記録しない：' + unm + '件');
+  if (plan.events.length > 0) {
+    lines.push('');
+    lines.push('明細（立ち上がり）：');
+    var max = 30;
+    plan.events.slice(0, max).forEach(function (ev, k) {
+      if (ev.matched) {
+        lines.push((k + 1) + '. ' + fmt_(ev.valveTs, tz) + ' → ' + fmt_(ev.flowTs, tz) + ' / ' + ev.flowValue);
+      } else {
+        lines.push((k + 1) + '. ' + fmt_(ev.valveTs, tz) + ' → 記録しない（' + ev.reason + '）');
+      }
+    });
+    if (plan.events.length > max) lines.push('…ほか ' + (plan.events.length - max) + '件');
+  }
+  ui.alert(title, lines.join('\n'), ui.ButtonSet.OK);
+}
+
+// ============================================================
+// 除外期間リセット（系列ごと）設計メモ §7：警告・中止なし。入力チェックのみ
+// ============================================================
+
+function reset_(index) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  var tz = ss.getSpreadsheetTimeZone();
+  var title = 'リセット（' + SERIES_SHEET_NAMES[index - 1] + '）';
+
+  var common = readCommon_(ss);
+  var loaded = readSeries_(ss, index, { needDest: false });
+  if (loaded.skip === 'blank') {
+    ui.alert(title, SERIES_SHEET_NAMES[index - 1] + ' の系列名が空欄のため、未使用の系列です（処理対象外）。', ui.ButtonSet.OK);
+    return;
+  }
+  if (loaded.skip === 'disabled') {
+    ui.alert(title, loaded.cfg.name + ' は有効フラグOFFのため、リセットの対象外です。', ui.ButtonSet.OK);
+    return;
+  }
+  var cfg = loaded.cfg;
+
+  var btnSheet = ss.getSheetByName(common.buttonSheetName);
+  if (!btnSheet) throw new Error('ボタンシート「' + common.buttonSheetName + '」が見つかりません（設定 B' + COMMON_ROW.buttonSheet + '）');
+  var logSheet = ss.getSheetByName(common.logSheetName);
+  if (!logSheet) throw new Error('リセットログシート「' + common.logSheetName + '」が見つかりません（設定 B' + COMMON_ROW.logSheet + '）');
+
+  var sCell = parseA1_(cfg.excludeStartCell, cfg.sheetName + ' B' + SERIES_ROW.excludeStartCell + '（除外開始セル）');
+  var eCell = parseA1_(cfg.excludeEndCell, cfg.sheetName + ' B' + SERIES_ROW.excludeEndCell + '（除外終了セル）');
+  var exStart = btnSheet.getRange(sCell.row, sCell.col).getValue();
+  var exEnd = btnSheet.getRange(eCell.row, eCell.col).getValue();
+
+  // 入力チェックのみ（満たさなければエラー表示だけで何も変えない）
+  var problems = [];
+  if (isBlank_(exStart)) problems.push('除外開始（' + common.buttonSheetName + '!' + cfg.excludeStartCell + '）が未入力です');
+  else if (!isDate_(exStart)) problems.push('除外開始（' + common.buttonSheetName + '!' + cfg.excludeStartCell + '）が日時として認識できません');
+  if (isBlank_(exEnd)) problems.push('除外終了（' + common.buttonSheetName + '!' + cfg.excludeEndCell + '）が未入力です');
+  else if (!isDate_(exEnd)) problems.push('除外終了（' + common.buttonSheetName + '!' + cfg.excludeEndCell + '）が日時として認識できません');
+  if (problems.length === 0 && toSec_(exStart) > toSec_(exEnd)) problems.push('除外開始が除外終了より後になっています');
+  if (problems.length > 0) {
+    ui.alert(title, '入力に誤りがあるため、何も変更していません。\n\n・' + problems.join('\n・'), ui.ButtonSet.OK);
+    return;
+  }
+
+  // 行番号：除外終了日時以前の最後の自動弁履歴行
+  var endSec = toSec_(exEnd);
+  var rowNo = findLastValveRowAtOrBefore_(ss, cfg, endSec);
+
+  // ポインタを除外終了日時に（警告・中止なし）
+  var ptrTs = new Date(endSec * 1000);
+  var setSheet = ss.getSheetByName(cfg.sheetName);
+  setSheet.getRange(SERIES_ROW.ptrTimestamp, SETTING_VALUE_COL).setValue(ptrTs).setNumberFormat(DATETIME_FORMAT_SHEET);
+  setSheet.getRange(SERIES_ROW.ptrRow, SETTING_VALUE_COL).setValue(rowNo === null ? '' : rowNo);
+
+  // リセットログへ1行追記（§9：実行日時／系列名／除外開始／除外終了／リセット後のポインタ）
+  var nextRow = Math.max(logSheet.getLastRow(), 1) + 1;
+  var logRange = logSheet.getRange(nextRow, 1, 1, 5);
+  logRange.setValues([[new Date(), cfg.name, exStart, exEnd, ptrTs]]);
+  logRange.setNumberFormats([[DATETIME_FORMAT_SHEET, '@', DATETIME_FORMAT_SHEET, DATETIME_FORMAT_SHEET, DATETIME_FORMAT_SHEET]]);
+  SpreadsheetApp.flush();
+
+  ui.alert(title,
+    cfg.name + ' のポインタを除外終了日時まで進めました。\n\n' +
+    '除外開始：' + fmt_(exStart, tz) + '\n' +
+    '除外終了：' + fmt_(exEnd, tz) + '\n' +
+    'リセット後の処理済みタイムスタンプ：' + fmt_(ptrTs, tz) + '\n' +
+    'リセット後の処理済み行番号：' + (rowNo === null ? '（該当行なし）' : rowNo) + '\n\n' +
+    'リセットログ（' + common.logSheetName + '）の ' + nextRow + '行目に記録しました。',
+    ui.ButtonSet.OK);
+}
+
+// ============================================================
+// テスト初期化（仮実装専用。VBA本実装には無い）
+// ============================================================
+
+function initPrototype_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  var res = ui.alert('テスト初期化（仮実装専用）',
+    '次を初期状態に戻します。よろしいですか？\n\n' +
+    '・設定1〜3 の記録先1〜3（開始セルから下の3列）の記録を消去\n' +
+    '・設定1〜3 の管理欄（ポインタ等 B24〜B27）を空欄に\n' +
+    '・リセットログの2行目以降を消去\n' +
+    '・ボタンシートの除外開始／除外終了セルを空欄に\n\n' +
+    '※設定値（許容差など）は戻しません。抽出シートのダミーデータには触りません。',
+    ui.ButtonSet.YES_NO);
+  if (res !== ui.Button.YES) {
+    ui.alert('テスト初期化', 'キャンセルしました。何も変更していません。', ui.ButtonSet.OK);
+    return;
+  }
+
+  var notes = [];
+  var common = null;
+  try { common = readCommon_(ss); } catch (err) { notes.push('共通設定の読込エラー：' + errMsg_(err)); }
+
+  for (var i = 1; i <= SERIES_SHEET_NAMES.length; i++) {
+    var sName = SERIES_SHEET_NAMES[i - 1];
+    var sh = ss.getSheetByName(sName);
+    if (!sh) { notes.push(sName + ' シートがありません'); continue; }
+    var v = sh.getRange(1, SETTING_VALUE_COL, SERIES_LAST_ROW, 1).getValues();
+    var get = function (row) { return v[row - 1][0]; };
+
+    // 管理欄
+    sh.getRange(SERIES_ROW.ptrTimestamp, SETTING_VALUE_COL, 4, 1).clearContent();
+
+    // 記録先
+    [[SERIES_ROW.dest1Sheet, SERIES_ROW.dest1Cell],
+     [SERIES_ROW.dest2Sheet, SERIES_ROW.dest2Cell],
+     [SERIES_ROW.dest3Sheet, SERIES_ROW.dest3Cell]].forEach(function (pair) {
+      var dName = str_(get(pair[0]));
+      if (dName === '') return;
+      var dSheet = ss.getSheetByName(dName);
+      if (!dSheet) { notes.push(sName + '：記録先「' + dName + '」がありません'); return; }
+      var a1;
+      try { a1 = parseA1_(str_(get(pair[1])), sName + ' B' + pair[1]); } catch (err) { notes.push(errMsg_(err)); return; }
+      var last = dSheet.getLastRow();
+      if (last >= a1.row) dSheet.getRange(a1.row, a1.col, last - a1.row + 1, 3).clearContent();
+    });
+
+    // 除外期間セル
+    if (common) {
+      var btn = ss.getSheetByName(common.buttonSheetName);
+      if (btn) {
+        [SERIES_ROW.excludeStartCell, SERIES_ROW.excludeEndCell].forEach(function (row) {
+          try {
+            var c = parseA1_(str_(get(row)), sName + ' B' + row);
+            btn.getRange(c.row, c.col).clearContent();
+          } catch (err) { notes.push(errMsg_(err)); }
+        });
+      } else {
+        notes.push('ボタンシート「' + common.buttonSheetName + '」がありません');
+      }
+    }
+  }
+
+  // リセットログ
+  if (common) {
+    var log = ss.getSheetByName(common.logSheetName);
+    if (log) {
+      var lr = log.getLastRow();
+      if (lr >= 2) log.getRange(2, 1, lr - 1, 5).clearContent();
+    } else {
+      notes.push('リセットログ「' + common.logSheetName + '」がありません');
+    }
+  }
+
+  SpreadsheetApp.flush();
+  ui.alert('テスト初期化', '初期状態に戻しました。' + (notes.length ? '\n\n注意：\n・' + notes.join('\n・') : ''), ui.ButtonSet.OK);
+}
+
+// ============================================================
+// 開いた時の通知（記録はしない）
+// ============================================================
+
+function notifyOnOpen_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var common = readCommon_(ss);
+  if (!common.notifyOnOpen) return;
+  var now = new Date();
+  var parts = [];
+  var total = 0;
+  for (var i = 1; i <= SERIES_SHEET_NAMES.length; i++) {
+    var loaded = readSeries_(ss, i, { needDest: true });
+    if (loaded.skip) continue;
+    var plan = scanSeries_(ss, loaded.cfg, now);
+    var n = countMatched_(plan);
+    total += n;
+    parts.push(loaded.cfg.name + ' ' + n + '件');
+  }
+  if (parts.length === 0) return;
+  ss.toast('未処理（記録予定）：' + parts.join('／') + '　合計 ' + total + '件\n記録はメニュー「' + MENU_NAME + '」→「記録実行（全系列）」から。',
+    '開いた時の通知', 10);
+}
+
+// ============================================================
+// 設定の読込・検証
+// ============================================================
+
+function readCommon_(ss) {
+  var sh = ss.getSheetByName(COMMON_SHEET_NAME);
+  if (!sh) throw new Error('共通設定シート「' + COMMON_SHEET_NAME + '」が見つかりません');
+  var v = sh.getRange(COMMON_ROW.buttonSheet, SETTING_VALUE_COL, COMMON_ROW.saveMethod - COMMON_ROW.buttonSheet + 1, 1).getValues();
+  var get = function (row) { return v[row - COMMON_ROW.buttonSheet][0]; };
+  var where = function (row) { return COMMON_SHEET_NAME + ' B' + row; };
+
+  var c = {};
+  c.buttonSheetName = str_(get(COMMON_ROW.buttonSheet));
+  if (c.buttonSheetName === '') throw new Error('ボタンシート名が空欄です（' + where(COMMON_ROW.buttonSheet) + '）');
+  c.logSheetName = str_(get(COMMON_ROW.logSheet));
+  if (c.logSheetName === '') throw new Error('リセットログシート名が空欄です（' + where(COMMON_ROW.logSheet) + '）');
+  c.notifyOnOpen = parseOnOff_(get(COMMON_ROW.notifyOnOpen), '開いた時の通知（' + where(COMMON_ROW.notifyOnOpen) + '）');
+  c.confirm = parseOnOff_(get(COMMON_ROW.confirm), '実行前確認（' + where(COMMON_ROW.confirm) + '）');
+  c.stopFlag = parseOnOff_(get(COMMON_ROW.stopFlag), '記録停止フラグ（' + where(COMMON_ROW.stopFlag) + '）');
+  c.dupCheck = parseOnOff_(get(COMMON_ROW.dupCheck), '重複チェック（' + where(COMMON_ROW.dupCheck) + '）');
+  c.saveMethod = str_(get(COMMON_ROW.saveMethod));
+  if (c.saveMethod !== SAVE_AUTO && c.saveMethod !== SAVE_PROMPT) {
+    throw new Error('記録後の保存方法は「' + SAVE_AUTO + '」か「' + SAVE_PROMPT + '」で入力してください（' + where(COMMON_ROW.saveMethod) + '）');
+  }
+  return c;
+}
+
+/**
+ * 系列別設定を読む。
+ * 戻り値：{ skip: null | 'blank' | 'disabled', cfg }
+ * 異常があれば Error を投げる（呼び出し側で系列単位のエラーとして扱う）。
+ * opts.needDest：記録先の検証をするか（リセットでは不要）
+ */
+function readSeries_(ss, index, opts) {
+  var sName = SERIES_SHEET_NAMES[index - 1];
+  var sh = ss.getSheetByName(sName);
+  if (!sh) throw new Error('系列別設定シート「' + sName + '」が見つかりません');
+  var v = sh.getRange(1, SETTING_VALUE_COL, SERIES_LAST_ROW, 1).getValues();
+  var get = function (row) { return v[row - 1][0]; };
+  var where = function (row) { return sName + ' B' + row; };
+
+  var cfg = { index: index, sheetName: sName };
+  cfg.name = str_(get(SERIES_ROW.name));
+  if (cfg.name === '') return { skip: 'blank', cfg: null }; // §12：静かにスキップ
+
+  cfg.enabled = parseOnOff_(get(SERIES_ROW.enabled), '系列の有効フラグ（' + where(SERIES_ROW.enabled) + '）');
+  if (!cfg.enabled) return { skip: 'disabled', cfg: cfg };
+
+  cfg.dataSheetName = str_(get(SERIES_ROW.dataSheet));
+  if (cfg.dataSheetName === '') throw new Error('データ抽出シート名が空欄です（' + where(SERIES_ROW.dataSheet) + '）');
+  if (!ss.getSheetByName(cfg.dataSheetName)) throw new Error('データ抽出シート「' + cfg.dataSheetName + '」が見つかりません（' + where(SERIES_ROW.dataSheet) + '）');
+
+  cfg.dataStartRow = parsePositiveInt_(get(SERIES_ROW.dataStartRow), 'データ開始行（' + where(SERIES_ROW.dataStartRow) + '）');
+  cfg.colValveTs = parseColLetter_(get(SERIES_ROW.colValveTs), '自動弁タイムスタンプ列（' + where(SERIES_ROW.colValveTs) + '）');
+  cfg.colValve = parseColLetter_(get(SERIES_ROW.colValve), '自動弁列（' + where(SERIES_ROW.colValve) + '）');
+  cfg.colFlowTs = parseColLetter_(get(SERIES_ROW.colFlowTs), '積算値タイムスタンプ列（' + where(SERIES_ROW.colFlowTs) + '）');
+  cfg.colFlow = parseColLetter_(get(SERIES_ROW.colFlow), '積算値列（' + where(SERIES_ROW.colFlow) + '）');
+
+  cfg.dests = [];
+  if (opts && opts.needDest) {
+    var destRows = [[SERIES_ROW.dest1Sheet, SERIES_ROW.dest1Cell],
+                    [SERIES_ROW.dest2Sheet, SERIES_ROW.dest2Cell],
+                    [SERIES_ROW.dest3Sheet, SERIES_ROW.dest3Cell]];
+    for (var d = 0; d < destRows.length; d++) {
+      var dName = str_(get(destRows[d][0]));
+      if (dName === '') {
+        if (d === 0) throw new Error('記録先1シート名が空欄です（' + where(destRows[d][0]) + '）');
+        continue; // §12：空欄の記録先は使わない
+      }
+      if (!ss.getSheetByName(dName)) throw new Error('記録先' + (d + 1) + '「' + dName + '」が見つかりません（' + where(destRows[d][0]) + '）');
+      var a1 = parseA1_(str_(get(destRows[d][1])), '記録先' + (d + 1) + '開始セル（' + where(destRows[d][1]) + '）');
+      cfg.dests.push({ no: d + 1, sheetName: dName, row: a1.row, col: a1.col, a1: str_(get(destRows[d][1])).toUpperCase() });
+    }
+  }
+
+  cfg.lookbackDays = parsePositiveNumber_(get(SERIES_ROW.lookbackDays), '遡り日数（' + where(SERIES_ROW.lookbackDays) + '）', false);
+  cfg.toleranceSec = parsePositiveNumber_(get(SERIES_ROW.toleranceSec), '照合許容差（秒）（' + where(SERIES_ROW.toleranceSec) + '）', true);
+  cfg.excludeStartCell = str_(get(SERIES_ROW.excludeStartCell)).toUpperCase();
+  cfg.excludeEndCell = str_(get(SERIES_ROW.excludeEndCell)).toUpperCase();
+
+  var p = get(SERIES_ROW.ptrTimestamp);
+  if (isBlank_(p)) cfg.ptrSec = null;
+  else if (isDate_(p)) cfg.ptrSec = toSec_(p);
+  else throw new Error('管理欄の処理済みタイムスタンプが日時ではありません（' + where(SERIES_ROW.ptrTimestamp) + '）');
+
+  return { skip: null, cfg: cfg };
+}
+
+// ============================================================
+// 走査・立ち上がり検出・照合（設計メモ §3〜§5）
+// 日時は全て「秒（整数）」に丸めて比較する（依頼メモ §5）
+// ============================================================
+
+function scanSeries_(ss, cfg, now) {
+  var tz = ss.getSpreadsheetTimeZone();
+  var sh = ss.getSheetByName(cfg.dataSheetName);
+  var lastRow = sh.getLastRow();
+  var nowSec = toSec_(now);
+  var windowStartSec = nowSec - Math.round(cfg.lookbackDays * 86400);
+
+  var plan = {
+    events: [],         // 立ち上がり（照合結果つき）
+    lastTs: null,       // 走査範囲内の最後の自動弁タイムスタンプ（ポインタ更新用）
+    lastRowNo: null,
+    rangeText: ''
+  };
+  var fromText = (cfg.ptrSec !== null && cfg.ptrSec >= windowStartSec)
+    ? fmt_(new Date(cfg.ptrSec * 1000), tz) + ' より後（ポインタ）'
+    : fmt_(new Date(windowStartSec * 1000), tz) + ' 以降（遡り ' + cfg.lookbackDays + '日）';
+  plan.rangeText = fromText + '〜最新';
+
+  if (lastRow < cfg.dataStartRow) return plan;
+  var n = lastRow - cfg.dataStartRow + 1;
+  var minCol = Math.min(cfg.colValveTs, cfg.colValve, cfg.colFlowTs, cfg.colFlow);
+  var maxCol = Math.max(cfg.colValveTs, cfg.colValve, cfg.colFlowTs, cfg.colFlow);
+  var vals = sh.getRange(cfg.dataStartRow, minCol, n, maxCol - minCol + 1).getValues();
+
+  // 流量計履歴（タイムスタンプ空白行は除外）
+  var flows = [];
+  for (var r = 0; r < n; r++) {
+    var fts = vals[r][cfg.colFlowTs - minCol];
+    if (!isDate_(fts)) continue;
+    flows.push({ sec: toSec_(fts), value: vals[r][cfg.colFlow - minCol] });
+  }
+
+  // 自動弁履歴を走査（直前行の値も参照する）
+  var prevVal; // 直前の（タイムスタンプが有効な）行の弁の値
+  for (var r2 = 0; r2 < n; r2++) {
+    var ts = vals[r2][cfg.colValveTs - minCol];
+    if (!isDate_(ts)) continue; // §12：タイムスタンプ空白行は走査対象外
+    var val = vals[r2][cfg.colValve - minCol];
+    var sec = toSec_(ts);
+    var inRange = sec >= windowStartSec && (cfg.ptrSec === null || sec > cfg.ptrSec);
+    if (inRange) {
+      plan.lastTs = sec;
+      plan.lastRowNo = cfg.dataStartRow + r2;
+      if (val === 1 && prevVal === 0) { // §3：0→1 のみ。0/1以外は立ち上がりと判定しない
+        plan.events.push(matchFlow_(sec, cfg.dataStartRow + r2, flows, cfg.toleranceSec));
+      }
+    }
+    prevVal = val;
+  }
+  return plan;
+}
+
+// 許容差以内で最も近い1件。同距離なら直前（時刻が前）を優先（§3）
+function matchFlow_(valveSec, valveRow, flows, toleranceSec) {
+  var best = null, bestD = null;
+  for (var i = 0; i < flows.length; i++) {
+    var d = Math.abs(flows[i].sec - valveSec);
+    if (d > toleranceSec) continue;
+    if (best === null || d < bestD || (d === bestD && flows[i].sec < best.sec)) {
+      best = flows[i]; bestD = d;
+    }
+  }
+  var ev = { valveSec: valveSec, valveTs: new Date(valveSec * 1000), valveRow: valveRow,
+             matched: false, flowTs: null, flowValue: null, reason: '' };
+  if (best === null) { ev.reason = '許容差 ' + toleranceSec + '秒 以内に流量計記録なし'; return ev; }
+  if (isBlank_(best.value)) { ev.reason = '照合した積算値が空白'; return ev; } // §12
+  ev.matched = true;
+  ev.flowTs = new Date(best.sec * 1000);
+  ev.flowValue = best.value;
+  return ev;
+}
+
+function countMatched_(plan) {
+  var c = 0;
+  plan.events.forEach(function (e) { if (e.matched) c++; });
+  return c;
+}
+
+function periodText_(plan, tz) {
+  var m = plan.events.filter(function (e) { return e.matched; });
+  if (m.length === 0) return '';
+  return fmt_(m[0].valveTs, tz) + ' 〜 ' + fmt_(m[m.length - 1].valveTs, tz);
+}
+
+// リセット用：除外終了日時以前の最後の自動弁履歴行（無ければ null）
+function findLastValveRowAtOrBefore_(ss, cfg, endSec) {
+  var sh = ss.getSheetByName(cfg.dataSheetName);
+  var lastRow = sh.getLastRow();
+  if (lastRow < cfg.dataStartRow) return null;
+  var n = lastRow - cfg.dataStartRow + 1;
+  var vals = sh.getRange(cfg.dataStartRow, cfg.colValveTs, n, 1).getValues();
+  var found = null;
+  for (var r = 0; r < n; r++) {
+    if (!isDate_(vals[r][0])) continue;
+    if (toSec_(vals[r][0]) <= endSec) found = cfg.dataStartRow + r;
+  }
+  return found;
+}
+
+// ============================================================
+// 書き込み（設計メモ §3：最初の空白セルから追記・上書き禁止／§8 重複チェック）
+// ============================================================
+
+function writeSeries_(ss, cfg, plan, dupCheck) {
+  var tz = ss.getSpreadsheetTimeZone();
+  var events = plan.events.filter(function (e) { return e.matched; });
+  var out = { recordedEvents: 0, duplicateEvents: 0, partialDuplicates: 0 };
+  if (events.length === 0) return out;
+
+  // 記録先ごとの準備：開始セルの列を開始行から最終行まで読み、空白位置と既存タイムスタンプを把握
+  var dests = cfg.dests.map(function (d) {
+    var sh = ss.getSheetByName(d.sheetName);
+    var last = sh.getLastRow();
+    var col = [];
+    if (last >= d.row) {
+      col = sh.getRange(d.row, d.col, last - d.row + 1, 1).getValues().map(function (x) { return x[0]; });
+    }
+    var existing = {};
+    col.forEach(function (x) { if (isDate_(x)) existing[toSec_(x)] = true; });
+    return { def: d, sheet: sh, col: col, cursor: 0, existing: existing, written: 0 };
+  });
+
+  var progress = []; // エラー時の「どこまで書いたか」
+  for (var k = 0; k < events.length; k++) {
+    var ev = events[k];
+    var wroteAny = false, dupAny = false;
+    for (var j = 0; j < dests.length; j++) {
+      var D = dests[j];
+      try {
+        if (dupCheck && D.existing[ev.valveSec]) { dupAny = true; continue; }
+        // 開始セルから下へ最初の空白セル
+        while (D.cursor < D.col.length && !isBlank_(D.col[D.cursor])) D.cursor++;
+        var row = D.def.row + D.cursor;
+        // 上書き禁止：書き込む3セルが全て空であることを確認
+        var cur = D.sheet.getRange(row, D.def.col, 1, 3).getValues()[0];
+        if (!isBlank_(cur[0]) || !isBlank_(cur[1]) || !isBlank_(cur[2])) {
+          throw new Error(D.def.sheetName + ' の ' + row + '行目は開始列が空白ですが右側の列が埋まっているため、上書きを避けて中断しました');
+        }
+        var rng = D.sheet.getRange(row, D.def.col, 1, 3);
+        rng.setValues([[ev.valveTs, ev.flowTs, ev.flowValue]]);
+        D.sheet.getRange(row, D.def.col, 1, 2).setNumberFormat(DATETIME_FORMAT_SHEET);
+        if (D.cursor < D.col.length) D.col[D.cursor] = ev.valveTs; // 埋めた空白を使用済みに
+        D.cursor++;
+        D.existing[ev.valveSec] = true;
+        D.written++;
+        wroteAny = true;
+      } catch (err) {
+        var msg = [];
+        msg.push((k + 1) + '件目（自動弁 ' + fmt_(ev.valveTs, tz) + '）の記録先' + D.def.no + '「' + D.def.sheetName + '」への書き込みで失敗：' + errMsg_(err));
+        msg.push('　ここまでに書き込み済み：' + dests.map(function (x) { return '記録先' + x.def.no + ' ' + x.written + '行'; }).join('、'));
+        if (progress.length > 0) msg.push('　最後に完了したイベント：' + progress[progress.length - 1]);
+        var e2 = new Error(msg.join('\n'));
+        e2.partialWritten = dests.some(function (x) { return x.written > 0; });
+        throw e2;
+      }
+    }
+    if (wroteAny) out.recordedEvents++;
+    if (dupAny && !wroteAny) out.duplicateEvents++;
+    if (dupAny && wroteAny) out.partialDuplicates++;
+    progress.push(fmt_(ev.valveTs, tz));
+  }
+  return out;
+}
+
+function updatePointerAfterRecord_(ss, cfg, plan, now, recordedCount) {
+  var sh = ss.getSheetByName(cfg.sheetName);
+  if (plan.lastTs !== null) {
+    sh.getRange(SERIES_ROW.ptrTimestamp, SETTING_VALUE_COL).setValue(new Date(plan.lastTs * 1000)).setNumberFormat(DATETIME_FORMAT_SHEET);
+    sh.getRange(SERIES_ROW.ptrRow, SETTING_VALUE_COL).setValue(plan.lastRowNo);
+  }
+  sh.getRange(SERIES_ROW.lastRunAt, SETTING_VALUE_COL).setValue(now).setNumberFormat(DATETIME_FORMAT_SHEET);
+  sh.getRange(SERIES_ROW.lastRunCount, SETTING_VALUE_COL).setValue(recordedCount);
+}
+
+// ============================================================
+// 共通ユーティリティ
+// ============================================================
+
+function runSafely_(title, fn) {
+  var lock = LockService.getDocumentLock();
+  if (!lock.tryLock(10000)) {
+    SpreadsheetApp.getUi().alert(title, '他の処理が実行中です。少し待ってからやり直してください。', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  try {
+    fn();
+  } catch (err) {
+    SpreadsheetApp.getUi().alert(title + '（エラー）', errMsg_(err) + '\n\n何も変更していないか、メッセージに書かれた所までで止めています。', SpreadsheetApp.getUi().ButtonSet.OK);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function isDate_(v) {
+  return Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime());
+}
+
+function isBlank_(v) {
+  return v === '' || v === null || v === undefined;
+}
+
+// 日時 → 秒（整数）。シートのシリアル値の端数誤差を秒で丸めて吸収する
+function toSec_(d) {
+  return Math.round(d.getTime() / 1000);
+}
+
+function str_(v) {
+  if (v === null || v === undefined) return '';
+  return String(v).trim();
+}
+
+function parseOnOff_(v, label) {
+  if (v === true) return true;
+  if (v === false) return false;
+  var s = str_(v).toUpperCase();
+  if (s === 'ON') return true;
+  if (s === 'OFF') return false;
+  throw new Error(label + ' は ON か OFF で入力してください（現在：「' + str_(v) + '」）');
+}
+
+function parseColLetter_(v, label) {
+  var s = str_(v).toUpperCase();
+  if (!/^[A-Z]{1,3}$/.test(s)) throw new Error(label + ' は列記号（例：A）で入力してください（現在：「' + str_(v) + '」）');
+  var n = 0;
+  for (var i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 64);
+  return n;
+}
+
+function parseA1_(s, label) {
+  var t = str_(s).toUpperCase();
+  var m = /^([A-Z]{1,3})([1-9][0-9]*)$/.exec(t);
+  if (!m) throw new Error(label + ' はセル番地（例：A2）で入力してください（現在：「' + str_(s) + '」）');
+  return { col: parseColLetter_(m[1], label), row: parseInt(m[2], 10) };
+}
+
+function parsePositiveInt_(v, label) {
+  var n = (typeof v === 'number') ? v : Number(str_(v));
+  if (str_(v) === '' || isNaN(n) || n < 1 || Math.floor(n) !== n) throw new Error(label + ' は1以上の整数で入力してください（現在：「' + str_(v) + '」）');
+  return n;
+}
+
+function parsePositiveNumber_(v, label, allowZero) {
+  var n = (typeof v === 'number') ? v : Number(str_(v));
+  if (str_(v) === '' || isNaN(n) || n < 0 || (!allowZero && n === 0)) {
+    throw new Error(label + ' は' + (allowZero ? '0以上' : '0より大きい') + 'の数値で入力してください（現在：「' + str_(v) + '」）');
+  }
+  return n;
+}
+
+function fmt_(d, tz) {
+  if (!isDate_(d)) return str_(d);
+  return Utilities.formatDate(d, tz, DATETIME_FORMAT_TEXT);
+}
+
+function errMsg_(err) {
+  return (err && err.message) ? err.message : String(err);
+}
