@@ -1,0 +1,605 @@
+/**
+ * 記録帳 GAS v1.0
+ * ------------------------------------------------------------------
+ * 構成: 単一HTML（PWA）＋ 本GAS ＋ 本スプレッドシート「記録帳DB」（新規）
+ * 家計簿とは別GAS・別シート。家計簿のデータは家計簿 GAS の Web API
+ * （loadAll）経由で「読むだけ」。家計簿のスプレッドシートは一切開かない。
+ *
+ * スクリプトプロパティ:
+ *   SECRET_PIN    … 記録帳のパスワード（4〜64文字、英数字＋記号）。
+ *                   未設定なら全ての認証を拒否する（既定PINは無い）
+ *   HOUSEHOLD_PIN … （任意）家計簿 GAS の PIN。未設定なら SECRET_PIN を
+ *                   家計簿の PIN として使う（家計簿と同じ PIN の前提）。
+ *                   クライアントへは絶対に返さない
+ *   DATA_REV      … 本DBのリビジョン（setup で 0 を入れる。手で触らない）
+ *
+ * 初回: setup() を実行 → Webアプリとしてデプロイ（実行ユーザー: 自分 /
+ *       アクセス: 全員）。以降の更新は「デプロイを管理 → 編集 →
+ *       新バージョン」で URL を変えない。
+ * ------------------------------------------------------------------
+ */
+
+const APP_VERSION = '1.0';
+const TZ = 'Asia/Tokyo';
+const BACKUP_KEEP = 10;
+const DEFENSE_CAP = 1000000;   // 防衛枠 = MIN(土台残高, 1,000,000)（引き継ぎメモ §4）
+const DEFAULT_TARGET = 1000000; // 目標額の初期値
+
+const SHEETS = {
+  practice:   ['id', 'date', 'lens', 'symbol', 'jumpDate', 'candle', 'after3d', 'note', 'createdAt'],
+  trades:     ['id', 'date', 'symbol', 'basis', 'entryPrice', 'takeProfit', 'stopLoss', 'rr', 'result',
+               'pnl', 'memo', 'enWhat', 'enWhy', 'enNext', 'createdAt'],
+  conditions: ['date', 'sleepOk', 'noFatigue', 'calm', 'judge'],
+  fund:       ['balance', 'defenseFund', 'target', 'fetchedAt'],
+  milestones: ['id', 'period', 'content', 'targetAmount', 'done', 'sort'],
+  settings:   ['key', 'value']
+};
+// 数値の列（空欄は空欄のまま返す）
+const NUM_FIELDS = {
+  practice: [],
+  trades: ['entryPrice', 'takeProfit', 'stopLoss', 'rr', 'pnl'],
+  conditions: [],
+  fund: ['balance', 'defenseFund', 'target'],
+  milestones: ['targetAmount', 'sort'],
+  settings: []
+};
+// 一覧として全件保存するシート（fund・settings は別扱い）
+const LIST_TABLES = ['practice', 'trades', 'conditions', 'milestones'];
+
+const LENSES = ['volume'];
+const CANDLES = ['大きな陽線', '大きな陰線', '長い上ヒゲ', '長い下ヒゲ', 'その他'];
+const AFTER3D = ['上げ', '下げ', '横ばい'];
+const BASES = ['板', '出来高急増', 'サポ・レジブレイク', 'その他'];
+const RESULTS = ['win', 'lose', 'skip'];
+const SETTING_KEYS = ['householdUrl', 'householdEnabled', 'themeColor'];
+
+const INITIAL_MILESTONES = [
+  ['2026年12月', 'ボーナス投入で現金50万円突破', 500000],
+  ['2027年7月', '防衛資金100万円到達＋ペーパー100回完了', 1000000],
+  ['2027年8月', '実弾50万円解禁', ''],
+  ['2028年1月', '計150万円到達＆家探し', 1500000]
+];
+
+// =====================================================================
+// エントリーポイント（通信は全て POST text/plain JSON。PIN を URL に載せない）
+// =====================================================================
+function doGet(e) {
+  return out_({ status: 'ok', app: 'kirokucho', version: APP_VERSION });
+}
+
+function doPost(e) {
+  let req;
+  try {
+    req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+  } catch (err) {
+    return out_({ status: 'error', reason: 'リクエストを読めませんでした' });
+  }
+  try {
+    const action = String(req.action || '');
+    if (action === 'ping') return out_({ status: 'ok', app: 'kirokucho', version: APP_VERSION });
+
+    const authErr = checkPin_(req.pin);
+    if (authErr) return out_(authErr);
+
+    switch (action) {
+      case 'auth':      return out_({ status: 'ok', version: APP_VERSION });
+      case 'loadAll':   return out_(loadAll_());
+      case 'save':      return out_(withLock_(function () { return save_(req); }));
+      case 'fund':      return out_(fundFetch_());
+      case 'changePin': return out_(withLock_(function () { return changePin_(req); }));
+      default:          return out_({ status: 'error', reason: '不明な操作です: ' + action });
+    }
+  } catch (err) {
+    return out_({ status: 'error', reason: String((err && err.message) || err) });
+  }
+}
+
+function out_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// =====================================================================
+// 認証（SECRET_PIN 未設定なら全て拒否。デフォルトPINの抜け道は作らない）
+// =====================================================================
+function checkPin_(pin) {
+  const secret = PropertiesService.getScriptProperties().getProperty('SECRET_PIN');
+  if (!secret) return { status: 'unauthorized', reason: 'SECRET_PIN が未設定です（スクリプトプロパティ）' };
+  const cache = CacheService.getScriptCache();
+  const fails = Number(cache.get('pinFails') || 0);
+  if (fails >= 10) {
+    return { status: 'unauthorized', reason: '入力ミスが続いたため10分間ロック中です' };
+  }
+  if (String(pin == null ? '' : pin) !== secret) {
+    cache.put('pinFails', String(fails + 1), 600);
+    return { status: 'unauthorized', reason: 'パスワードが違います' };
+  }
+  if (fails) cache.remove('pinFails');
+  return null;
+}
+
+function validPin_(p) {
+  return /^[\x21-\x7E]{4,64}$/.test(String(p == null ? '' : p));
+}
+
+function changePin_(req) {
+  const np = String(req.newPin == null ? '' : req.newPin);
+  if (!validPin_(np)) {
+    return { status: 'error', reason: '新しいパスワードは英数字・記号で4〜64文字にしてください' };
+  }
+  const props = PropertiesService.getScriptProperties();
+  // 家計簿の PIN を SECRET_PIN で兼ねていた場合、家計簿連携が切れないよう
+  // 変更前の値を HOUSEHOLD_PIN に残す（家計簿側の PIN は変わらないため）
+  if (!props.getProperty('HOUSEHOLD_PIN')) {
+    props.setProperty('HOUSEHOLD_PIN', props.getProperty('SECRET_PIN'));
+  }
+  props.setProperty('SECRET_PIN', np);
+  return { status: 'saved' };
+}
+
+// =====================================================================
+// 自前DB（家計簿方式: loadAll ／ 全件 POST ＋ baseRev の競合検出、
+//          保存直前にシートごとのバックアップ 10世代）
+// =====================================================================
+function withLock_(fn) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { status: 'busy', reason: '他の保存処理中です。少し待って再試行してください' };
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getRev_() {
+  return Number(PropertiesService.getScriptProperties().getProperty('DATA_REV') || 0);
+}
+function bumpRev_() {
+  const next = getRev_() + 1;
+  PropertiesService.getScriptProperties().setProperty('DATA_REV', String(next));
+  return next;
+}
+
+function ss_() {
+  return SpreadsheetApp.getActiveSpreadsheet();
+}
+
+function sheet_(name) {
+  const sh = ss_().getSheetByName(name);
+  if (!sh) throw new Error('シート「' + name + '」がありません。setup を実行してください');
+  return sh;
+}
+
+function readSheet_(name) {
+  const values = sheet_(name).getDataRange().getValues();
+  if (values.length < 2) return [];
+  const header = values[0].map(String);
+  const nums = NUM_FIELDS[name] || [];
+  const rows = [];
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    if (row.every(function (v) { return v === '' || v === null; })) continue;
+    const o = {};
+    header.forEach(function (h, i) {
+      if (!h) return;
+      let v = row[i];
+      if (v instanceof Date) v = Utilities.formatDate(v, TZ, 'yyyy-MM-dd');
+      if (nums.indexOf(h) >= 0) {
+        o[h] = (v === '' || v === null || v === undefined) ? '' : (isFinite(Number(v)) ? Number(v) : '');
+      } else {
+        o[h] = v === null || v === undefined ? '' : String(v);
+      }
+    });
+    rows.push(o);
+  }
+  return rows;
+}
+
+function countRows_(name) {
+  const sh = ss_().getSheetByName(name);
+  return sh ? Math.max(0, sh.getLastRow() - 1) : 0;
+}
+
+function backupSheet_(name) {
+  const ss = ss_();
+  const sh = ss.getSheetByName(name);
+  if (!sh) return;
+  const stamp = Utilities.formatDate(new Date(), TZ, 'yyyyMMdd_HHmmss_SSS');
+  const prefix = 'bk_' + name + '_';
+  const copy = sh.copyTo(ss).setName(prefix + stamp);
+  copy.hideSheet();
+  const olds = ss.getSheets()
+    .filter(function (s) { return s.getName().indexOf(prefix) === 0; })
+    .sort(function (a, b) { return a.getName() < b.getName() ? -1 : 1; });
+  while (olds.length > BACKUP_KEEP) ss.deleteSheet(olds.shift());
+}
+
+function writeSheet_(name, rows, noBackup) {
+  const header = SHEETS[name];
+  const sh = sheet_(name);
+  const data = [header].concat(rows.map(function (o) {
+    return header.map(function (h) {
+      const v = o[h];
+      return v === undefined || v === null ? '' : String(v);
+    });
+  }));
+  if (!noBackup) backupSheet_(name);
+  sh.clearContents();
+  const rng = sh.getRange(1, 1, data.length, header.length);
+  rng.setNumberFormat('@'); // 銘柄コード・日付が勝手に数値／日付に変わらないよう全て書式なしテキスト
+  rng.setValues(data);
+  SpreadsheetApp.flush();
+}
+
+function settingsObj_() {
+  const m = { householdUrl: '', householdEnabled: '0', themeColor: '#0f766e' };
+  readSheet_('settings').forEach(function (r) { if (SETTING_KEYS.indexOf(r.key) >= 0) m[r.key] = r.value; });
+  return m;
+}
+
+function fundObj_() {
+  const r = readSheet_('fund')[0] || {};
+  return {
+    balance: r.balance === undefined ? '' : r.balance,
+    defenseFund: r.defenseFund === undefined ? '' : r.defenseFund,
+    target: (r.target === '' || r.target === undefined) ? DEFAULT_TARGET : r.target,
+    fetchedAt: r.fetchedAt || ''
+  };
+}
+
+function writeFund_(f) {
+  writeSheet_('fund', [f], true); // 取得キャッシュは毎回変わるのでバックアップしない
+}
+
+function loadAll_() {
+  return {
+    status: 'ok',
+    version: APP_VERSION,
+    rev: getRev_(),
+    practice: readSheet_('practice'),
+    trades: readSheet_('trades'),
+    conditions: readSheet_('conditions'),
+    milestones: readSheet_('milestones'),
+    fund: fundObj_(),
+    settings: settingsObj_()
+  };
+}
+
+// ---------------------------------------------------------------------
+// 計算（引き継ぎメモ §4）。保存時に GAS 側で必ず計算し直して持つ
+// ---------------------------------------------------------------------
+function numOrBlank_(v) {
+  if (v === '' || v === null || v === undefined) return '';
+  const n = Number(String(v).replace(/[,，¥円\s]/g, ''));
+  return isFinite(n) ? n : NaN;
+}
+
+/** RR = |利確 − エントリー| ÷ |エントリー − 損切り|。揃わない・損切り幅0は空欄 */
+function calcRR_(entry, tp, sl) {
+  if (entry === '' || tp === '' || sl === '') return '';
+  const risk = Math.abs(entry - sl);
+  if (!(risk > 0)) return '';
+  return Math.round(Math.abs(tp - entry) / risk * 100) / 100;
+}
+
+function judge_(c) {
+  return (c.sleepOk === '1' && c.noFatigue === '1' && c.calm === '1') ? 'ok' : 'watch';
+}
+
+function flag_(v) {
+  return (v === true || v === 1 || String(v) === '1' || String(v).toLowerCase() === 'true') ? '1' : '0';
+}
+
+function isYMD_(s) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+}
+
+// ---------------------------------------------------------------------
+// 入力チェック＋正規化（不正なら理由の文字列を返す）
+// ---------------------------------------------------------------------
+function normalizeRows_(name, rows) {
+  if (!Array.isArray(rows)) return { error: name + ' が配列ではありません' };
+  const key = name === 'conditions' ? 'date' : 'id';
+  const seen = {};
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    const src = rows[i] || {};
+    const k = String(src[key] == null ? '' : src[key]).trim();
+    if (!k) return { error: name + ' に ' + key + ' のない行があります' };
+    if (seen[k]) return { error: name + ' の ' + key + ' が重複しています: ' + k };
+    seen[k] = true;
+    const o = {};
+    SHEETS[name].forEach(function (h) { o[h] = src[h] === undefined || src[h] === null ? '' : src[h]; });
+    o[key] = k;
+    const bad = normalizeRow_(name, o);
+    if (bad) return { error: bad + '（' + k + '）' };
+    out.push(o);
+  }
+  return { rows: out };
+}
+
+function normalizeRow_(name, o) {
+  const str = function (h) { o[h] = String(o[h]).trim(); return o[h]; };
+  if (name === 'practice') {
+    ['date', 'lens', 'symbol', 'jumpDate', 'candle', 'after3d', 'note', 'createdAt'].forEach(str);
+    if (!isYMD_(o.date)) return '練習の日付が不正です';
+    if (!o.lens) o.lens = 'volume';
+    if (LENSES.indexOf(o.lens) < 0) return '練習のレンズが不正です';
+    if (!o.symbol) return '練習の銘柄は必須です';
+    if (!o.note) return '練習の気づきは必須です';
+    if (o.jumpDate && !isYMD_(o.jumpDate)) return '跳ねた日が不正です';
+    if (o.candle && CANDLES.indexOf(o.candle) < 0) return '足の形が不正です';
+    if (o.after3d && AFTER3D.indexOf(o.after3d) < 0) return 'その後3日が不正です';
+    return null;
+  }
+  if (name === 'trades') {
+    ['date', 'symbol', 'basis', 'result', 'memo', 'enWhat', 'enWhy', 'enNext', 'createdAt'].forEach(str);
+    if (!isYMD_(o.date)) return '検証の日付が不正です';
+    if (!o.symbol) return '検証の銘柄は必須です';
+    if (o.basis && BASES.indexOf(o.basis) < 0) return 'エントリー根拠が不正です';
+    if (RESULTS.indexOf(o.result) < 0) return '結果が不正です';
+    const names = { entryPrice: 'エントリー価格', takeProfit: '利確価格', stopLoss: '損切り価格', pnl: '損益' };
+    for (const h in names) {
+      const n = numOrBlank_(o[h]);
+      if (n !== '' && isNaN(n)) return names[h] + 'が数値ではありません';
+      o[h] = n;
+    }
+    o.rr = calcRR_(o.entryPrice, o.takeProfit, o.stopLoss);
+    return null;
+  }
+  if (name === 'conditions') {
+    if (!isYMD_(o.date)) return 'コンディションの日付が不正です';
+    o.sleepOk = flag_(o.sleepOk);
+    o.noFatigue = flag_(o.noFatigue);
+    o.calm = flag_(o.calm);
+    o.judge = judge_(o);
+    return null;
+  }
+  if (name === 'milestones') {
+    ['period', 'content'].forEach(str);
+    if (!o.content) return 'マイルストーンの内容は必須です';
+    const t = numOrBlank_(o.targetAmount);
+    if (t !== '' && isNaN(t)) return 'マイルストーンの目標額が数値ではありません';
+    o.targetAmount = t;
+    o.done = flag_(o.done);
+    const s = numOrBlank_(o.sort);
+    o.sort = (s === '' || isNaN(s)) ? 0 : s;
+    return null;
+  }
+  return '不明なシートです';
+}
+
+function normalizeSettings_(s) {
+  if (!s || typeof s !== 'object') return { error: '設定の形式が不正です' };
+  const cur = settingsObj_();
+  const o = {};
+  SETTING_KEYS.forEach(function (k) { o[k] = s[k] === undefined ? cur[k] : String(s[k] == null ? '' : s[k]).trim(); });
+  o.householdEnabled = flag_(o.householdEnabled);
+  if (o.householdUrl && !isHouseholdUrl_(o.householdUrl)) {
+    return { error: '家計簿 GAS の URL は https://script.google.com/ で始まる URL にしてください' };
+  }
+  if (o.themeColor && !/^#[0-9a-fA-F]{6}$/.test(o.themeColor)) return { error: 'テーマ色が不正です' };
+  return { obj: o };
+}
+
+/** 家計簿の PIN を送る先なので、Apps Script の Web アプリ URL に限る */
+function isHouseholdUrl_(u) {
+  return /^https:\/\/script\.google(usercontent)?\.com\//.test(String(u || ''));
+}
+
+/**
+ * 保存。req.tables に含まれるシートだけを全件上書きする。
+ *   { action:'save', pin, baseRev, tables: { practice?:[], trades?:[], conditions?:[],
+ *     milestones?:[], settings?:{}, fund?:{ target } } }
+ * baseRev が現在の rev と違えば conflict を返し、何も書かない。
+ */
+function save_(req) {
+  const rev = getRev_();
+  if (req.baseRev === undefined || req.baseRev === null || req.baseRev === '' || Number(req.baseRev) !== rev) {
+    return { status: 'conflict', rev: rev, reason: '他の端末で更新されています。再読込してから操作してください' };
+  }
+  const t = req.tables || {};
+  const lists = LIST_TABLES.filter(function (k) { return t[k] !== undefined; });
+  const hasSettings = t.settings !== undefined;
+  const hasFund = t.fund !== undefined;
+  if (!lists.length && !hasSettings && !hasFund) return { status: 'error', reason: '保存するデータがありません' };
+
+  // 先に全部チェックする（1つでも不正なら何も書かない）
+  const normalized = {};
+  for (let i = 0; i < lists.length; i++) {
+    const k = lists[i];
+    const r = normalizeRows_(k, t[k]);
+    if (r.error) return { status: 'error', reason: r.error };
+    // 空上書き・一括消失のガード: 1回の保存で減らせるのは1件まで
+    const before = countRows_(k);
+    if (r.rows.length < before - 1) {
+      return { status: 'error', reason: k + ' の件数が ' + before + '→' + r.rows.length + ' に減る保存を中止しました（読み込み失敗の可能性）' };
+    }
+    normalized[k] = r.rows;
+  }
+  let settings = null;
+  if (hasSettings) {
+    const r = normalizeSettings_(t.settings);
+    if (r.error) return { status: 'error', reason: r.error };
+    settings = r.obj;
+  }
+  let fund = null;
+  if (hasFund) {
+    const target = numOrBlank_(t.fund && t.fund.target);
+    if (target === '' || isNaN(target) || !(target > 0)) return { status: 'error', reason: '目標額は1円以上の数値にしてください' };
+    fund = fundObj_();
+    fund.target = target;
+  }
+
+  lists.forEach(function (k) { writeSheet_(k, normalized[k]); });
+  if (settings) {
+    writeSheet_('settings', SETTING_KEYS.map(function (k) { return { key: k, value: settings[k] }; }));
+  }
+  if (fund) writeSheet_('fund', [fund]);
+
+  const res = { status: 'saved', rev: bumpRev_(), tables: {} };
+  lists.forEach(function (k) { res.tables[k] = readSheet_(k); });
+  if (settings) res.tables.settings = settingsObj_();
+  if (fund) res.tables.fund = fundObj_();
+  return res;
+}
+
+// =====================================================================
+// 家計簿連携（読み取り専用。家計簿 GAS の Web API loadAll を呼ぶだけ）
+// 呼び方はほしいもの帳 GAS v1.0.1 と同じ: GET ?action=loadAll&pin=…
+// =====================================================================
+function hhConfig_() {
+  const s = settingsObj_();
+  if (s.householdEnabled !== '1') return { ok: false, disabled: true, reason: '連携が OFF です' };
+  const url = String(s.householdUrl || '').trim();
+  if (!url) return { ok: false, reason: '家計簿 GAS の URL が未設定です（設定タブ）' };
+  if (!isHouseholdUrl_(url)) return { ok: false, reason: '家計簿 GAS の URL が https://script.google.com/ で始まっていません' };
+  const props = PropertiesService.getScriptProperties();
+  const pin = props.getProperty('HOUSEHOLD_PIN') || props.getProperty('SECRET_PIN') || '';
+  if (!pin) return { ok: false, reason: '家計簿の PIN がありません' };
+  return { ok: true, url: url, pin: pin };
+}
+
+function hhLoad_(cfg) {
+  const url = cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') +
+    'action=loadAll&pin=' + encodeURIComponent(cfg.pin);
+  let res;
+  try {
+    res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true });
+  } catch (e) {
+    return { status: 'error', reason: '家計簿 GAS に接続できません: ' + ((e && e.message) || e) };
+  }
+  const code = res.getResponseCode();
+  if (code >= 400) return { status: 'error', reason: '家計簿 GAS が HTTP ' + code + ' を返しました' };
+  let data;
+  try {
+    data = JSON.parse(res.getContentText());
+  } catch (e) {
+    return { status: 'error', reason: '家計簿 GAS の応答が JSON ではありません（URL・デプロイのアクセス権を確認）' };
+  }
+  if (data.status === 'unauthorized') {
+    return { status: 'error', reason: '家計簿の PIN が違います（記録帳の SECRET_PIN／HOUSEHOLD_PIN を確認）' };
+  }
+  if (data.status !== 'ok' && data.status !== 'success') {
+    return { status: 'error', reason: data.reason || data.message || ('家計簿 GAS: ' + data.status) };
+  }
+  return { status: 'ok', data: data };
+}
+
+function num_(v) {
+  const n = Number(String(v == null ? '' : v).replace(/[,，¥円\s]/g, ''));
+  return isFinite(n) ? n : 0;
+}
+
+function normYM_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, TZ, 'yyyy-MM');
+  const s = String(v == null ? '' : v).trim();
+  let m = s.match(/^(\d{4})[-\/](\d{1,2})/);
+  if (m && !/T/.test(s)) return m[1] + '-' + ('0' + m[2]).slice(-2);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d)) return Utilities.formatDate(d, TZ, 'yyyy-MM');
+  }
+  return s;
+}
+
+function configMap_(config) {
+  const m = {};
+  if (Array.isArray(config)) {
+    config.forEach(function (r) { if (r && r.key != null) m[String(r.key)] = r.value; });
+  } else if (config && typeof config === 'object') {
+    Object.keys(config).forEach(function (k) { m[k] = config[k]; });
+  }
+  return m;
+}
+
+/**
+ * 家計簿 loadAll の応答から土台（エース預金）の残高を取り出す。
+ * 家計簿の集計値（防衛枠）は loadAll に含まれていない前提
+ * （GAS v3.0.2 の形式。v7.0 は未照合 → 実装メモ 要確認 A-1）。
+ * そのため残高だけ取り、防衛枠は §4 の定義で自前計算する。
+ *   残高: Config.actualBalance（実残高）が 0 以外ならそれ。
+ *         0 なら家計簿 calculateDodaiMetrics の logBalance と同じ算出
+ *         （ほしいもの帳 v1.0.1 と同一: 開始月の既定 2026-10、今月までの分）
+ */
+function extractBalance_(data, todayYM) {
+  const cfg = configMap_(data.config);
+  const actual = num_(cfg.actualBalance);
+  if (actual !== 0) return { balance: actual, source: 'actual' };
+  if (!Array.isArray(data.logs)) return { error: '家計簿の応答に残高（config.actualBalance）も明細（logs）もありません' };
+  const startYM = cfg.dodai_start_ym ? normYM_(cfg.dodai_start_ym) : '2026-10';
+  const SAV = ['エース預金', 'エース預金（引出）', 'デイトレ貯金'];
+  let acc = num_(cfg.dodai_start_balance);
+  data.logs.forEach(function (l) {
+    if (!l || SAV.indexOf(String(l.category)) < 0) return;
+    const u = normYM_(l.useYM || l.useDate || l.date);
+    if (u < startYM || u > todayYM) return;
+    acc += -num_(l.amount);
+  });
+  return { balance: acc, source: 'log' };
+}
+
+/** 資金カードの取得。成功時は fund シートにキャッシュ（rev は進めない） */
+function fundFetch_() {
+  const last = fundObj_();
+  const cfg = hhConfig_();
+  if (!cfg.ok) return { status: cfg.disabled ? 'disabled' : 'error', reason: cfg.reason, fund: last };
+  const L = hhLoad_(cfg);
+  if (L.status !== 'ok') return { status: 'error', reason: L.reason, fund: last };
+  const b = extractBalance_(L.data, Utilities.formatDate(new Date(), TZ, 'yyyy-MM'));
+  if (b.error) return { status: 'error', reason: b.error, fund: last };
+  const fund = {
+    balance: b.balance,
+    defenseFund: Math.min(b.balance, DEFENSE_CAP),
+    target: last.target,
+    fetchedAt: new Date().toISOString()
+  };
+  const lock = LockService.getScriptLock();
+  let cached = false;
+  if (lock.tryLock(5000)) {
+    try { writeFund_(fund); cached = true; } finally { lock.releaseLock(); }
+  }
+  return { status: 'ok', fund: fund, source: b.source, cached: cached };
+}
+
+// =====================================================================
+// 初期化（エディタから1回実行。何度実行しても既存データは消さない）
+// =====================================================================
+function setup() {
+  const ss = ss_();
+  const props = PropertiesService.getScriptProperties();
+  Object.keys(SHEETS).forEach(function (name) {
+    let sh = ss.getSheetByName(name);
+    if (!sh) sh = ss.insertSheet(name);
+    if (sh.getLastRow() === 0) {
+      const header = SHEETS[name];
+      sh.getRange(1, 1, 1, header.length).setNumberFormat('@').setValues([header]);
+      sh.setFrozenRows(1);
+    }
+  });
+  if (countRows_('milestones') === 0) {
+    writeSheet_('milestones', INITIAL_MILESTONES.map(function (m, i) {
+      return { id: 'm' + (i + 1), period: m[0], content: m[1], targetAmount: m[2], done: '0', sort: i + 1 };
+    }), true);
+  }
+  if (countRows_('fund') === 0) {
+    writeSheet_('fund', [{ balance: '', defenseFund: '', target: DEFAULT_TARGET, fetchedAt: '' }], true);
+  }
+  if (countRows_('settings') === 0) {
+    writeSheet_('settings', [
+      { key: 'householdUrl', value: '' },
+      { key: 'householdEnabled', value: '0' },
+      { key: 'themeColor', value: '#0f766e' }
+    ], true);
+  }
+  if (props.getProperty('DATA_REV') === null) props.setProperty('DATA_REV', '0');
+
+  // 既定の空シート（シート1 / Sheet1）を削除
+  ['シート1', 'Sheet1'].forEach(function (n) {
+    const sh = ss.getSheetByName(n);
+    if (sh && sh.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(sh);
+  });
+
+  Logger.log('setup 完了。' + (props.getProperty('SECRET_PIN')
+    ? 'SECRET_PIN も設定済みです'
+    : '【注意】SECRET_PIN が未設定です。設定するまで全てのログインが拒否されます'));
+}

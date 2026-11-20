@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="記録帳">
+<meta name="theme-color" content="#0f766e">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<title>記録帳</title>
+<style>
+  :root {
+    --bg: #f3f5f7;
+    --card: #ffffff;
+    --text: #0f172a;
+    --sub: #64748b;
+    --border: #e2e8f0;
+    --accent: #0f766e;
+    --accent-soft: #ccfbf1;
+    --ok: #059669;
+    --ok-bg: #d1fae5;
+    --warn: #b45309;
+    --warn-bg: #fef3c7;
+    --danger: #dc2626;
+    --danger-bg: #fee2e2;
+    --nav-h: 64px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { background: var(--bg); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--text); font-size: 15px; line-height: 1.5;
+    max-width: 768px; margin: 0 auto;
+    padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);
+  }
+  header {
+    position: sticky; top: 0; z-index: 50;
+    background: var(--accent); color: #fff;
+    padding: calc(env(safe-area-inset-top) + 10px) 16px 10px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 17px; font-weight: 800; letter-spacing: .05em; }
+  .hdr-right { display: flex; gap: 8px; align-items: center; }
+  .badge { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: rgba(255,255,255,.2); }
+  .badge.err { background: #fecaca; color: #7f1d1d; }
+  .icon-btn { background: rgba(255,255,255,.18); color: #fff; border: none; border-radius: 8px; padding: 6px 10px; font-size: 14px; }
+  main { padding: 12px 16px; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .card { background: var(--card); border-radius: 14px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(15,23,42,.06); }
+  .card h2 { font-size: 14px; color: var(--sub); font-weight: 700; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .card h3 { font-size: 13px; color: var(--sub); margin: 10px 0 4px; }
+  .muted { color: var(--sub); font-size: 12px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .big { font-size: 22px; font-weight: 800; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* コンディション */
+  .judge { border-radius: 12px; padding: 12px; text-align: center; font-weight: 800; font-size: 20px; margin-bottom: 10px; }
+  .judge.ok { background: var(--ok-bg); color: var(--ok); }
+  .judge.watch { background: var(--danger-bg); color: var(--danger); }
+  .judge.none { background: #f1f5f9; color: var(--sub); font-size: 16px; }
+  .judge small { display: block; font-size: 12px; font-weight: 600; }
+  .checks { display: grid; gap: 8px; }
+  .check { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 15px; }
+  .check input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
+  .check.on { border-color: var(--accent); background: var(--accent-soft); }
+
+  /* 進捗 */
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat { background: #f8fafc; border-radius: 10px; padding: 10px; }
+  .stat .lbl { font-size: 12px; color: var(--sub); }
+  .stat .val { font-size: 20px; font-weight: 800; }
+  .gate { display: grid; gap: 4px; margin-top: 8px; }
+  .gate div { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 10px; border-radius: 8px; background: #f8fafc; }
+  .gate .done { background: var(--ok-bg); color: var(--ok); font-weight: 700; }
+  .milestone-flag { display: inline-block; margin-top: 6px; padding: 4px 10px; border-radius: 999px; background: var(--warn-bg); color: var(--warn); font-size: 12px; font-weight: 700; }
+
+  /* 資金 */
+  .bar { height: 14px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin: 6px 0; }
+  .bar > div { height: 100%; background: var(--accent); border-radius: 999px; }
+  .stale { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+  .ms { display: flex; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; align-items: flex-start; }
+  .ms:first-child { border-top: none; }
+  .ms .flag { flex: none; }
+  .ms .period { flex: none; width: 82px; color: var(--sub); }
+  .ms.done .txt { color: var(--sub); text-decoration: line-through; }
+
+  /* ボタン */
+  .btn { border: none; border-radius: 10px; padding: 12px 14px; font-size: 15px; font-weight: 700; background: var(--accent); color: #fff; }
+  .btn.block { width: 100%; }
+  .btn.ghost { background: #f1f5f9; color: var(--text); }
+  .btn.danger { background: var(--danger); }
+  .btn.small { padding: 7px 10px; font-size: 13px; border-radius: 8px; }
+  .btn:disabled { opacity: .5; }
+  .quick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  /* 一覧 */
+  .list-item { background: var(--card); border-radius: 12px; padding: 12px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(15,23,42,.05); }
+  .list-item .top { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--sub); }
+  .list-item .title { font-weight: 700; font-size: 15px; margin: 2px 0; }
+  .list-item .note { font-size: 14px; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 999px; background: #f1f5f9; color: var(--sub); margin-right: 4px; }
+  .res-win { background: var(--ok-bg); color: var(--ok); font-weight: 700; }
+  .res-lose { background: var(--danger-bg); color: var(--danger); font-weight: 700; }
+  .res-skip { background: #e2e8f0; color: #334155; font-weight: 700; }
+  .empty { text-align: center; color: var(--sub); padding: 28px 0; font-size: 14px; }
+
+  /* フォーム */
+  .f { margin-bottom: 12px; }
+  .f label.lbl { display: block; font-size: 12px; font-weight: 700; color: var(--sub); margin-bottom: 4px; }
+  .req::after { content: " 必須"; color: var(--danger); font-size: 11px; }
+  input[type=text], input[type=date], input[type=url], input[type=password], input[type=number], textarea, select {
+    width: 100%; font-size: 16px; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 10px; background: #fff; color: var(--text); font-family: inherit;
+  }
+  textarea { min-height: 70px; resize: vertical; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips label { padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 999px; font-size: 14px; background: #fff; }
+  .chips input { display: none; }
+  .chips label.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .grid3 input { padding: 10px 8px; }
+  .rr-preview { margin-top: 6px; padding: 8px 10px; border-radius: 8px; background: #f8fafc; font-size: 14px; font-weight: 700; }
+  .rr-preview.good { background: var(--ok-bg); color: var(--ok); }
+  .rr-preview.low { background: var(--warn-bg); color: var(--warn); }
+  .precheck { border: 2px solid var(--border); border-radius: 12px; padding: 10px; margin-bottom: 14px; }
+  .precheck .head { font-weight: 800; font-size: 14px; margin-bottom: 6px; }
+  .precheck .cond { font-size: 13px; font-weight: 700; padding: 6px 10px; border-radius: 8px; margin-bottom: 8px; }
+  .precheck .cond.ok { background: var(--ok-bg); color: var(--ok); }
+  .precheck .cond.watch { background: var(--danger-bg); color: var(--danger); }
+  .precheck .cond.none { background: #f1f5f9; color: var(--sub); }
+  .precheck .check { padding: 8px 10px; font-size: 14px; }
+  .warnline { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--warn-bg); color: var(--warn); font-size: 13px; font-weight: 700; }
+  .warnline.okline { background: var(--ok-bg); color: var(--ok); }
+  .form-err { color: var(--danger); font-size: 13px; font-weight: 700; margin-bottom: 8px; display: none; }
+  .form-err.show { display: block; }
+  .pm { display: flex; gap: 6px; }
+  .pm .btn { flex: none; width: 52px; }
+  .switch { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+  .switch input { width: 22px; height: 22px; accent-color: var(--accent); }
+  .colors { display: flex; gap: 8px; flex-wrap: wrap; }
+  .colors button { width: 36px; height: 36px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 1.5px var(--border); }
+  .colors button.on { box-shadow: 0 0 0 3px var(--text); }
+  .ms-edit { display: flex; align-items: center; gap: 6px; padding: 8px 0; border-top: 1px solid var(--border); }
+  .ms-edit:first-child { border-top: none; }
+  .ms-edit .txt { flex: 1; font-size: 13px; min-width: 0; }
+  .ms-edit .txt b { display: block; font-size: 12px; color: var(--sub); font-weight: 600; }
+  .ms-edit input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
+  .ms-edit .btn { flex: none; padding: 6px 8px; }
+
+  /* 下部ナビ */
+  nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: #fff; border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); }
+  nav .inner { max-width: 768px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); height: var(--nav-h); }
+  nav button { background: none; border: none; font-size: 11px; color: var(--sub); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-weight: 700; }
+  nav button .ic { font-size: 22px; }
+  nav button.active { color: var(--accent); }
+
+  /* シート（モーダル） */
+  #sheet { position: fixed; inset: 0; z-index: 3000; background: rgba(15,23,42,.45); display: none; align-items: flex-end; justify-content: center; }
+  #sheet.show { display: flex; }
+  #sheet .panel { background: var(--bg); width: 100%; max-width: 768px; max-height: 92vh; overflow-y: auto; border-radius: 18px 18px 0 0; padding: 14px 16px calc(env(safe-area-inset-bottom) + 20px); -webkit-overflow-scrolling: touch; }
+  #sheet .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  #sheet .panel-head h2 { font-size: 17px; }
+  .sheet-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; margin-top: 6px; }
+  body.banner-open #sheet .panel { padding-bottom: 230px; }
+
+  /* ロック画面 */
+  #lock { position: fixed; inset: 0; z-index: 5000; background: var(--accent); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  #lock.hide { display: none; }
+  #lock .box { background: #fff; border-radius: 18px; padding: 22px 18px; width: 100%; max-width: 360px; }
+  #lock h1 { font-size: 22px; text-align: center; margin-bottom: 4px; }
+  #lock p { text-align: center; color: var(--sub); font-size: 13px; margin-bottom: 14px; }
+  #lock .f input { text-align: center; }
+  #lockErr { color: var(--danger); font-size: 13px; font-weight: 700; text-align: center; min-height: 20px; margin-bottom: 6px; }
+
+  /* 共通: スピナー・トースト・赤バナー（スポット帳 v3.0 と同じ仕様） */
+  .toast { position: fixed; left: 50%; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 20px); transform: translateX(-50%); background: rgba(15,23,42,.92); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 14px; z-index: 6000; max-width: 90%; text-align: center; pointer-events: none; opacity: 0; transition: opacity .2s; }
+  .toast.show { opacity: 1; }
+  .toast.ok { background: #059669; font-weight: 700; }
+  #busy { position: fixed; inset: 0; z-index: 5500; background: rgba(15,23,42,.35); display: none; align-items: center; justify-content: center; }
+  #busy.show { display: flex; }
+  .busy-box { background: rgba(15,23,42,.88); color: #fff; border-radius: 14px; padding: 18px 26px; display: flex; flex-direction: column; align-items: center; gap: 10px; font-weight: 700; font-size: 14px; }
+  .spinner { width: 44px; height: 44px; border-radius: 50%; border: 4px solid rgba(255,255,255,.25); border-top-color: #fff; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #failBanner { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 10px); width: calc(100% - 24px); max-width: 744px; background: #fef2f2; border: 2px solid var(--danger); color: #991b1b; border-radius: 14px; padding: 12px 44px 12px 14px; z-index: 4500; box-shadow: 0 6px 20px rgba(0,0,0,.18); display: none; font-size: 13px; line-height: 1.6; }
+  #failBanner.show { display: block; }
+  body.banner-open main { padding-bottom: 220px; }
+  #failBanner b { display: block; font-size: 14px; }
+  #failBanner .fb-close { position: absolute; top: 6px; right: 6px; width: 36px; height: 36px; border: none; background: none; font-size: 20px; color: #991b1b; }
+  #failBanner .btn-row { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .inline-spin { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin .8s linear infinite; vertical-align: -2px; }
+</style>
+</head>
+<body>
+
+<!-- ロック画面（PIN はパスワード形式: 英数字＋記号 4〜64文字） -->
+<div id="lock">
+  <div class="box">
+    <h1>📓 記録帳</h1>
+    <p>パスワードを入力してください</p>
+    <div class="f" id="lockUrlRow" hidden>
+      <label class="lbl">GAS の URL（初回のみ）</label>
+      <input type="url" id="lockUrl" placeholder="https://script.google.com/macros/s/.../exec" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </div>
+    <div class="f">
+      <input type="password" id="lockPin" placeholder="パスワード" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="64">
+    </div>
+    <label class="switch" style="font-size:13px; margin-bottom:12px;"><input type="checkbox" id="lockRemember"> この端末に記憶する</label>
+    <div id="lockErr"></div>
+    <button class="btn block" id="lockBtn">ログイン</button>
+  </div>
+</div>
+
+<header>
+  <h1>📓 記録帳</h1>
+  <div class="hdr-right">
+    <span class="badge" id="syncBadge">未接続</span>
+    <button class="icon-btn" id="reloadBtn" aria-label="再読込">🔄</button>
+  </div>
+</header>
+
+<main>
+  <!-- ホーム -->
+  <section class="view active" id="view-home">
+    <div class="card" id="condCard"></div>
+    <div class="card" id="progressCard"></div>
+    <div class="card" id="fundCard"></div>
+    <div class="quick">
+      <button class="btn" data-quick="practice">＋ 練習を記録</button>
+      <button class="btn" data-quick="trades">＋ 検証を記録</button>
+    </div>
+  </section>
+
+  <!-- 練習 -->
+  <section class="view" id="view-practice">
+    <div class="card">
+      <div class="row">
+        <div><div class="muted">出来高レンズ</div><div class="big num" id="practiceCount">0件</div></div>
+        <button class="btn" id="practiceAdd">＋ 追加</button>
+      </div>
+    </div>
+    <div id="practiceList"></div>
+  </section>
+
+  <!-- 検証 -->
+  <section class="view" id="view-trades">
+    <div class="card">
+      <div class="row">
+        <div class="num" id="tradeSummary"></div>
+        <button class="btn" id="tradeAdd">＋ 追加</button>
+      </div>
+    </div>
+    <div id="tradeList"></div>
+  </section>
+
+  <!-- 設定 -->
+  <section class="view" id="view-settings">
+    <div class="card">
+      <h2>💰 資金</h2>
+      <div class="f">
+        <label class="lbl">目標額（防衛資金バーの分母）</label>
+        <div class="pm"><input type="text" id="setTarget" inputmode="numeric" style="flex:1;"><button class="btn small" id="setTargetSave" style="width:auto;">保存</button></div>
+      </div>
+      <h3 class="row"><span>マイルストーン</span><button class="btn small ghost" id="msAdd">＋ 追加</button></h3>
+      <div id="msEditList"></div>
+    </div>
+
+    <div class="card">
+      <h2>🔗 家計簿連携（読み取りのみ）</h2>
+      <div class="f">
+        <label class="lbl">家計簿 GAS の URL</label>
+        <input type="url" id="setHhUrl" placeholder="https://script.google.com/macros/s/.../exec" autocapitalize="off" autocorrect="off" spellcheck="false">
+      </div>
+      <div class="f"><label class="switch"><input type="checkbox" id="setHhOn"> 連携する（ON）</label></div>
+      <div class="f muted" id="setHhLast">最終取得時刻: −</div>
+      <div class="row" style="justify-content:flex-start;">
+        <button class="btn small" id="setHhSave">保存</button>
+        <button class="btn small ghost" id="setHhFetch">今すぐ取得</button>
+      </div>
+      <p class="muted" style="margin-top:8px;">家計簿のデータは家計簿 GAS の API から読むだけで、書き込みはしません。家計簿の PIN は記録帳 GAS が持ちます（画面には出ません）。</p>
+    </div>
+
+    <div class="card">
+      <h2>🎨 テーマ色</h2>
+      <div class="colors" id="setColors"></div>
+    </div>
+
+    <div class="card">
+      <h2>🔑 パスワード（PIN）変更</h2>
+      <div class="f"><label class="lbl">現在のパスワード</label><input type="password" id="pinOld" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="64"></div>
+      <div class="f"><label class="lbl">新しいパスワード（英数字・記号 4〜64文字）</label><input type="password" id="pinNew" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="64"></div>
+      <div class="f"><label class="lbl">新しいパスワード（確認）</label><input type="password" id="pinNew2" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="64"></div>
+      <button class="btn small" id="pinChange">変更する</button>
+    </div>
+
+    <div class="card">
+      <h2>🌐 GAS 接続先 URL</h2>
+      <div class="f"><input type="url" id="setGasUrl" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+      <div class="row" style="justify-content:flex-start;">
+        <button class="btn small" id="setGasSave">保存して再接続</button>
+        <button class="btn small ghost" id="setGasReset">初期値に戻す</button>
+      </div>
+      <p class="muted" style="margin-top:6px;" id="setGasNote"></p>
+    </div>
+
+    <div class="card">
+      <h2>📤 CSV エクスポート</h2>
+      <div class="quick">
+        <button class="btn ghost" data-csv="practice">練習（practice）</button>
+        <button class="btn ghost" data-csv="trades">検証（trades）</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>この端末</h2>
+      <button class="btn small ghost" id="logoutBtn">ログアウト（記憶したパスワードも消す）</button>
+      <p class="muted" style="margin-top:8px;" id="verNote"></p>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <div class="inner">
+    <button data-tab="home" class="active"><span class="ic">🏠</span>ホーム</button>
+    <button data-tab="practice"><span class="ic">👀</span>練習</button>
+    <button data-tab="trades"><span class="ic">📝</span>検証</button>
+    <button data-tab="settings"><span class="ic">⚙️</span>設定</button>
+  </div>
+</nav>
+
+<div id="sheet"><div class="panel" id="sheetPanel"></div></div>
+<div class="toast" id="toast"></div>
+<div id="busy" aria-live="polite"><div class="busy-box"><div class="spinner"></div><div id="busyLabel">保存中…</div></div></div>
+<div id="failBanner" role="alert"><button class="fb-close" aria-label="閉じる" id="fbClose">✕</button><div id="failBody"></div></div>
+
+<script>
+"use strict";
+// ======================================================================
+// 記録帳 v1.0
+// ======================================================================
+const APP_VERSION = "1.0";
+// ▼ デプロイ時に GAS の Web アプリ URL に差し替える（設定タブからも変更可）
+const GAS_URL = "https://script.google.com/macros/s/XXXXXXXX/exec";
+
+const LS = { gasUrl: "kirokucho_gas_url", pin: "kirokucho_pin" };
+const PRACTICE_GOAL = 10;
+const TRADE_GOAL = 100;
+const GATE_WINRATE = 0.6;
+const GATE_RR = 2.0;
+const FUND_THROTTLE_MS = 60 * 1000;
+
+const LENS_LABEL = { volume: "出来高" };
+const CANDLES = ["大きな陽線", "大きな陰線", "長い上ヒゲ", "長い下ヒゲ", "その他"];
+const AFTER3D = ["上げ", "下げ", "横ばい"];
+const BASES = ["板", "出来高急増", "サポ・レジブレイク", "その他"];
+const RESULTS = [["win", "勝ち"], ["lose", "負け"], ["skip", "見送り"]];
+const RESULT_LABEL = { win: "勝ち", lose: "負け", skip: "見送り" };
+const THEME_COLORS = ["#0f766e", "#2563eb", "#7c3aed", "#db2777", "#ea580c", "#334155"];
+
+const state = {
+  gasUrl: "", pin: "", rev: null, loaded: false, tab: "home",
+  practice: [], trades: [], conditions: [], milestones: [],
+  fund: { balance: "", defenseFund: "", target: 1000000, fetchedAt: "" },
+  settings: { householdUrl: "", householdEnabled: "0", themeColor: "#0f766e" },
+  fundView: null,       // { status: "ok"|"error"|"disabled", reason, live }
+  fundLoading: false, fundLastTry: 0
+};
+
+// ======================================================================
+// 小物
+// ======================================================================
+const $ = id => document.getElementById(id);
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function pad(n) { return ("0" + n).slice(-2); }
+function ymd(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+function today() { return ymd(new Date()); }
+function fmtDate(s) { const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? Number(m[2]) + "/" + Number(m[3]) : esc(s); }
+function yen(n) { return n === "" || n == null || !isFinite(Number(n)) ? "−" : "¥" + Math.round(Number(n)).toLocaleString("ja-JP"); }
+function signedYen(n) { if (n === "" || n == null || !isFinite(Number(n))) return ""; const v = Number(n); return (v > 0 ? "+" : v < 0 ? "−" : "") + "¥" + Math.abs(Math.round(v)).toLocaleString("ja-JP"); }
+/** 取得時刻: 「11月20日 14:05」 */
+function fmtFetched(iso) { const d = new Date(iso); if (isNaN(d)) return "−"; return (d.getMonth() + 1) + "月" + d.getDate() + "日 " + pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+/** 前回値の明示: 「11月20日 14時 時点」 */
+function fmtAsOf(iso) { const d = new Date(iso); if (isNaN(d)) return ""; return (d.getMonth() + 1) + "月" + d.getDate() + "日 " + d.getHours() + "時 時点"; }
+function parseNum(s) {
+  const t = String(s == null ? "" : s).replace(/[,，¥円\s]/g, "").replace(/[０-９．－]/g, c => ({ "．": ".", "－": "-" }[c] || String.fromCharCode(c.charCodeAt(0) - 0xFEE0)));
+  if (t === "") return "";
+  const n = Number(t);
+  return isFinite(n) ? n : NaN;
+}
+function newId(prefix) { return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function nowIso() { return new Date().toISOString(); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ======================================================================
+// 計算（引き継ぎメモ §4。GAS 側でも同じ式で保存時に計算し直す）
+// ======================================================================
+/** RR = |利確 − エントリー| ÷ |エントリー − 損切り|。揃わない・損切り幅0は "" */
+function calcRR(entry, tp, sl) {
+  if (entry === "" || tp === "" || sl === "" || [entry, tp, sl].some(v => !isFinite(v))) return "";
+  const risk = Math.abs(entry - sl);
+  if (!(risk > 0)) return "";
+  return Math.round(Math.abs(tp - entry) / risk * 100) / 100;
+}
+function isNum(v) { return v !== "" && v !== null && v !== undefined && isFinite(Number(v)); }
+function tradeStats(trades) {
+  const count = trades.length;                      // 見送り（skip）を含む
+  const win = trades.filter(t => t.result === "win").length;
+  const lose = trades.filter(t => t.result === "lose").length;
+  const winRate = (win + lose) > 0 ? win / (win + lose) : null;   // skip は分母に入れない
+  const rrs = trades.filter(t => isNum(t.rr)).map(t => Number(t.rr)); // RR 空欄は除外
+  const avgRR = rrs.length ? rrs.reduce((a, b) => a + b, 0) / rrs.length : null;
+  return { count, win, lose, skip: count - win - lose, winRate, avgRR, rrCount: rrs.length };
+}
+function judgeOf(c) { return c.sleepOk === "1" && c.noFatigue === "1" && c.calm === "1" ? "ok" : "watch"; }
+function todayCondition() { return state.conditions.find(c => c.date === today()) || null; }
+function fmtRate(r) { return r === null ? "−" : (Math.round(r * 1000) / 10).toFixed(1) + "%"; }
+function fmtRR(r) { return r === null || r === "" || r === undefined ? "−" : Number(r).toFixed(2); }
+
+// ======================================================================
+// 共通: スピナー・トースト・赤バナー（スポット帳 v3.0 と同じ仕様）
+// ======================================================================
+const BUSY_MIN_MS = 300;
+const busy = { n: 0, since: 0 };
+function showBusy(label) {
+  busy.n++;
+  if (busy.n === 1) { busy.since = Date.now(); $("busy").classList.add("show"); }
+  $("busyLabel").textContent = label || "保存中…";
+}
+async function hideBusy() {
+  const wait = BUSY_MIN_MS - (Date.now() - busy.since);
+  if (wait > 0) await sleep(wait);
+  busy.n = Math.max(0, busy.n - 1);
+  if (!busy.n) $("busy").classList.remove("show");
+}
+function toast(msg, ms) {
+  const t = $("toast");
+  t.textContent = msg; t.classList.remove("ok"); t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), ms || 2200);
+}
+function okToast(msg) {
+  const t = $("toast");
+  t.textContent = "✓ " + msg; t.classList.add("show", "ok");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show", "ok"), 2500);
+}
+function failReason(e) {
+  if (e.code === "AUTH") return e.message || "パスワードが一致しません。";
+  if (e.code === "NETWORK") return "通信できませんでした。電波の良い場所で再試行してください。";
+  return e.message || "原因不明のエラーです";
+}
+/** 消えない赤バナー。buttons: [{label, fn, kind}] */
+function showFailBanner(what, e, buttons, formOpen) {
+  const body = $("failBody");
+  body.innerHTML = "<b>⚠️ " + esc(what) + "に失敗しました</b>" + esc(failReason(e)) +
+    (formOpen ? '<br><span style="color:#7f1d1d;">入力内容はそのまま残っています。</span>' : "") +
+    '<div class="btn-row">' + (buttons || []).map((b, i) => '<button class="btn small ' + (b.kind || "danger") + '" data-fb="' + i + '">' + esc(b.label) + "</button>").join("") + "</div>";
+  body.querySelectorAll("[data-fb]").forEach(el => { el.onclick = () => { hideFailBanner(); buttons[Number(el.dataset.fb)].fn(); }; });
+  $("failBanner").classList.add("show");
+  document.body.classList.add("banner-open");
+}
+function hideFailBanner() { $("failBanner").classList.remove("show"); document.body.classList.remove("banner-open"); }
+
+// ======================================================================
+// GAS 通信（POST text/plain JSON。PIN を URL に載せない）
+// ======================================================================
+function urlConfigured(u) { return /^https:\/\//.test(u || "") && !/XXXXXXXX/.test(u); }
+async function apiRaw(action, params) {
+  if (!urlConfigured(state.gasUrl)) { const e = new Error("GAS の URL が未設定です（設定タブで登録してください）"); e.code = "NO_URL"; throw e; }
+  let res;
+  try {
+    res = await fetch(state.gasUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(Object.assign({ action: action, pin: state.pin }, params || {}))
+    });
+  } catch (err) {
+    const e = new Error("通信に失敗しました"); e.code = "NETWORK"; throw e;
+  }
+  let data;
+  try { data = await res.json(); } catch (err) {
+    const e = new Error("GAS の応答を読めませんでした（URL・デプロイのアクセス権「全員」を確認してください）"); e.code = "BAD_RESPONSE"; throw e;
+  }
+  if (data.status === "unauthorized") { const e = new Error(data.reason || "パスワードが違います"); e.code = "AUTH"; e.data = data; throw e; }
+  if (data.status === "conflict") { const e = new Error(data.reason || "他の端末で更新されています。再読込してください（上書きはしていません）"); e.code = "CONFLICT"; e.data = data; throw e; }
+  if (data.status === "busy") { const e = new Error(data.reason || "他の保存処理中です"); e.code = "BUSY"; e.data = data; throw e; }
+  return data;
+}
+
+// ---- 読み込み（loadAll） ----
+function applyLoad(d) {
+  state.rev = d.rev;
+  state.practice = d.practice || [];
+  state.trades = d.trades || [];
+  state.conditions = d.conditions || [];
+  state.milestones = d.milestones || [];
+  state.fund = d.fund || state.fund;
+  state.settings = Object.assign({ householdUrl: "", householdEnabled: "0", themeColor: "#0f766e" }, d.settings || {});
+  state.loaded = true;
+}
+async function loadAll(opts) {
+  opts = opts || {};
+  setBadge("同期中…");
+  showBusy("読み込み中…");
+  let d, err;
+  try {
+    d = await apiRaw("loadAll");
+    if (d.status !== "ok") { err = new Error(d.reason || "読み込みに失敗しました"); }
+  } catch (e) { err = e; }
+  finally { await hideBusy(); }
+  if (err) {
+    setBadge(err.code === "AUTH" ? "パスワード不一致" : "同期エラー", true);
+    if (err.code === "AUTH") { showLock(err.message); return false; }
+    showFailBanner("読み込み", err, [{ label: "🔄 再試行", fn: () => loadAll(opts) }]);
+    return false;
+  }
+  applyLoad(d);
+  setBadge("☁️ 同期済み");
+  if (!opts.keepBanner) hideFailBanner();
+  renderAll();
+  if (state.tab === "home") refreshFund(true);
+  return true;
+}
+function setBadge(text, err) { const b = $("syncBadge"); b.textContent = text; b.className = "badge" + (err ? " err" : ""); }
+
+// ---- 保存（直列化キュー。status が saved の時だけ成功） ----
+// builder は「その時点の state」から送るテーブルを作る関数。順番が来た時に実行するので、
+// 連続して保存しても前の保存結果の上に積み上がる（取りこぼしが出ない）。
+let saveChain = Promise.resolve();
+function save(job) {
+  const p = saveChain.then(() => runSave(job));
+  saveChain = p.catch(() => {});
+  return p;
+}
+async function runSave(job) {
+  if (!state.loaded) {
+    showFailBanner(job.what, new Error("まだサーバーから読み込めていないため保存できません。再読込してください。"), [{ label: "🔄 再読込", fn: () => loadAll() }], job.form);
+    return false;
+  }
+  let built;
+  try { built = job.build(); } catch (e) {
+    showFailBanner(job.what, e, [], job.form); return false;
+  }
+  if (!built) return false;
+  showBusy("保存中…");
+  let d, err;
+  try {
+    d = await apiRaw("save", { baseRev: state.rev, tables: built.tables });
+    if (d.status !== "saved") { err = new Error(d.reason || d.message || ("保存できませんでした（" + d.status + "）")); }
+  } catch (e) { err = e; }
+  finally { await hideBusy(); }
+  if (err) {
+    const retry = { label: "🔄 再試行", fn: () => save(job) };
+    let buttons = [retry];
+    if (err.code === "CONFLICT") {
+      buttons = [
+        { label: "🔄 再読込してもう一度保存", fn: async () => { if (await loadAll({ keepBanner: true })) save(job); } },
+        { label: "再読込のみ", kind: "ghost", fn: () => loadAll() }
+      ];
+    } else if (err.code === "AUTH") {
+      buttons = [{ label: "🔑 ログインし直す", fn: () => showLock("パスワードを入れ直してください") }];
+    }
+    showFailBanner(job.what, err, buttons, job.form && $("sheet").classList.contains("show"));
+    return false;
+  }
+  state.rev = d.rev;
+  const t = d.tables || {};
+  ["practice", "trades", "conditions", "milestones"].forEach(k => { if (t[k]) state[k] = t[k]; });
+  if (t.settings) state.settings = Object.assign({}, state.settings, t.settings);
+  if (t.fund) state.fund = t.fund;
+  hideFailBanner();
+  setBadge("☁️ 同期済み");
+  if (job.done) job.done(d);
+  renderAll();
+  okToast(built.ok || job.ok || "保存しました");
+  return true;
+}
+function upsert(list, row, key) {
+  key = key || "id";
+  const i = list.findIndex(r => r[key] === row[key]);
+  const out = list.slice();
+  if (i >= 0) out[i] = Object.assign({}, out[i], row); else out.push(row);
+  return out;
+}
+
+// ======================================================================
+// 家計簿連携（資金カード）。取得は記録帳 GAS が行う（家計簿の PIN は画面に出ない）
+// ======================================================================
+async function refreshFund(force) {
+  if (!state.loaded || state.fundLoading) return;
+  if (state.settings.householdEnabled !== "1") { state.fundView = { status: "disabled", reason: "連携が OFF です" }; renderFund(); return; }
+  if (!force && Date.now() - state.fundLastTry < FUND_THROTTLE_MS) return;
+  state.fundLoading = true; state.fundLastTry = Date.now();
+  renderFund();
+  let d;
+  try { d = await apiRaw("fund"); }
+  catch (e) { d = { status: "error", reason: failReason(e) }; if (e.code === "AUTH") d.reason = "パスワードが一致しません"; }
+  state.fundLoading = false;
+  if (d.fund) state.fund = d.fund;
+  state.fundView = { status: d.status === "ok" ? "ok" : (d.status === "disabled" ? "disabled" : "error"), reason: d.reason || "", live: d.status === "ok" };
+  renderFund();
+  renderSettings();
+}
+
+// ======================================================================
+// 描画
+// ======================================================================
+function renderAll() {
+  document.documentElement.style.setProperty("--accent", state.settings.themeColor || "#0f766e");
+  document.querySelector('meta[name="theme-color"]').setAttribute("content", state.settings.themeColor || "#0f766e");
+  renderCondition(); renderProgress(); renderFund();
+  renderPractice(); renderTrades(); renderSettings();
+}
+
+// ---- ホーム: コンディション ----
+let condDraft = null; // 画面上のチェック（保存前）
+function renderCondition() {
+  const c = todayCondition();
+  // 保存済みの当日分が変わった時（読み込み・保存・日付の変わり目）は、画面のチェックを保存済みの値に戻す
+  const base = today() + "|" + (c ? [c.sleepOk, c.noFatigue, c.calm].join("") : "none");
+  if (!condDraft || condDraft.base !== base) condDraft = c ? { base: base, date: c.date, sleepOk: c.sleepOk, noFatigue: c.noFatigue, calm: c.calm } : { base: base, date: today(), sleepOk: "0", noFatigue: "0", calm: "0" };
+  const j = c ? c.judge : null;
+  const judgeHtml = !c
+    ? '<div class="judge none" id="condJudge">今日のコンディション 未チェック</div>'
+    : j === "ok" ? '<div class="judge ok" id="condJudge">✅ 参戦可<small>3項目すべて OK</small></div>'
+    : '<div class="judge watch" id="condJudge">🛑 今日は監視のみ<small>エントリー禁止（練習の記録はOK）</small></div>';
+  const item = (k, label) => '<label class="check' + (condDraft[k] === "1" ? " on" : "") + '"><input type="checkbox" data-cond="' + k + '"' + (condDraft[k] === "1" ? " checked" : "") + "> " + label + "</label>";
+  const changed = !c || ["sleepOk", "noFatigue", "calm"].some(k => c[k] !== condDraft[k]);
+  const pv = judgeOf(condDraft) === "ok" ? "参戦可" : "監視のみ";
+  $("condCard").innerHTML =
+    '<h2><span>今日のコンディション（' + fmtDate(today()) + '）</span></h2>' + judgeHtml +
+    '<div class="checks">' + item("sleepOk", "睡眠OK（5時間以上とれた）") + item("noFatigue", "脳疲労なし") + item("calm", "感情が安定している") + "</div>" +
+    '<button class="btn block" id="condSave" style="margin-top:10px;"' + (changed ? "" : " disabled") + ">" + (c ? "上書き保存" : "保存") + "（判定: " + pv + "）</button>";
+  $("condCard").querySelectorAll("[data-cond]").forEach(el => {
+    el.onchange = () => { condDraft[el.dataset.cond] = el.checked ? "1" : "0"; renderCondition(); };
+  });
+  $("condSave").onclick = saveCondition;
+}
+function saveCondition() {
+  const draft = Object.assign({}, condDraft);
+  return save({
+    what: "コンディションの保存",
+    build: () => {
+      const row = { date: draft.date, sleepOk: draft.sleepOk, noFatigue: draft.noFatigue, calm: draft.calm };
+      row.judge = judgeOf(row);
+      return { tables: { conditions: upsert(state.conditions, row, "date") }, ok: "コンディションを保存しました（" + (row.judge === "ok" ? "参戦可" : "監視のみ") + "）" };
+    }
+  });
+}
+
+// ---- ホーム: 進捗 ----
+function renderProgress() {
+  const pc = state.practice.filter(p => (p.lens || "volume") === "volume").length;
+  const s = tradeStats(state.trades);
+  const g1 = s.count >= TRADE_GOAL, g2 = s.winRate !== null && s.winRate >= GATE_WINRATE, g3 = s.avgRR !== null && s.avgRR >= GATE_RR;
+  const gate = (ok, label, cur) => '<div class="' + (ok ? "done" : "") + '"><span>' + (ok ? "✅ " : "⬜ ") + label + "</span><span>" + cur + "</span></div>";
+  $("progressCard").innerHTML =
+    "<h2><span>進捗</span></h2>" +
+    '<div class="stat-grid">' +
+      '<div class="stat"><div class="lbl">練習（出来高レンズ）</div><div class="val num" id="pgPractice">' + pc + "/" + PRACTICE_GOAL + "</div>" +
+        (pc >= PRACTICE_GOAL ? '<span class="milestone-flag">🎉 10件到達 → 次のレンズへ</span>' : "") + "</div>" +
+      '<div class="stat"><div class="lbl">検証</div><div class="val num" id="pgTrades">' + s.count + "/" + TRADE_GOAL + "</div>" +
+        '<div class="muted num">勝率 <b id="pgWin">' + fmtRate(s.winRate) + "</b>・平均RR <b id=\"pgRR\">" + fmtRR(s.avgRR) + "</b></div></div>" +
+    "</div>" +
+    '<h3>Phase 0 ゲート</h3><div class="gate" id="pgGate">' +
+      gate(g1, "検証100回", s.count + "/100") +
+      gate(g2, "勝率60%以上", fmtRate(s.winRate)) +
+      gate(g3, "平均RR 2.0以上", fmtRR(s.avgRR)) +
+    "</div>" +
+    '<p class="muted" style="margin-top:6px;">勝率は 勝ち÷(勝ち＋負け)。見送り ' + s.skip + "件は件数に入り、勝率の分母には入りません。</p>";
+}
+
+// ---- ホーム: 資金 ----
+function renderFund() {
+  const f = state.fund || {};
+  const fv = state.fundView;
+  const off = state.settings.householdEnabled !== "1";
+  let html = '<h2><span>防衛資金</span>' + (off ? "" : '<button class="btn small ghost" id="fundReload">' + (state.fundLoading ? '<span class="inline-spin"></span> 取得中' : "🔄 再読込") + "</button>") + "</h2>";
+  if (off) {
+    html += '<div class="stale" id="fundStatus">連携が OFF です</div><p class="muted">設定タブの「家計簿連携」で ON にすると、家計簿から土台（エース預金）の残高を読み込みます。</p>';
+  } else {
+    const has = isNum(f.balance) && f.fetchedAt;
+    const live = fv && fv.live;
+    if (!has) {
+      html += '<div class="stale" id="fundStatus">' + (state.fundLoading ? "取得中…" : "まだ取得できていません" + (fv && fv.reason ? "（" + esc(fv.reason) + "）" : "")) + "</div>";
+    } else {
+      if (!live) {
+        // 取得失敗・未取得の時は前回値であることを必ず明示する
+        html += '<div class="stale" id="fundStatus">⚠️ ' + esc(fmtAsOf(f.fetchedAt)) + "の値です" +
+          (state.fundLoading ? "（取得中…）" : fv && fv.status === "error" ? "（取得に失敗: " + esc(fv.reason) + "）" : "（前回取得値）") + "</div>";
+      }
+      const target = Number(f.target) || 1000000;
+      const def = Number(f.defenseFund);
+      const pct = Math.max(0, Math.min(100, def / target * 100));
+      html += '<div class="row"><span class="big num" id="fundDefense">' + yen(def) + '</span><span class="muted num">目標 ' + yen(target) + "</span></div>" +
+        '<div class="bar"><div id="fundBar" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+        '<div class="row muted num"><span>' + pct.toFixed(1) + "%</span><span>あと " + yen(Math.max(0, target - def)) + "</span></div>" +
+        '<div class="row" style="margin-top:6px;"><span>土台残高（エース預金）</span><b class="num" id="fundBalance">' + yen(f.balance) + "</b></div>" +
+        '<div class="muted" id="fundTime">取得時刻: ' + esc(fmtFetched(f.fetchedAt)) + (live ? "（最新）" : "") + "</div>" +
+        '<p class="muted">防衛枠 = MIN(土台残高, ¥1,000,000)</p>';
+    }
+  }
+  const ms = state.milestones.slice().sort((a, b) => Number(a.sort) - Number(b.sort));
+  html += '<h3>マイルストーン</h3><div id="msList">' + (ms.length ? ms.map(m =>
+    '<div class="ms' + (m.done === "1" ? " done" : "") + '"><span class="flag">' + (m.done === "1" ? "✅" : "⬜") + '</span><span class="period">' + esc(m.period) + '</span><span class="txt">' + esc(m.content) +
+    (isNum(m.targetAmount) ? '<span class="muted">（' + yen(m.targetAmount) + "）</span>" : "") + "</span></div>").join("") : '<div class="muted">未登録（設定タブで追加）</div>') + "</div>";
+  $("fundCard").innerHTML = html;
+  const rb = $("fundReload"); if (rb) rb.onclick = () => refreshFund(true);
+}
+
+// ---- 練習 ----
+function sortDesc(list) { return list.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt))); }
+function renderPractice() {
+  $("practiceCount").textContent = state.practice.length + "件";
+  const list = sortDesc(state.practice);
+  $("practiceList").innerHTML = list.length ? list.map(p =>
+    '<div class="list-item" data-pid="' + esc(p.id) + '">' +
+      '<div class="top"><span>' + fmtDate(p.date) + "・" + esc(LENS_LABEL[p.lens] || p.lens) + "</span><span>" + (p.jumpDate ? "跳ねた日 " + fmtDate(p.jumpDate) : "") + "</span></div>" +
+      '<div class="title">' + esc(p.symbol) + "</div>" +
+      (p.candle || p.after3d ? "<div>" + (p.candle ? '<span class="tag">' + esc(p.candle) + "</span>" : "") + (p.after3d ? '<span class="tag">その後3日: ' + esc(p.after3d) + "</span>" : "") + "</div>" : "") +
+      '<div class="note">' + esc(p.note) + "</div></div>").join("") : '<div class="empty">まだ記録がありません。<br>出来高だけ読む練習を1件5分・1行メモで。</div>';
+  $("practiceList").querySelectorAll("[data-pid]").forEach(el => { el.onclick = () => openPracticeForm(state.practice.find(p => p.id === el.dataset.pid)); });
+}
+
+function chips(name, options, value) {
+  return '<div class="chips" data-chips="' + name + '">' + options.map(o => {
+    const v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? o[1] : o;
+    return '<label class="' + (v === value ? "on" : "") + '"><input type="radio" name="' + name + '" value="' + esc(v) + '"' + (v === value ? " checked" : "") + ">" + esc(l) + "</label>";
+  }).join("") + "</div>";
+}
+function bindChips(root, onChange) {
+  root.querySelectorAll("[data-chips]").forEach(g => {
+    g.querySelectorAll("label").forEach(lb => {
+      lb.onclick = ev => {
+        ev.preventDefault();
+        const inp = lb.querySelector("input");
+        const wasOn = inp.checked;
+        g.querySelectorAll("input").forEach(i => { i.checked = false; });
+        g.querySelectorAll("label").forEach(l => l.classList.remove("on"));
+        if (!wasOn) { inp.checked = true; lb.classList.add("on"); } // もう一度押すと解除
+        if (onChange) onChange();
+      };
+    });
+  });
+}
+function chipVal(root, name) { const i = root.querySelector('input[name="' + name + '"]:checked'); return i ? i.value : ""; }
+
+let sheetSeq = 0;
+/** 今開いているフォームだけを閉じる関数（保存成功時用。別のフォームに切り替わっていたら閉じない） */
+function closerFor() { const seq = sheetSeq; return () => { if (seq === sheetSeq) closeSheet(); }; }
+function openSheet(title, html) {
+  sheetSeq++;
+  $("sheetPanel").innerHTML = '<div class="panel-head"><h2>' + esc(title) + '</h2><button class="btn small ghost" id="sheetClose">閉じる</button></div>' + html;
+  $("sheet").classList.add("show");
+  $("sheetPanel").scrollTop = 0;
+  $("sheetClose").onclick = closeSheet;
+}
+function closeSheet() { $("sheet").classList.remove("show"); $("sheetPanel").innerHTML = ""; }
+function formErr(msg) { const e = $("formErr"); e.textContent = msg; e.classList.toggle("show", !!msg); if (msg) $("sheetPanel").scrollTop = 0; }
+
+function openPracticeForm(p) {
+  const isNew = !p;
+  p = p || { id: "", date: today(), lens: "volume", symbol: "", jumpDate: "", candle: "", after3d: "", note: "" };
+  openSheet(isNew ? "練習を記録" : "練習を編集",
+    '<div class="form-err" id="formErr"></div>' +
+    '<div class="f"><label class="lbl">日付</label><input type="date" id="pDate" value="' + esc(p.date) + '"></div>' +
+    '<div class="f"><label class="lbl">レンズ</label><div><span class="tag" style="font-size:13px;">👀 ' + esc(LENS_LABEL[p.lens] || p.lens) + "</span></div></div>" +
+    '<div class="f"><label class="lbl req">銘柄</label><input type="text" id="pSymbol" value="' + esc(p.symbol) + '" placeholder="例: 7203 トヨタ"></div>' +
+    '<div class="f"><label class="lbl">跳ねた日（出来高が急に増えた日）</label><input type="date" id="pJump" value="' + esc(p.jumpDate) + '"></div>' +
+    '<div class="f"><label class="lbl">その日の足の形</label>' + chips("pCandle", CANDLES, p.candle) + "</div>" +
+    '<div class="f"><label class="lbl">その後3日</label>' + chips("pAfter", AFTER3D, p.after3d) + "</div>" +
+    '<div class="f"><label class="lbl req">気づき（1行）</label><input type="text" id="pNote" value="' + esc(p.note) + '" placeholder="「分からない」もそのまま書いてOK"></div>' +
+    '<div class="sheet-actions">' + (isNew ? '<button class="btn ghost" id="pCancel">キャンセル</button>' : '<button class="btn danger" id="pDel">削除</button>') + '<button class="btn" id="pSave">保存</button></div>');
+  const panel = $("sheetPanel");
+  bindChips(panel);
+  if (isNew) $("pCancel").onclick = closeSheet;
+  else $("pDel").onclick = async () => {
+    if (!confirm("この練習記録を削除しますか？\n" + p.symbol + "：" + p.note)) return;
+    await save({ what: "練習の削除", form: true, done: closerFor(), build: () => ({ tables: { practice: state.practice.filter(x => x.id !== p.id) }, ok: "練習記録を削除しました" }) });
+  };
+  $("pSave").onclick = async () => {
+    const row = {
+      id: p.id || newId("p"), date: $("pDate").value, lens: p.lens || "volume",
+      symbol: $("pSymbol").value.trim(), jumpDate: $("pJump").value,
+      candle: chipVal(panel, "pCandle"), after3d: chipVal(panel, "pAfter"),
+      note: $("pNote").value.trim(), createdAt: p.createdAt || nowIso()
+    };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(row.date)) return formErr("日付を入れてください");
+    if (!row.symbol) return formErr("銘柄を入れてください");
+    if (!row.note) return formErr("気づきを1行入れてください（「分からない」でもOK）");
+    formErr("");
+    await save({ what: "練習の保存", form: true, done: closerFor(), build: () => ({ tables: { practice: upsert(state.practice, row) }, ok: isNew ? "練習を記録しました" : "練習を更新しました" }) });
+  };
+}
+
+// ---- 検証 ----
+function renderTrades() {
+  const s = tradeStats(state.trades);
+  $("tradeSummary").innerHTML = '<div class="muted">検証</div><div class="big">' + s.count + "件</div>" +
+    '<div class="muted">勝率 ' + fmtRate(s.winRate) + "（" + s.win + "勝" + s.lose + "敗・見送り" + s.skip + "）・平均RR " + fmtRR(s.avgRR) + "</div>";
+  const list = sortDesc(state.trades);
+  $("tradeList").innerHTML = list.length ? list.map(t =>
+    '<div class="list-item" data-tid="' + esc(t.id) + '">' +
+      '<div class="top"><span>' + fmtDate(t.date) + (t.basis ? "・" + esc(t.basis) : "") + '</span><span class="tag res-' + esc(t.result) + '">' + esc(RESULT_LABEL[t.result] || t.result) + "</span></div>" +
+      '<div class="title">' + esc(t.symbol) + "</div>" +
+      '<div class="muted num">RR ' + (isNum(t.rr) ? Number(t.rr).toFixed(2) : "−") +
+        (isNum(t.entryPrice) ? "・IN " + Number(t.entryPrice).toLocaleString("ja-JP") : "") +
+        (isNum(t.pnl) ? "・損益 " + signedYen(t.pnl) : "") + "</div>" +
+      (t.memo ? '<div class="note">' + esc(t.memo) + "</div>" : "") + "</div>").join("") : '<div class="empty">まだ検証記録がありません。</div>';
+  $("tradeList").querySelectorAll("[data-tid]").forEach(el => { el.onclick = () => openTradeForm(state.trades.find(t => t.id === el.dataset.tid)); });
+}
+
+function condBadge() {
+  const c = todayCondition();
+  if (!c) return '<div class="cond none" id="tCond">今日のコンディション: 未チェック</div>';
+  return c.judge === "ok" ? '<div class="cond ok" id="tCond">今日のコンディション: ✅ 参戦可（ok）</div>' : '<div class="cond watch" id="tCond">今日のコンディション: 🛑 監視のみ（watch）</div>';
+}
+function openTradeForm(t) {
+  const isNew = !t;
+  t = t || { id: "", date: today(), symbol: "", basis: "", entryPrice: "", takeProfit: "", stopLoss: "", result: "", pnl: "", memo: "", enWhat: "", enWhy: "", enNext: "" };
+  const v = x => esc(x === "" || x == null ? "" : x);
+  openSheet(isNew ? "検証を記録" : "検証を編集",
+    '<div class="form-err" id="formErr"></div>' +
+    '<div class="precheck"><div class="head">エントリー前チェック</div>' + condBadge() +
+      '<div class="checks">' +
+        '<label class="check"><input type="checkbox" data-pre> 損切りラインと株数を決めた</label>' +
+        '<label class="check"><input type="checkbox" data-pre> RR 1:2 以上の根拠がある</label>' +
+        '<label class="check"><input type="checkbox" data-pre> 飛びつき買いではない（引きつけたポイント）</label>' +
+      '</div><div class="warnline" id="preWarn"></div>' +
+      '<p class="muted" style="margin-top:6px;">揃わなくても保存できます（チェック状態は保存されません）。</p></div>' +
+    '<div class="f"><label class="lbl req">日付</label><input type="date" id="tDate" value="' + v(t.date) + '"></div>' +
+    '<div class="f"><label class="lbl req">銘柄</label><input type="text" id="tSymbol" value="' + v(t.symbol) + '" placeholder="例: 7203 トヨタ"></div>' +
+    '<div class="f"><label class="lbl">エントリー根拠</label>' + chips("tBasis", BASES, t.basis) + "</div>" +
+    '<div class="f"><label class="lbl">価格（エントリー／利確／損切り）</label><div class="grid3">' +
+      '<input type="text" id="tEntry" inputmode="decimal" placeholder="エントリー" value="' + v(t.entryPrice) + '">' +
+      '<input type="text" id="tTp" inputmode="decimal" placeholder="利確" value="' + v(t.takeProfit) + '">' +
+      '<input type="text" id="tSl" inputmode="decimal" placeholder="損切り" value="' + v(t.stopLoss) + '">' +
+    '</div><div class="rr-preview" id="rrPreview"></div></div>' +
+    '<div class="f"><label class="lbl req">結果</label>' + chips("tResult", RESULTS, t.result) + "</div>" +
+    '<div class="f"><label class="lbl">損益（円・仮想50万円前提）</label><div class="pm"><button class="btn ghost" id="tPnlSign" type="button">±</button><input type="text" id="tPnl" inputmode="decimal" value="' + v(t.pnl) + '" placeholder="例: 12000（負けは ± でマイナス）"></div></div>' +
+    '<div class="f"><label class="lbl">メモ</label><textarea id="tMemo">' + v(t.memo) + "</textarea></div>" +
+    '<div class="f"><label class="lbl">英語3行（任意）</label>' +
+      '<input type="text" id="tEnWhat" value="' + v(t.enWhat) + '" placeholder="What I did" autocapitalize="sentences" style="margin-bottom:6px;">' +
+      '<input type="text" id="tEnWhy" value="' + v(t.enWhy) + '" placeholder="Why" autocapitalize="sentences" style="margin-bottom:6px;">' +
+      '<input type="text" id="tEnNext" value="' + v(t.enNext) + '" placeholder="Next" autocapitalize="sentences"></div>' +
+    '<div class="sheet-actions">' + (isNew ? '<button class="btn ghost" id="tCancel">キャンセル</button>' : '<button class="btn danger" id="tDel">削除</button>') + '<button class="btn" id="tSave">保存</button></div>');
+  const panel = $("sheetPanel");
+  bindChips(panel);
+  const updPre = () => {
+    const boxes = Array.from(panel.querySelectorAll("[data-pre]"));
+    boxes.forEach(b => b.closest(".check").classList.toggle("on", b.checked));
+    const all = boxes.every(b => b.checked);
+    const c = todayCondition();
+    const msgs = [];
+    if (!c) msgs.push("コンディション未チェック");
+    else if (c.judge !== "ok") msgs.push("今日は監視のみの判定");
+    if (!all) msgs.push("チェックが揃っていません");
+    const w = $("preWarn");
+    w.textContent = msgs.length ? "⚠️ " + msgs.join("／") + "（保存はできます）" : "✓ チェック OK";
+    w.classList.toggle("okline", !msgs.length);
+  };
+  panel.querySelectorAll("[data-pre]").forEach(b => { b.onchange = updPre; });
+  updPre();
+  const updRR = () => {
+    const e = parseNum($("tEntry").value), tp = parseNum($("tTp").value), sl = parseNum($("tSl").value);
+    const rr = calcRR(e, tp, sl);
+    const el = $("rrPreview");
+    if (rr === "") { el.textContent = "RR −（3つの価格がそろうと計算します）"; el.className = "rr-preview"; return; }
+    el.textContent = "RR 1:" + rr.toFixed(2) + (rr >= GATE_RR ? "（1:2 以上 ✓）" : "（1:2 未満）");
+    el.className = "rr-preview " + (rr >= GATE_RR ? "good" : "low");
+  };
+  ["tEntry", "tTp", "tSl"].forEach(id => { $(id).oninput = updRR; });
+  updRR();
+  $("tPnlSign").onclick = () => { const n = parseNum($("tPnl").value); if (isNum(n) && n !== 0) $("tPnl").value = String(-n); else if ($("tPnl").value === "") $("tPnl").value = "-"; };
+  if (isNew) $("tCancel").onclick = closeSheet;
+  else $("tDel").onclick = async () => {
+    if (!confirm("この検証記録を削除しますか？\n" + t.date + " " + t.symbol)) return;
+    await save({ what: "検証の削除", form: true, done: closerFor(), build: () => ({ tables: { trades: state.trades.filter(x => x.id !== t.id) }, ok: "検証記録を削除しました" }) });
+  };
+  $("tSave").onclick = async () => {
+    const nums = { entryPrice: "tEntry", takeProfit: "tTp", stopLoss: "tSl", pnl: "tPnl" };
+    const names = { entryPrice: "エントリー価格", takeProfit: "利確価格", stopLoss: "損切り価格", pnl: "損益" };
+    const row = {
+      id: t.id || newId("t"), date: $("tDate").value, symbol: $("tSymbol").value.trim(),
+      basis: chipVal(panel, "tBasis"), result: chipVal(panel, "tResult"),
+      memo: $("tMemo").value.trim(), enWhat: $("tEnWhat").value.trim(), enWhy: $("tEnWhy").value.trim(), enNext: $("tEnNext").value.trim(),
+      createdAt: t.createdAt || nowIso()
+    };
+    for (const k in nums) {
+      const raw = $(nums[k]).value.trim();
+      const n = raw === "-" ? "" : parseNum(raw);
+      if (n !== "" && isNaN(n)) return formErr(names[k] + "は数字で入れてください");
+      row[k] = n;
+    }
+    row.rr = calcRR(row.entryPrice, row.takeProfit, row.stopLoss);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(row.date)) return formErr("日付を入れてください");
+    if (!row.symbol) return formErr("銘柄を入れてください");
+    if (!row.result) return formErr("結果（勝ち／負け／見送り）を選んでください");
+    formErr("");
+    await save({ what: "検証の保存", form: true, done: closerFor(), build: () => ({ tables: { trades: upsert(state.trades, row) }, ok: isNew ? "検証を記録しました" : "検証を更新しました" }) });
+  };
+}
+
+// ---- 設定 ----
+function renderSettings() {
+  const f = state.fund || {};
+  if (document.activeElement !== $("setTarget")) $("setTarget").value = isNum(f.target) ? Number(f.target).toLocaleString("ja-JP") : "1,000,000";
+  if (document.activeElement !== $("setHhUrl")) $("setHhUrl").value = state.settings.householdUrl || "";
+  if (!$("setHhOn").dataset.dirty) $("setHhOn").checked = state.settings.householdEnabled === "1";
+  $("setHhLast").textContent = "最終取得時刻: " + (f.fetchedAt ? fmtFetched(f.fetchedAt) : "−");
+  const ms = state.milestones.slice().sort((a, b) => Number(a.sort) - Number(b.sort));
+  $("msEditList").innerHTML = ms.length ? ms.map((m, i) =>
+    '<div class="ms-edit" data-mid="' + esc(m.id) + '">' +
+      '<input type="checkbox" data-msdone' + (m.done === "1" ? " checked" : "") + ' aria-label="達成">' +
+      '<div class="txt"><b>' + esc(m.period) + "</b>" + esc(m.content) + (isNum(m.targetAmount) ? "（" + yen(m.targetAmount) + "）" : "") + "</div>" +
+      '<button class="btn small ghost" data-msup' + (i === 0 ? " disabled" : "") + ">↑</button>" +
+      '<button class="btn small ghost" data-msdown' + (i === ms.length - 1 ? " disabled" : "") + ">↓</button>" +
+      '<button class="btn small ghost" data-msedit>編集</button></div>').join("") : '<div class="muted">未登録</div>';
+  $("msEditList").querySelectorAll("[data-mid]").forEach(row => {
+    const id = row.dataset.mid;
+    row.querySelector("[data-msdone]").onchange = ev => toggleMilestone(id, ev.target.checked);
+    row.querySelector("[data-msup]").onclick = () => moveMilestone(id, -1);
+    row.querySelector("[data-msdown]").onclick = () => moveMilestone(id, 1);
+    row.querySelector("[data-msedit]").onclick = () => openMilestoneForm(state.milestones.find(m => m.id === id));
+  });
+  $("setColors").innerHTML = THEME_COLORS.map(c => '<button data-color="' + c + '" style="background:' + c + '" class="' + (c === state.settings.themeColor ? "on" : "") + '" aria-label="' + c + '"></button>').join("");
+  $("setColors").querySelectorAll("[data-color]").forEach(b => { b.onclick = () => saveSettings({ themeColor: b.dataset.color }, "テーマ色を保存しました"); });
+  if (document.activeElement !== $("setGasUrl")) $("setGasUrl").value = state.gasUrl;
+  $("setGasNote").textContent = state.gasUrl === GAS_URL ? "（HTML に書かれた初期値を使用中）" : "（この端末で変更した URL を使用中）";
+  $("verNote").textContent = "記録帳 v" + APP_VERSION;
+}
+function sortedMilestones() { return state.milestones.slice().sort((a, b) => Number(a.sort) - Number(b.sort)); }
+function renumber(list) { return list.map((m, i) => Object.assign({}, m, { sort: i + 1 })); }
+function toggleMilestone(id, on) {
+  return save({ what: "マイルストーンの保存", build: () => ({ tables: { milestones: state.milestones.map(m => m.id === id ? Object.assign({}, m, { done: on ? "1" : "0" }) : m) }, ok: on ? "達成にしました" : "未達成に戻しました" }) })
+    .then(ok => { if (!ok) renderSettings(); });
+}
+function moveMilestone(id, dir) {
+  return save({ what: "並び替え", build: () => {
+    const list = sortedMilestones();
+    const i = list.findIndex(m => m.id === id), j = i + dir;
+    if (i < 0 || j < 0 || j >= list.length) return null;
+    const t = list[i]; list[i] = list[j]; list[j] = t;
+    return { tables: { milestones: renumber(list) }, ok: "並び替えました" };
+  } });
+}
+function openMilestoneForm(m) {
+  const isNew = !m;
+  m = m || { id: "", period: "", content: "", targetAmount: "", done: "0" };
+  openSheet(isNew ? "マイルストーンを追加" : "マイルストーンを編集",
+    '<div class="form-err" id="formErr"></div>' +
+    '<div class="f"><label class="lbl">時期</label><input type="text" id="mPeriod" value="' + esc(m.period) + '" placeholder="例: 2027年7月"></div>' +
+    '<div class="f"><label class="lbl req">内容</label><input type="text" id="mContent" value="' + esc(m.content) + '"></div>' +
+    '<div class="f"><label class="lbl">目標額（任意・円）</label><input type="text" id="mAmount" inputmode="numeric" value="' + esc(isNum(m.targetAmount) ? m.targetAmount : "") + '"></div>' +
+    '<div class="f"><label class="switch"><input type="checkbox" id="mDone"' + (m.done === "1" ? " checked" : "") + "> 達成した</label></div>" +
+    '<div class="sheet-actions">' + (isNew ? '<button class="btn ghost" id="mCancel">キャンセル</button>' : '<button class="btn danger" id="mDel">削除</button>') + '<button class="btn" id="mSave">保存</button></div>');
+  if (isNew) $("mCancel").onclick = closeSheet;
+  else $("mDel").onclick = async () => {
+    if (!confirm("このマイルストーンを削除しますか？\n" + m.period + " " + m.content)) return;
+    await save({ what: "マイルストーンの削除", form: true, done: closerFor(), build: () => ({ tables: { milestones: renumber(sortedMilestones().filter(x => x.id !== m.id)) }, ok: "削除しました" }) });
+  };
+  $("mSave").onclick = async () => {
+    const amt = parseNum($("mAmount").value);
+    if (amt !== "" && isNaN(amt)) return formErr("目標額は数字で入れてください");
+    const content = $("mContent").value.trim();
+    if (!content) return formErr("内容を入れてください");
+    formErr("");
+    const row = { id: m.id || newId("m"), period: $("mPeriod").value.trim(), content: content, targetAmount: amt, done: $("mDone").checked ? "1" : "0" };
+    await save({ what: "マイルストーンの保存", form: true, done: closerFor(), build: () => {
+      const list = sortedMilestones();
+      const i = list.findIndex(x => x.id === row.id);
+      if (i >= 0) list[i] = Object.assign({}, list[i], row); else list.push(Object.assign({ sort: list.length + 1 }, row));
+      return { tables: { milestones: renumber(list) }, ok: isNew ? "追加しました" : "更新しました" };
+    } });
+  };
+}
+function saveSettings(patch, okMsg) {
+  return save({ what: "設定の保存", build: () => ({ tables: { settings: Object.assign({}, state.settings, patch) }, ok: okMsg || "設定を保存しました" }) });
+}
+
+// ---- CSV エクスポート ----
+const CSV_COLS = {
+  practice: [["id", "id"], ["date", "日付"], ["lens", "レンズ"], ["symbol", "銘柄"], ["jumpDate", "跳ねた日"], ["candle", "足の形"], ["after3d", "その後3日"], ["note", "気づき"], ["createdAt", "作成日時"]],
+  trades: [["id", "id"], ["date", "日付"], ["symbol", "銘柄"], ["basis", "エントリー根拠"], ["entryPrice", "エントリー価格"], ["takeProfit", "利確価格"], ["stopLoss", "損切り価格"], ["rr", "RR"], ["result", "結果"], ["pnl", "損益"], ["memo", "メモ"], ["enWhat", "英語What"], ["enWhy", "英語Why"], ["enNext", "英語Next"], ["createdAt", "作成日時"]]
+};
+function csvCell(v) { const s = String(v == null ? "" : v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+function buildCsv(name) {
+  const cols = CSV_COLS[name];
+  const rows = sortDesc(state[name]).reverse();
+  const lines = [cols.map(c => c[1]).join(",")].concat(rows.map(r => cols.map(c => {
+    let v = r[c[0]];
+    if (name === "trades" && c[0] === "result") v = RESULT_LABEL[v] || v;
+    if (name === "practice" && c[0] === "lens") v = LENS_LABEL[v] || v;
+    return csvCell(v);
+  }).join(",")));
+  return "﻿" + lines.join("\r\n") + "\r\n";
+}
+function exportCsv(name) {
+  if (!state.loaded) { toast("まだ読み込めていません"); return; }
+  const blob = new Blob([buildCsv(name)], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "kirokucho-" + name + "-" + today().replace(/-/g, "") + ".csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  okToast((name === "practice" ? "練習" : "検証") + "の CSV を書き出しました（" + state[name].length + "件）");
+}
+
+// ======================================================================
+// タブ・ログイン・起動
+// ======================================================================
+function switchTab(tab) {
+  state.tab = tab;
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + tab));
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  window.scrollTo(0, 0);
+  if (tab === "home") { renderCondition(); refreshFund(false); }
+}
+
+function getSavedPin() { try { return localStorage.getItem(LS.pin) || ""; } catch (e) { return ""; } }
+function setSavedPin(p) { try { if (p) localStorage.setItem(LS.pin, p); else localStorage.removeItem(LS.pin); } catch (e) { /* 記憶できない端末は毎回入力 */ } }
+function showLock(msg) {
+  $("lock").classList.remove("hide");
+  $("lockUrlRow").hidden = urlConfigured(state.gasUrl);
+  $("lockErr").textContent = msg || "";
+  $("lockPin").value = "";
+  setTimeout(() => $("lockPin").focus(), 50);
+}
+async function doLogin() {
+  if (!urlConfigured(state.gasUrl)) {
+    const u = $("lockUrl").value.trim();
+    if (!urlConfigured(u)) { $("lockErr").textContent = "GAS の URL（https://…/exec）を入れてください"; return; }
+    state.gasUrl = u; try { localStorage.setItem(LS.gasUrl, u); } catch (e) {}
+  }
+  const pin = $("lockPin").value;
+  if (!/^[\x21-\x7E]{4,64}$/.test(pin)) { $("lockErr").textContent = "パスワードは英数字・記号で4〜64文字です"; return; }
+  $("lockBtn").disabled = true;
+  state.pin = pin;
+  showBusy("確認中…");
+  let err;
+  try { const d = await apiRaw("auth"); if (d.status !== "ok") err = new Error(d.reason || "ログインできませんでした"); }
+  catch (e) { err = e; }
+  finally { await hideBusy(); $("lockBtn").disabled = false; }
+  if (err) { state.pin = ""; $("lockErr").textContent = failReason(err); return; }
+  setSavedPin($("lockRemember").checked ? pin : "");
+  $("lock").classList.add("hide");
+  await loadAll();
+}
+
+function bindStatic() {
+  document.querySelectorAll("nav button").forEach(b => { b.onclick = () => switchTab(b.dataset.tab); });
+  $("lockBtn").onclick = doLogin;
+  $("lockPin").onkeydown = e => { if (e.key === "Enter") doLogin(); };
+  $("reloadBtn").onclick = async () => { if (await loadAll()) okToast("再読込しました"); };
+  $("fbClose").onclick = hideFailBanner;
+  document.querySelectorAll("[data-quick]").forEach(b => {
+    b.onclick = () => { switchTab(b.dataset.quick); if (b.dataset.quick === "practice") openPracticeForm(); else openTradeForm(); };
+  });
+  $("practiceAdd").onclick = () => openPracticeForm();
+  $("tradeAdd").onclick = () => openTradeForm();
+  $("msAdd").onclick = () => openMilestoneForm();
+  $("setTargetSave").onclick = () => {
+    const n = parseNum($("setTarget").value);
+    if (!isNum(n) || n <= 0) { toast("目標額は1円以上の数字で入れてください"); return; }
+    save({ what: "目標額の保存", build: () => ({ tables: { fund: { target: n } }, ok: "目標額を保存しました" }) });
+  };
+  $("setHhSave").onclick = async () => {
+    const u = $("setHhUrl").value.trim();
+    if (u && !/^https:\/\/script\.google(usercontent)?\.com\//.test(u)) { toast("家計簿 GAS の URL は https://script.google.com/ で始まります"); return; }
+    const ok = await saveSettings({ householdUrl: u, householdEnabled: $("setHhOn").checked ? "1" : "0" }, "家計簿連携の設定を保存しました");
+    if (ok) { delete $("setHhOn").dataset.dirty; renderSettings(); state.fundView = null; refreshFund(true); }
+  };
+  $("setHhOn").onchange = () => { $("setHhOn").dataset.dirty = "1"; };
+  $("setHhFetch").onclick = () => { if (state.settings.householdEnabled !== "1") { toast("連携が OFF です（ON にして保存してください）"); return; } refreshFund(true).then(() => { if (state.fundView && state.fundView.live) okToast("家計簿から取得しました"); else toast("取得できませんでした: " + ((state.fundView && state.fundView.reason) || ""), 3500); }); };
+  $("pinChange").onclick = async () => {
+    const o = $("pinOld").value, n = $("pinNew").value, n2 = $("pinNew2").value;
+    if (o !== state.pin) { toast("現在のパスワードが違います"); return; }
+    if (!/^[\x21-\x7E]{4,64}$/.test(n)) { toast("新しいパスワードは英数字・記号で4〜64文字です"); return; }
+    if (n !== n2) { toast("確認用のパスワードが一致しません"); return; }
+    showBusy("変更中…");
+    let err;
+    try { const d = await apiRaw("changePin", { newPin: n }); if (d.status !== "saved") err = new Error(d.reason || "変更できませんでした"); }
+    catch (e) { err = e; }
+    finally { await hideBusy(); }
+    if (err) { showFailBanner("パスワードの変更", err, [{ label: "🔄 再試行", fn: () => $("pinChange").click() }]); return; }
+    state.pin = n;
+    if (getSavedPin()) setSavedPin(n);
+    ["pinOld", "pinNew", "pinNew2"].forEach(id => { $(id).value = ""; });
+    okToast("パスワードを変更しました");
+  };
+  $("setGasSave").onclick = async () => {
+    const u = $("setGasUrl").value.trim();
+    if (!urlConfigured(u)) { toast("https:// で始まる GAS の URL を入れてください"); return; }
+    state.gasUrl = u; try { localStorage.setItem(LS.gasUrl, u); } catch (e) {}
+    state.loaded = false;
+    renderSettings();
+    await loadAll();
+  };
+  $("setGasReset").onclick = async () => {
+    try { localStorage.removeItem(LS.gasUrl); } catch (e) {}
+    state.gasUrl = GAS_URL; state.loaded = false; renderSettings();
+    if (urlConfigured(GAS_URL)) await loadAll(); else showLock("GAS の URL を入れてください");
+  };
+  document.querySelectorAll("[data-csv]").forEach(b => { b.onclick = () => exportCsv(b.dataset.csv); });
+  $("logoutBtn").onclick = () => { setSavedPin(""); state.pin = ""; state.loaded = false; showLock("ログアウトしました"); };
+  // 日付が変わったらコンディションを今日の分に切り替える
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && state.loaded) { renderCondition(); if (state.tab === "home") refreshFund(false); } });
+}
+
+async function boot() {
+  bindStatic();
+  let u = "";
+  try { u = localStorage.getItem(LS.gasUrl) || ""; } catch (e) {}
+  state.gasUrl = u || GAS_URL;
+  renderAll();
+  const saved = getSavedPin();
+  if (saved && urlConfigured(state.gasUrl)) {
+    state.pin = saved;
+    $("lock").classList.add("hide");
+    try {
+      const d = await apiRaw("auth");
+      if (d.status !== "ok") throw new Error(d.reason || "");
+    } catch (e) {
+      if (e.code === "AUTH") { setSavedPin(""); showLock(failReason(e)); return; }
+      // 通信エラーはロックせずバナーで再試行
+      showFailBanner("接続", e, [{ label: "🔄 再試行", fn: () => loadAll() }]);
+      return;
+    }
+    await loadAll();
+  } else {
+    $("lockRemember").checked = false;
+    showLock("");
+  }
+}
+boot();
+</script>
+</body>
+</html>
