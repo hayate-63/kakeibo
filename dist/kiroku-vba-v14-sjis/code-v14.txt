@@ -1,0 +1,1138 @@
+'#################################################################################
+'### 【貼り付け先 1】標準モジュール（モジュール名：modKiroku）
+'### ここから下、【貼り付け先 2】の区切り線の手前までを全て貼る
+'#################################################################################
+Option Explicit
+
+' 自動弁→流量計積算値 記録（本体一式）  code-v14 / 設計メモ v0.8・引き継ぎメモ v1.4
+' 直書きしてよいシート名は設定系の「設定」「設定1」「設定2」「設定3」だけ（設計メモ §1）。
+' それ以外のシート名・列記号・セル位置は、実行のたびに §8-2 アドレス表のセルから読む。
+
+' ===== 設定系シート名 =====
+Private Const SHEET_COMMON As String = "設定"
+
+' ===== §8-2 アドレス表（値は全てB列） =====
+Private Const VAL_COL As Long = 2
+
+' 共通設定「設定」
+Private Const C_BUTTON_SHEET As Long = 4
+Private Const C_LOG_SHEET As Long = 5
+Private Const C_NOTIFY As Long = 6
+Private Const C_CONFIRM As Long = 7
+Private Const C_STOP As Long = 8
+Private Const C_DUP As Long = 9
+Private Const C_SAVE As Long = 10
+
+' 系列別設定「設定1」「設定2」「設定3」（3枚とも同じ）
+Private Const S_NAME As Long = 4
+Private Const S_ENABLED As Long = 5
+Private Const S_DATA_SHEET As Long = 6
+Private Const S_START_ROW As Long = 7
+Private Const S_COL_VTS As Long = 8
+Private Const S_COL_V As Long = 9
+Private Const S_COL_FTS As Long = 10
+Private Const S_COL_F As Long = 11
+Private Const S_DEST1_SHEET As Long = 12   ' 記録先n シート名 = 12 + (n-1)*2
+Private Const S_DEST1_CELL As Long = 13    ' 記録先n 開始セル = 13 + (n-1)*2
+Private Const S_DAYS As Long = 18
+Private Const S_TOL As Long = 19
+Private Const S_EX_START As Long = 20
+Private Const S_EX_END As Long = 21
+Private Const S_READ_TARGET As Long = 22   ' 読み込み開始日時の書き込み先（「シート名!セル」形式）
+Private Const S_PTR_TS As Long = 24        ' 管理欄（触らない）
+Private Const S_PTR_ROW As Long = 25
+Private Const S_LAST_RUN As Long = 26
+Private Const S_LAST_COUNT As Long = 27
+Private Const S_READ_START As Long = 28    ' 読み込み開始日時（行22 の初期値の書き込み先）
+Private Const S_LAST_ROW As Long = 28
+
+' ===== その他の定数 =====
+Private Const SERIES_COUNT As Long = 3
+Private Const DT_FMT As String = "yyyy/mm/dd hh:mm:ss"     ' セルの表示書式
+Private Const DT_FMT_VBA As String = "yyyy/mm/dd hh:nn:ss"  ' メッセージ用（VBA の Format 関数）
+Private Const SAVE_AUTO As String = "自動保存"
+Private Const SAVE_PROMPT As String = "保存を促す"
+Private Const APP_TITLE As String = "記録ツール"
+Private Const ERR_TOOL As Long = vbObjectError + 513
+
+Private Const ST_OK As Long = 0
+Private Const ST_BLANK As Long = 1
+Private Const ST_DISABLED As Long = 2
+Private Const ST_ERROR As Long = 3
+
+' ===== 型 =====
+Private Type CommonCfg
+    ButtonSheet As String
+    LogSheet As String
+    NotifyOnOpen As Boolean
+    ConfirmRun As Boolean
+    StopFlag As Boolean
+    DupCheck As Boolean
+    SaveMethod As String
+End Type
+
+Private Type DestDef
+    No As Long             ' 記録先の番号（1～3）
+    SheetName As String
+    RowNo As Long          ' 開始セルの行
+    ColNo As Long          ' 開始セルの列
+End Type
+
+Private Type SeriesCfg
+    Index As Long
+    CfgSheet As String     ' 設定1～設定3
+    Name As String
+    Status As Long         ' ST_OK / ST_BLANK / ST_DISABLED
+    DataSheet As String
+    StartRow As Long
+    ColVTs As Long
+    ColV As Long
+    ColFTs As Long
+    ColF As Long
+    DestCount As Long
+    Dests(1 To 3) As DestDef
+    LookbackDays As Double
+    TolSec As Double
+    ExStartCell As Variant
+    ExEndCell As Variant
+    ReadTarget As Variant  ' 読み込み開始日時の書き込み先（未検証の生の値）
+    HasPtr As Boolean
+    PtrSec As Double       ' 処理済みタイムスタンプ（秒）
+End Type
+
+Private Type EventRec
+    ValveSec As Double
+    ValveRow As Long
+    Matched As Boolean
+    FlowSec As Double
+    FlowValue As Variant
+    Reason As String
+End Type
+
+Private Type ScanPlan
+    Count As Long          ' 立ち上がりの数
+    Events() As EventRec
+    HasLast As Boolean     ' 走査範囲に自動弁履歴行が1行以上あったか
+    LastSec As Double      ' 走査範囲内で最後の自動弁履歴行のタイムスタンプ（秒）
+    LastRow As Long        ' その行番号
+    RangeText As String
+End Type
+
+' ===== 画面更新・イベント・再計算の退避 =====
+Private mFast As Boolean
+Private mScreen As Boolean
+Private mEvents As Boolean
+Private mCalc As Long
+
+
+'=================================================================================
+' ボタンの受け口（引数なしの Public Sub。図形ボタンに割り当てる）
+'=================================================================================
+Public Sub Btn_RecordAll()
+    RecordAll
+End Sub
+
+Public Sub Btn_Preview1()
+    PreviewSeries 1
+End Sub
+
+Public Sub Btn_Preview2()
+    PreviewSeries 2
+End Sub
+
+Public Sub Btn_Preview3()
+    PreviewSeries 3
+End Sub
+
+Public Sub Btn_Reset1()
+    ResetSeries 1
+End Sub
+
+Public Sub Btn_Reset2()
+    ResetSeries 2
+End Sub
+
+Public Sub Btn_Reset3()
+    ResetSeries 3
+End Sub
+
+' Workbook_Open から呼ばれる通知処理（記録はしない）
+' 走査でエラーが出たら通知を諦めて静かに終わる（通常業務の邪魔をしない）
+Public Sub Kiroku_NotifyOnOpen()
+    Dim c As CommonCfg, s As SeriesCfg, p As ScanPlan
+    Dim i As Long, n As Long, total As Long, parts As String, nowSec As Double
+    On Error GoTo Quiet
+    c = LoadCommon()
+    If Not c.NotifyOnOpen Then Exit Sub
+    nowSec = ToSec(Now)
+    For i = 1 To SERIES_COUNT
+        s = LoadSeries(i, True)
+        If s.Status = ST_OK Then
+            p = ScanSeries(s, nowSec)
+            n = CountMatched(p)
+            total = total + n
+            parts = parts & "・" & s.Name & "：" & n & "件" & vbLf
+        End If
+    Next i
+    If Len(parts) = 0 Then Exit Sub
+    MsgBox "未処理（記録予定）の件数です。記録はしていません。" & vbLf & vbLf & parts & vbLf & _
+           "合計：" & total & "件" & vbLf & vbLf & "記録する時は、操作シートの「記録実行（全系列）」ボタンを押してください。", _
+           vbInformation, "開いた時の通知"
+    Exit Sub
+Quiet:
+    ' 何もしない
+End Sub
+
+
+'=================================================================================
+' 記録実行（全系列共通）設計メモ §10
+'=================================================================================
+Private Sub RecordAll()
+    Dim c As CommonCfg
+    Dim s(1 To 3) As SeriesCfg, p(1 To 3) As ScanPlan
+    Dim st(1 To 3) As Long, er(1 To 3) As String
+    Dim nowD As Date, nowSec As Double, i As Long
+    Dim msg As String, total As Long, rec As Long, unm As Long
+    Dim recorded As Long, dupEv As Long, partDup As Long, errText As String
+    Dim changed As Boolean, res As String, notes As String, saveNote As String
+    Dim readNote As String, readErr As String
+    Const T As String = "記録実行"
+
+    On Error GoTo EH
+
+    ' 1. 共通設定
+    c = LoadCommon()
+    If c.StopFlag Then
+        ShowMsg "記録停止フラグがONのため、記録しませんでした。" & vbLf & "（" & SHEET_COMMON & " B" & C_STOP & "）", vbExclamation, T
+        Exit Sub
+    End If
+
+    ' 1～4. 系列ごとに設定読込・検証・走査・照合
+    nowD = Now
+    nowSec = ToSec(nowD)
+    For i = 1 To SERIES_COUNT
+        st(i) = TryLoadScan(i, nowSec, s(i), p(i), er(i))
+    Next i
+
+    ' 5. 確認ダイアログ（実行前確認ONの時）
+    If c.ConfirmRun Then
+        msg = "次の内容で記録します。よろしいですか？" & vbLf & vbLf
+        total = 0
+        For i = 1 To SERIES_COUNT
+            Select Case st(i)
+                Case ST_OK
+                    rec = CountMatched(p(i))
+                    unm = p(i).Count - rec
+                    total = total + rec
+                    msg = msg & "・" & s(i).Name & "：記録予定 " & rec & "件"
+                    If unm > 0 Then msg = msg & "（照合できず記録しない " & unm & "件）"
+                    If rec > 0 Then msg = msg & vbLf & "　　期間 " & PeriodText(p(i))
+                    msg = msg & vbLf
+                Case ST_DISABLED
+                    msg = msg & "・" & s(i).Name & "：有効フラグOFFのため対象外" & vbLf
+                Case ST_ERROR
+                    msg = msg & "・" & SeriesSheetName(i) & "：設定に異常があるため記録しません" & vbLf & "　　（" & er(i) & "）" & vbLf
+                Case Else
+                    ' ST_BLANK は静かにスキップ（§12）
+            End Select
+        Next i
+        msg = msg & vbLf & "合計：" & total & "件"
+        If ShowMsg(msg, vbYesNo + vbQuestion, "記録実行の確認") <> vbYes Then
+            ShowMsg "キャンセルしました。どの系列も書き込み・ポインタ更新をしていません。", vbInformation, T
+            Exit Sub
+        End If
+    End If
+
+    ' 6～7. 系列ごとに記録 → 成功した系列だけポインタ更新
+    BeginFast
+    res = ""
+    For i = 1 To SERIES_COUNT
+        Select Case st(i)
+            Case ST_OK
+                errText = ""
+                If WriteSeries(s(i), p(i), c.DupCheck, recorded, dupEv, partDup, errText) Then
+                    If UpdatePointer(s(i), p(i), nowD, recorded, errText) Then
+                        changed = True
+                        ' ポインタが更新された時だけ、読み込み開始日時を上書き（失敗しても記録は成功扱い）
+                        readNote = ""
+                        If p(i).HasLast Then
+                            If Not WriteReadStart(s(i), p(i).LastSec, readErr) Then
+                                readNote = "　※読み込み開始日時の書き込みに失敗：" & readErr & "（記録とポインタ更新は完了）" & vbLf
+                            End If
+                        End If
+                        rec = CountMatched(p(i))
+                        unm = p(i).Count - rec
+                        notes = ""
+                        If unm > 0 Then notes = notes & "、照合できず記録しなかった " & unm & "件"
+                        If dupEv > 0 Then notes = notes & "、重複のため書かなかった " & dupEv & "件"
+                        If partDup > 0 Then notes = notes & "、一部の記録先だけ重複でスキップ " & partDup & "件"
+                        res = res & "・" & s(i).Name & "：記録 " & recorded & "件"
+                        If Len(notes) > 0 Then res = res & "（" & Mid$(notes, 2) & "）"
+                        res = res & vbLf & readNote
+                    Else
+                        If recorded > 0 Then changed = True
+                        res = res & "・" & s(i).Name & "：記録は完了しましたが、ポインタ更新でエラー：" & errText & vbLf & _
+                              "　（次回、重複チェックONなら二重記録は防がれます）" & vbLf
+                    End If
+                Else
+                    ' 書き込み途中のエラー：その系列は中断、ポインタは進めない（書いた行は消さない）
+                    changed = True
+                    res = res & "・" & s(i).Name & "：エラーのため中断。ポインタは更新していません。" & vbLf & errText & vbLf
+                End If
+            Case ST_DISABLED
+                res = res & "・" & s(i).Name & "：有効フラグOFFのため対象外" & vbLf
+            Case ST_ERROR
+                res = res & "・" & SeriesSheetName(i) & "：設定異常のため記録しませんでした（" & er(i) & "）" & vbLf
+            Case Else
+                ' ST_BLANK は静かにスキップ
+        End Select
+    Next i
+    EndFast
+
+    ' 8. 保存（共通設定「記録後の保存方法」に従う）→ 結果表示
+    If changed Then saveNote = SaveAfter(c.SaveMethod)
+    If Len(res) = 0 Then res = "処理対象の系列がありません。" & vbLf
+    If Len(saveNote) > 0 Then res = res & vbLf & saveNote
+    ShowMsg "記録実行の結果" & vbLf & vbLf & res, vbInformation, T
+    Exit Sub
+
+EH:
+    EndFast
+    ShowMsg "エラーのため中止しました：" & Err.Description & vbLf & "（どの系列も書き込み・ポインタ更新をしていません）", vbCritical, T
+End Sub
+
+' 1系列の設定読込＋走査。戻り値：ST_OK / ST_BLANK / ST_DISABLED / ST_ERROR
+Private Function TryLoadScan(ByVal idx As Long, ByVal nowSec As Double, s As SeriesCfg, p As ScanPlan, errText As String) As Long
+    On Error GoTo EH
+    s = LoadSeries(idx, True)
+    If s.Status <> ST_OK Then
+        TryLoadScan = s.Status
+        Exit Function
+    End If
+    p = ScanSeries(s, nowSec)
+    TryLoadScan = ST_OK
+    Exit Function
+EH:
+    errText = Err.Description
+    TryLoadScan = ST_ERROR
+End Function
+
+
+'=================================================================================
+' プレビュー（系列ごと）：手順2～4のみ。書き込みはしない
+'=================================================================================
+Private Sub PreviewSeries(ByVal idx As Long)
+    Dim s As SeriesCfg, p As ScanPlan, msg As String, k As Long, shown As Long, rec As Long
+    Dim T As String
+    T = "プレビュー（" & SeriesSheetName(idx) & "）"
+    On Error GoTo EH
+
+    s = LoadSeries(idx, True)
+    If s.Status = ST_BLANK Then
+        ShowMsg SeriesSheetName(idx) & " の系列名が空欄のため、未使用の系列です（処理対象外）。", vbInformation, T
+        Exit Sub
+    ElseIf s.Status = ST_DISABLED Then
+        ShowMsg s.Name & " は有効フラグOFFのため、プレビューの対象外です。", vbInformation, T
+        Exit Sub
+    End If
+
+    p = ScanSeries(s, ToSec(Now))
+    rec = CountMatched(p)
+    msg = s.Name & "（書き込みはしません）" & vbLf
+    msg = msg & "走査範囲：" & p.RangeText & vbLf
+    msg = msg & "記録予定：" & rec & "件" & vbLf
+    If rec > 0 Then msg = msg & "期間：" & PeriodText(p) & vbLf
+    If p.Count - rec > 0 Then msg = msg & "照合できず記録しない：" & (p.Count - rec) & "件" & vbLf
+    If p.Count > 0 Then
+        msg = msg & vbLf & "明細（立ち上がり）：" & vbLf
+        For k = 1 To p.Count
+            If shown >= 12 Then
+                msg = msg & "…ほか " & (p.Count - shown) & "件" & vbLf
+                Exit For
+            End If
+            If p.Events(k).Matched Then
+                msg = msg & k & ". " & FmtSec(p.Events(k).ValveSec) & " → " & FmtSec(p.Events(k).FlowSec) & " / " & TxtVal(p.Events(k).FlowValue) & vbLf
+            Else
+                msg = msg & k & ". " & FmtSec(p.Events(k).ValveSec) & " → 記録しない（" & p.Events(k).Reason & "）" & vbLf
+            End If
+            shown = shown + 1
+        Next k
+    End If
+    ShowMsg msg, vbInformation, T
+    Exit Sub
+EH:
+    ShowMsg "エラー：" & Err.Description, vbCritical, T
+End Sub
+
+
+'=================================================================================
+' 除外期間リセット（系列ごと）設計メモ §7
+' 警告・中止はしない。入力チェックのみ。ポインタは前進のみ（引き継ぎメモ v1.3）
+'=================================================================================
+Private Sub ResetSeries(ByVal idx As Long)
+    Dim c As CommonCfg, s As SeriesCfg
+    Dim wsBtn As Worksheet, wsLog As Worksheet, wsCfg As Worksheet
+    Dim r1 As Long, c1 As Long, r2 As Long, c2 As Long
+    Dim vS As Variant, vE As Variant, probs As String
+    Dim endSec As Double, advanced As Boolean, rowNo As Long, nextRow As Long
+    Dim nowD As Date, msg As String, saveNote As String, addrS As String, addrE As String
+    Dim readNote As String, readErr As String
+    Dim T As String
+    T = "リセット（" & SeriesSheetName(idx) & "）"
+    On Error GoTo EH
+
+    c = LoadCommon()
+    s = LoadSeries(idx, False)
+    If s.Status = ST_BLANK Then
+        ShowMsg SeriesSheetName(idx) & " の系列名が空欄のため、未使用の系列です（処理対象外）。", vbInformation, T
+        Exit Sub
+    ElseIf s.Status = ST_DISABLED Then
+        ShowMsg s.Name & " は有効フラグOFFのため、リセットの対象外です。", vbInformation, T
+        Exit Sub
+    End If
+
+    Set wsBtn = GetSheet(c.ButtonSheet)
+    If wsBtn Is Nothing Then RaiseMsg "ボタンシート「" & c.ButtonSheet & "」が見つかりません（" & SHEET_COMMON & " B" & C_BUTTON_SHEET & "）"
+    Set wsLog = GetSheet(c.LogSheet)
+    If wsLog Is Nothing Then RaiseMsg "リセットログシート「" & c.LogSheet & "」が見つかりません（" & SHEET_COMMON & " B" & C_LOG_SHEET & "）"
+    Set wsCfg = GetSheet(s.CfgSheet)
+
+    ParseA1 s.ExStartCell, "除外開始セル（" & s.CfgSheet & " B" & S_EX_START & "）", r1, c1
+    ParseA1 s.ExEndCell, "除外終了セル（" & s.CfgSheet & " B" & S_EX_END & "）", r2, c2
+    addrS = c.ButtonSheet & "!" & wsBtn.Cells(r1, c1).Address(False, False)
+    addrE = c.ButtonSheet & "!" & wsBtn.Cells(r2, c2).Address(False, False)
+    vS = wsBtn.Cells(r1, c1).Value
+    vE = wsBtn.Cells(r2, c2).Value
+
+    ' 入力チェックのみ（満たさなければエラー表示だけで何も変えない）
+    If IsBlankVal(vS) Then
+        probs = probs & "・除外開始（" & addrS & "）が未入力です" & vbLf
+    ElseIf Not IsDateVal(vS) Then
+        probs = probs & "・除外開始（" & addrS & "）が日時として認識できません" & vbLf
+    End If
+    If IsBlankVal(vE) Then
+        probs = probs & "・除外終了（" & addrE & "）が未入力です" & vbLf
+    ElseIf Not IsDateVal(vE) Then
+        probs = probs & "・除外終了（" & addrE & "）が日時として認識できません" & vbLf
+    End If
+    If Len(probs) = 0 Then
+        If ToSec(vS) > ToSec(vE) Then probs = "・除外開始が除外終了より後になっています" & vbLf
+    End If
+    If Len(probs) > 0 Then
+        ShowMsg "入力に誤りがあるため、何も変更していません。" & vbLf & vbLf & probs, vbExclamation, T
+        Exit Sub
+    End If
+
+    ' ポインタは前進のみ：除外終了が現在のポインタより前なら変えない
+    endSec = ToSec(vE)
+    advanced = True
+    If s.HasPtr Then
+        If endSec < s.PtrSec Then advanced = False
+    End If
+    If advanced Then rowNo = LastValveRowAtOrBefore(s, endSec)
+
+    nowD = Now
+    BeginFast
+    If advanced Then
+        wsCfg.Cells(S_PTR_TS, VAL_COL).Value = SecToDate(endSec)
+        wsCfg.Cells(S_PTR_TS, VAL_COL).NumberFormat = DT_FMT
+        If rowNo > 0 Then
+            wsCfg.Cells(S_PTR_ROW, VAL_COL).Value = rowNo
+        Else
+            wsCfg.Cells(S_PTR_ROW, VAL_COL).ClearContents
+        End If
+        ' ポインタが前進した時だけ、読み込み開始日時を上書き（失敗してもリセットは成功扱い）
+        If Not WriteReadStart(s, endSec, readErr) Then
+            readNote = "※読み込み開始日時の書き込みに失敗：" & readErr & "（リセットは完了）"
+        End If
+    End If
+
+    ' リセットログへ1行追記（A 実行日時／B 系列名／C 除外開始／D 除外終了／E リセット後の処理済みタイムスタンプ）
+    nextRow = wsLog.Cells(wsLog.Rows.Count, 1).End(xlUp).Row + 1
+    If nextRow < 2 Then nextRow = 2
+    wsLog.Cells(nextRow, 1).Value = nowD
+    wsLog.Cells(nextRow, 2).NumberFormat = "@"
+    wsLog.Cells(nextRow, 2).Value = s.Name
+    wsLog.Cells(nextRow, 3).Value = vS
+    wsLog.Cells(nextRow, 4).Value = vE
+    If advanced Then
+        wsLog.Cells(nextRow, 5).Value = SecToDate(endSec)
+        wsLog.Cells(nextRow, 5).NumberFormat = DT_FMT
+    Else
+        wsLog.Cells(nextRow, 5).NumberFormat = "@"
+        wsLog.Cells(nextRow, 5).Value = "ポインタ不変（除外終了が現在のポインタ " & FmtSec(s.PtrSec) & " より前のため）"
+    End If
+    wsLog.Cells(nextRow, 1).NumberFormat = DT_FMT
+    wsLog.Cells(nextRow, 3).NumberFormat = DT_FMT
+    wsLog.Cells(nextRow, 4).NumberFormat = DT_FMT
+    EndFast
+
+    saveNote = SaveAfter(c.SaveMethod)
+
+    If advanced Then
+        msg = s.Name & " のポインタを除外終了日時まで進めました。" & vbLf & vbLf
+        msg = msg & "除外開始：" & FmtSec(ToSec(vS)) & vbLf
+        msg = msg & "除外終了：" & FmtSec(endSec) & vbLf
+        msg = msg & "リセット後の処理済みタイムスタンプ：" & FmtSec(endSec) & vbLf
+        If rowNo > 0 Then
+            msg = msg & "リセット後の処理済み行番号：" & rowNo & vbLf
+        Else
+            msg = msg & "リセット後の処理済み行番号：（該当行なし）" & vbLf
+        End If
+    Else
+        msg = s.Name & " のポインタは変えていません。" & vbLf & _
+              "除外終了（" & FmtSec(endSec) & "）が、現在のポインタ（" & FmtSec(s.PtrSec) & "）より前のためです。" & vbLf
+    End If
+    msg = msg & vbLf & "リセットログ（" & c.LogSheet & "）の " & nextRow & "行目に記録しました。"
+    If Len(readNote) > 0 Then msg = msg & vbLf & readNote
+    If Len(saveNote) > 0 Then msg = msg & vbLf & saveNote
+    ShowMsg msg, vbInformation, T
+    Exit Sub
+EH:
+    EndFast
+    ShowMsg "エラー：" & Err.Description, vbCritical, T
+End Sub
+
+' 除外終了日時以前の最後の自動弁履歴行（無ければ 0）
+Private Function LastValveRowAtOrBefore(s As SeriesCfg, ByVal endSec As Double) As Long
+    Dim ws As Worksheet, lastRow As Long, n As Long, a As Variant, i As Long
+    Set ws = GetSheet(s.DataSheet)
+    lastRow = ws.Cells(ws.Rows.Count, s.ColVTs).End(xlUp).Row
+    If lastRow < s.StartRow Then Exit Function
+    n = lastRow - s.StartRow + 1
+    a = GetBlock(ws, s.StartRow, s.ColVTs, n, 1)
+    For i = 1 To n
+        If IsDateVal(a(i, 1)) Then
+            If ToSec(a(i, 1)) <= endSec Then LastValveRowAtOrBefore = s.StartRow + i - 1
+        End If
+    Next i
+End Function
+
+
+'=================================================================================
+' 設定の読込・検証
+'=================================================================================
+Private Function LoadCommon() As CommonCfg
+    Dim ws As Worksheet, c As CommonCfg, v As Variant
+    Set ws = GetSheet(SHEET_COMMON)
+    If ws Is Nothing Then RaiseMsg "共通設定シート「" & SHEET_COMMON & "」が見つかりません"
+    v = GetBlock(ws, 1, VAL_COL, C_SAVE, 1)
+
+    c.ButtonSheet = TxtVal(v(C_BUTTON_SHEET, 1))
+    If Len(c.ButtonSheet) = 0 Then RaiseMsg "ボタンシート名が空欄です（" & SHEET_COMMON & " B" & C_BUTTON_SHEET & "）"
+    c.LogSheet = TxtVal(v(C_LOG_SHEET, 1))
+    If Len(c.LogSheet) = 0 Then RaiseMsg "リセットログシート名が空欄です（" & SHEET_COMMON & " B" & C_LOG_SHEET & "）"
+    c.NotifyOnOpen = ParseOnOff(v(C_NOTIFY, 1), "開いた時の通知（" & SHEET_COMMON & " B" & C_NOTIFY & "）")
+    c.ConfirmRun = ParseOnOff(v(C_CONFIRM, 1), "実行前確認（" & SHEET_COMMON & " B" & C_CONFIRM & "）")
+    c.StopFlag = ParseOnOff(v(C_STOP, 1), "記録停止フラグ（" & SHEET_COMMON & " B" & C_STOP & "）")
+    c.DupCheck = ParseOnOff(v(C_DUP, 1), "重複チェック（" & SHEET_COMMON & " B" & C_DUP & "）")
+    c.SaveMethod = TxtVal(v(C_SAVE, 1))
+    If c.SaveMethod <> SAVE_AUTO And c.SaveMethod <> SAVE_PROMPT Then
+        RaiseMsg "記録後の保存方法は「" & SAVE_AUTO & "」か「" & SAVE_PROMPT & "」で入力してください（" & SHEET_COMMON & " B" & C_SAVE & "）"
+    End If
+    LoadCommon = c
+End Function
+
+' needDest：記録先を検証するか（リセットでは不要）
+Private Function LoadSeries(ByVal idx As Long, ByVal needDest As Boolean) As SeriesCfg
+    Dim ws As Worksheet, s As SeriesCfg, v As Variant, sn As String
+    Dim d As Long, dn As String, r As Long, cc As Long, ptr As Variant
+
+    sn = SeriesSheetName(idx)
+    Set ws = GetSheet(sn)
+    If ws Is Nothing Then RaiseMsg "系列別設定シート「" & sn & "」が見つかりません"
+    v = GetBlock(ws, 1, VAL_COL, S_LAST_ROW, 1)
+
+    s.Index = idx
+    s.CfgSheet = sn
+    s.Name = TxtVal(v(S_NAME, 1))
+    If Len(s.Name) = 0 Then
+        s.Status = ST_BLANK            ' §12：静かにスキップ
+        LoadSeries = s
+        Exit Function
+    End If
+    If Not ParseOnOff(v(S_ENABLED, 1), "系列の有効フラグ（" & sn & " B" & S_ENABLED & "）") Then
+        s.Status = ST_DISABLED
+        LoadSeries = s
+        Exit Function
+    End If
+    s.Status = ST_OK
+
+    s.DataSheet = TxtVal(v(S_DATA_SHEET, 1))
+    If Len(s.DataSheet) = 0 Then RaiseMsg "データ抽出シート名が空欄です（" & sn & " B" & S_DATA_SHEET & "）"
+    If GetSheet(s.DataSheet) Is Nothing Then RaiseMsg "データ抽出シート「" & s.DataSheet & "」が見つかりません（" & sn & " B" & S_DATA_SHEET & "）"
+    s.StartRow = PosInt(v(S_START_ROW, 1), "データ開始行（" & sn & " B" & S_START_ROW & "）")
+    s.ColVTs = ColNum(v(S_COL_VTS, 1), "自動弁タイムスタンプ列（" & sn & " B" & S_COL_VTS & "）")
+    s.ColV = ColNum(v(S_COL_V, 1), "自動弁列（" & sn & " B" & S_COL_V & "）")
+    s.ColFTs = ColNum(v(S_COL_FTS, 1), "積算値タイムスタンプ列（" & sn & " B" & S_COL_FTS & "）")
+    s.ColF = ColNum(v(S_COL_F, 1), "積算値列（" & sn & " B" & S_COL_F & "）")
+
+    s.DestCount = 0
+    If needDest Then
+        For d = 1 To 3
+            dn = TxtVal(v(S_DEST1_SHEET + (d - 1) * 2, 1))
+            If Len(dn) = 0 Then
+                If d = 1 Then RaiseMsg "記録先1シート名が空欄です（" & sn & " B" & S_DEST1_SHEET & "）"
+                ' 記録先2・3の空欄は「使わない」（§12）
+            Else
+                If GetSheet(dn) Is Nothing Then RaiseMsg "記録先" & d & "「" & dn & "」が見つかりません（" & sn & " B" & (S_DEST1_SHEET + (d - 1) * 2) & "）"
+                ParseA1 v(S_DEST1_CELL + (d - 1) * 2, 1), "記録先" & d & "開始セル（" & sn & " B" & (S_DEST1_CELL + (d - 1) * 2) & "）", r, cc
+                s.DestCount = s.DestCount + 1
+                s.Dests(s.DestCount).No = d
+                s.Dests(s.DestCount).SheetName = dn
+                s.Dests(s.DestCount).RowNo = r
+                s.Dests(s.DestCount).ColNo = cc
+            End If
+        Next d
+    End If
+
+    s.LookbackDays = NumVal(v(S_DAYS, 1), "遡り日数（" & sn & " B" & S_DAYS & "）", False)
+    s.TolSec = NumVal(v(S_TOL, 1), "照合許容差（秒）（" & sn & " B" & S_TOL & "）", True)
+    s.ExStartCell = v(S_EX_START, 1)
+    s.ExEndCell = v(S_EX_END, 1)
+    s.ReadTarget = v(S_READ_TARGET, 1)   ' ここでは検証しない（書けなくても記録は止めない：§4）
+
+    ptr = v(S_PTR_TS, 1)
+    If IsBlankVal(ptr) Then
+        s.HasPtr = False
+    ElseIf IsDateVal(ptr) Then
+        s.HasPtr = True
+        s.PtrSec = ToSec(ptr)
+    Else
+        RaiseMsg "管理欄の処理済みタイムスタンプが日時ではありません（" & sn & " B" & S_PTR_TS & "）"
+    End If
+
+    LoadSeries = s
+End Function
+
+
+'=================================================================================
+' 走査・立ち上がり検出・照合（設計メモ §3～§5）
+' 日時は全て「秒（整数値の Double）」に丸めて比較する
+'=================================================================================
+Private Function ScanSeries(s As SeriesCfg, ByVal nowSec As Double) As ScanPlan
+    Dim p As ScanPlan, ws As Worksheet
+    Dim lastRow As Long, n As Long, minC As Long, maxC As Long, a As Variant, i As Long
+    Dim windowStart As Double
+    Dim fSec() As Double, fVal() As Variant, nf As Long
+    Dim ts As Variant, vv As Variant, prevV As Variant, hasPrev As Boolean
+    Dim sec As Double, inRange As Boolean
+
+    Set ws = GetSheet(s.DataSheet)
+    windowStart = nowSec - Int(s.LookbackDays * 86400# + 0.5)
+    ' 走査範囲：ポインタがあれば「ポインタより後～最新」を全て（遡り日数で切らない）
+    '           ポインタが無い時（初回）だけ「現在－遡り日数 以後～最新」
+    If s.HasPtr Then
+        p.RangeText = FmtSec(s.PtrSec) & " より後（ポインタ）～最新"
+    Else
+        p.RangeText = FmtSec(windowStart) & " 以後（遡り " & s.LookbackDays & "日）～最新"
+    End If
+
+    lastRow = LastDataRow(ws, s)
+    If lastRow < s.StartRow Then
+        ScanSeries = p
+        Exit Function
+    End If
+    n = lastRow - s.StartRow + 1
+    minC = MinOf4(s.ColVTs, s.ColV, s.ColFTs, s.ColF)
+    maxC = MaxOf4(s.ColVTs, s.ColV, s.ColFTs, s.ColF)
+    a = GetBlock(ws, s.StartRow, minC, n, maxC - minC + 1)
+
+    ' 流量計履歴（タイムスタンプが日時でない行は除外）
+    ReDim fSec(1 To n)
+    ReDim fVal(1 To n)
+    nf = 0
+    For i = 1 To n
+        ts = a(i, s.ColFTs - minC + 1)
+        If IsDateVal(ts) Then
+            nf = nf + 1
+            fSec(nf) = ToSec(ts)
+            fVal(nf) = a(i, s.ColF - minC + 1)
+        End If
+    Next i
+
+    ' 自動弁履歴を走査（直前の有効行の値も参照する）
+    hasPrev = False
+    For i = 1 To n
+        ts = a(i, s.ColVTs - minC + 1)
+        If IsDateVal(ts) Then                       ' §12：タイムスタンプ空白行は走査対象外
+            vv = a(i, s.ColV - minC + 1)
+            sec = ToSec(ts)
+            If s.HasPtr Then
+                inRange = (sec > s.PtrSec)
+            Else
+                inRange = (sec >= windowStart)
+            End If
+            If inRange Then
+                p.HasLast = True
+                p.LastSec = sec
+                p.LastRow = s.StartRow + i - 1
+                If IsRise(hasPrev, prevV, vv) Then
+                    p.Count = p.Count + 1
+                    ReDim Preserve p.Events(1 To p.Count)
+                    p.Events(p.Count) = MatchFlow(sec, s.StartRow + i - 1, fSec, fVal, nf, s.TolSec)
+                End If
+            End If
+            prevV = vv
+            hasPrev = True
+        End If
+    Next i
+    ScanSeries = p
+End Function
+
+' 0→1 のみ。0/1 以外（空白・文字・エラー値）は立ち上がりと判定しない
+Private Function IsRise(ByVal hasPrev As Boolean, ByVal prevV As Variant, ByVal cur As Variant) As Boolean
+    IsRise = False
+    If Not hasPrev Then Exit Function
+    If Not IsNumVal(prevV) Then Exit Function
+    If Not IsNumVal(cur) Then Exit Function
+    If prevV = 0 And cur = 1 Then IsRise = True
+End Function
+
+' 許容差以内で最も近い1件。同距離なら直前（時刻が前）を優先（§3）
+Private Function MatchFlow(ByVal vSec As Double, ByVal vRow As Long, fSec() As Double, fVal() As Variant, _
+                           ByVal nf As Long, ByVal tol As Double) As EventRec
+    Dim e As EventRec, j As Long, best As Long, bestD As Double, d As Double
+    e.ValveSec = vSec
+    e.ValveRow = vRow
+    best = 0
+    For j = 1 To nf
+        d = Abs(fSec(j) - vSec)
+        If d <= tol Then
+            If best = 0 Then
+                best = j
+                bestD = d
+            ElseIf d < bestD Then
+                best = j
+                bestD = d
+            ElseIf d = bestD And fSec(j) < fSec(best) Then
+                best = j
+            End If
+        End If
+    Next j
+    If best = 0 Then
+        e.Reason = "許容差 " & tol & "秒 以内に流量計記録なし"
+    ElseIf IsBlankVal(fVal(best)) Then
+        e.Reason = "照合した積算値が空白"                 ' §12
+    ElseIf IsError(fVal(best)) Then
+        e.Reason = "照合した積算値がエラー値"
+    Else
+        e.Matched = True
+        e.FlowSec = fSec(best)
+        e.FlowValue = fVal(best)
+    End If
+    MatchFlow = e
+End Function
+
+Private Function CountMatched(p As ScanPlan) As Long
+    Dim k As Long
+    For k = 1 To p.Count
+        If p.Events(k).Matched Then CountMatched = CountMatched + 1
+    Next k
+End Function
+
+Private Function PeriodText(p As ScanPlan) As String
+    Dim k As Long, firstK As Long, lastK As Long
+    For k = 1 To p.Count
+        If p.Events(k).Matched Then
+            If firstK = 0 Then firstK = k
+            lastK = k
+        End If
+    Next k
+    If firstK > 0 Then PeriodText = FmtSec(p.Events(firstK).ValveSec) & " ～ " & FmtSec(p.Events(lastK).ValveSec)
+End Function
+
+Private Function LastDataRow(ws As Worksheet, s As SeriesCfg) As Long
+    Dim r As Long, m As Long
+    m = ws.Cells(ws.Rows.Count, s.ColVTs).End(xlUp).Row
+    r = ws.Cells(ws.Rows.Count, s.ColV).End(xlUp).Row: If r > m Then m = r
+    r = ws.Cells(ws.Rows.Count, s.ColFTs).End(xlUp).Row: If r > m Then m = r
+    r = ws.Cells(ws.Rows.Count, s.ColF).End(xlUp).Row: If r > m Then m = r
+    LastDataRow = m
+End Function
+
+
+'=================================================================================
+' 書き込み（§3：開始セルから下の最初の空白セルへ追記、上書き禁止／§8：重複チェック）
+' 成功したら True。途中でエラーになったら False と errText（どこまで書いたか）
+'=================================================================================
+Private Function WriteSeries(s As SeriesCfg, p As ScanPlan, ByVal dupCheck As Boolean, _
+                             ByRef recorded As Long, ByRef dupEvents As Long, ByRef partialDup As Long, _
+                             ByRef errText As String) As Boolean
+    Dim wsD(1 To 3) As Worksheet, colVals(1 To 3) As Variant, colLen(1 To 3) As Long
+    Dim cursor(1 To 3) As Long, written(1 To 3) As Long, dict(1 To 3) As Object
+    Dim j As Long, i As Long, k As Long, lr As Long, rowW As Long, key As String
+    Dim matchedNo As Long, curK As Long, curJ As Long, lastDone As String
+    Dim wroteAny As Boolean, dupAny As Boolean, rng As Range, info As String
+
+    recorded = 0: dupEvents = 0: partialDup = 0
+    On Error GoTo EH
+
+    ' 記録先ごとの準備：開始セルの列を読み、空白位置と既存の自動弁タイムスタンプを把握する
+    For j = 1 To s.DestCount
+        Set wsD(j) = GetSheet(s.Dests(j).SheetName)
+        Set dict(j) = CreateObject("Scripting.Dictionary")
+        lr = wsD(j).Cells(wsD(j).Rows.Count, s.Dests(j).ColNo).End(xlUp).Row
+        If lr >= s.Dests(j).RowNo Then
+            colLen(j) = lr - s.Dests(j).RowNo + 1
+            colVals(j) = GetBlock(wsD(j), s.Dests(j).RowNo, s.Dests(j).ColNo, colLen(j), 1)
+            For i = 1 To colLen(j)
+                If IsDateVal(colVals(j)(i, 1)) Then dict(j).Item(CStr(ToSec(colVals(j)(i, 1)))) = True
+            Next i
+        Else
+            colLen(j) = 0
+        End If
+        cursor(j) = 1
+    Next j
+
+    ' イベントごとに、記録先1→2→3 の順で書く
+    For k = 1 To p.Count
+        If p.Events(k).Matched Then
+            matchedNo = matchedNo + 1
+            curK = k
+            wroteAny = False
+            dupAny = False
+            key = CStr(p.Events(k).ValveSec)
+            For j = 1 To s.DestCount
+                curJ = j
+                If dupCheck And dict(j).Exists(key) Then
+                    dupAny = True
+                Else
+                    ' 開始セルから下へ最初の空白セル
+                    Do While cursor(j) <= colLen(j)
+                        If IsBlankVal(colVals(j)(cursor(j), 1)) Then Exit Do
+                        cursor(j) = cursor(j) + 1
+                    Loop
+                    rowW = s.Dests(j).RowNo + cursor(j) - 1
+                    Set rng = wsD(j).Cells(rowW, s.Dests(j).ColNo).Resize(1, 3)
+                    ' 上書き禁止：書く3セルが全て空でなければ中断
+                    If Not (IsBlankVal(rng.Cells(1, 1).Value) And IsBlankVal(rng.Cells(1, 2).Value) And IsBlankVal(rng.Cells(1, 3).Value)) Then
+                        RaiseMsg wsD(j).Name & " の " & rowW & "行目は開始列が空白ですが右側の列が埋まっているため、上書きを避けて中断しました"
+                    End If
+                    rng.Cells(1, 1).Value = SecToDate(p.Events(k).ValveSec)
+                    rng.Cells(1, 2).Value = SecToDate(p.Events(k).FlowSec)
+                    rng.Cells(1, 3).Value = p.Events(k).FlowValue
+                    rng.Cells(1, 1).Resize(1, 2).NumberFormat = DT_FMT
+                    cursor(j) = cursor(j) + 1
+                    dict(j).Item(key) = True
+                    written(j) = written(j) + 1
+                    wroteAny = True
+                End If
+            Next j
+            If wroteAny Then recorded = recorded + 1
+            If dupAny And Not wroteAny Then dupEvents = dupEvents + 1
+            If dupAny And wroteAny Then partialDup = partialDup + 1
+            lastDone = FmtSec(p.Events(k).ValveSec)
+        End If
+    Next k
+
+    WriteSeries = True
+    Exit Function
+
+EH:
+    If curK = 0 Then
+        errText = "　記録先の準備中にエラー：" & Err.Description & vbLf & "　（何も書き込んでいません）"
+    Else
+        info = ""
+        For j = 1 To s.DestCount
+            If Len(info) > 0 Then info = info & "、"
+            info = info & "記録先" & s.Dests(j).No & " " & written(j) & "行"
+        Next j
+        errText = "　" & matchedNo & "件目（自動弁 " & FmtSec(p.Events(curK).ValveSec) & "）の記録先" & s.Dests(curJ).No & _
+                  "「" & s.Dests(curJ).SheetName & "」への書き込みで失敗：" & Err.Description & vbLf & _
+                  "　ここまでに書き込み済み：" & info
+        If Len(lastDone) > 0 Then errText = errText & vbLf & "　最後に完了したイベント：" & lastDone
+    End If
+    WriteSeries = False
+End Function
+
+' 記録成功後にだけ呼ぶ。ポインタ＝走査範囲内で最後の自動弁履歴行（0件でも行があれば進む）
+Private Function UpdatePointer(s As SeriesCfg, p As ScanPlan, ByVal runAt As Date, ByVal recCount As Long, _
+                               ByRef errText As String) As Boolean
+    Dim ws As Worksheet
+    On Error GoTo EH
+    Set ws = GetSheet(s.CfgSheet)
+    If p.HasLast Then
+        ws.Cells(S_PTR_TS, VAL_COL).Value = SecToDate(p.LastSec)
+        ws.Cells(S_PTR_TS, VAL_COL).NumberFormat = DT_FMT
+        ws.Cells(S_PTR_ROW, VAL_COL).Value = p.LastRow
+    End If
+    ws.Cells(S_LAST_RUN, VAL_COL).Value = runAt
+    ws.Cells(S_LAST_RUN, VAL_COL).NumberFormat = DT_FMT
+    ws.Cells(S_LAST_COUNT, VAL_COL).Value = recCount
+    UpdatePointer = True
+    Exit Function
+EH:
+    errText = Err.Description
+    UpdatePointer = False
+End Function
+
+' 読み込み開始日時の連動（設計メモ v0.8 §4）：ポインタ日時を、行22 で指定された「シート名!セル」へ上書きする
+' 書けなかったら False と理由を返す（呼び出し側は記録・リセットを巻き戻さない）
+Private Function WriteReadStart(s As SeriesCfg, ByVal sec As Double, ByRef errText As String) As Boolean
+    Dim t As String, pos As Long, shName As String, cellText As String
+    Dim ws As Worksheet, r As Long, c As Long
+    On Error GoTo EH
+    WriteReadStart = False
+    ' シート名側は半角化しない（カタカナのシート名が半角カナになって見つからなくなるため）。全角の「！」だけ半角に直す
+    t = Replace(TxtVal(s.ReadTarget), "！", "!")
+    pos = InStrRev(t, "!")
+    If pos <= 1 Or pos = Len(t) Then
+        errText = "書き込み先（" & s.CfgSheet & " B" & S_READ_TARGET & "）は「シート名!セル」の形で入力してください（現在：「" & TxtVal(s.ReadTarget) & "」）"
+        Exit Function
+    End If
+    shName = Trim$(Left$(t, pos - 1))
+    If Len(shName) >= 2 And Left$(shName, 1) = "'" And Right$(shName, 1) = "'" Then shName = Mid$(shName, 2, Len(shName) - 2)
+    cellText = Replace(Trim$(Mid$(t, pos + 1)), "$", "")
+    Set ws = GetSheet(shName)
+    If ws Is Nothing Then
+        errText = "書き込み先のシート「" & shName & "」が見つかりません（" & s.CfgSheet & " B" & S_READ_TARGET & "）"
+        Exit Function
+    End If
+    ParseA1 cellText, "書き込み先のセル（" & s.CfgSheet & " B" & S_READ_TARGET & "）", r, c
+    ws.Cells(r, c).Value = SecToDate(sec)
+    ws.Cells(r, c).NumberFormat = DT_FMT
+    WriteReadStart = True
+    Exit Function
+EH:
+    errText = Err.Description
+    WriteReadStart = False
+End Function
+
+' 共通設定「記録後の保存方法」に従って保存。結果の一言を返す
+Private Function SaveAfter(ByVal method As String) As String
+    On Error GoTo EH
+    If method = SAVE_AUTO Then
+        ThisWorkbook.Save
+        SaveAfter = "ブックを保存しました。"
+    Else
+        If MsgBox("記録とポインタを確定するため、ブックを保存しますか？" & vbLf & _
+                  "（保存しないで閉じると、次回同じ分が再び対象になります）", vbYesNo + vbQuestion, "保存") = vbYes Then
+            ThisWorkbook.Save
+            SaveAfter = "ブックを保存しました。"
+        Else
+            SaveAfter = "まだ保存していません。閉じる前に必ず保存してください。"
+        End If
+    End If
+    Exit Function
+EH:
+    SaveAfter = "保存に失敗しました：" & Err.Description & "（手で保存してください）"
+End Function
+
+
+'=================================================================================
+' 共通部品
+'=================================================================================
+Private Function SeriesSheetName(ByVal idx As Long) As String
+    Select Case idx
+        Case 1: SeriesSheetName = "設定1"
+        Case 2: SeriesSheetName = "設定2"
+        Case 3: SeriesSheetName = "設定3"
+    End Select
+End Function
+
+Private Function GetSheet(ByVal sheetName As String) As Worksheet
+    Set GetSheet = Nothing
+    If Len(sheetName) = 0 Then Exit Function
+    On Error Resume Next
+    Set GetSheet = ThisWorkbook.Worksheets(sheetName)
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+' 常に 2次元配列（1始まり）で返す
+Private Function GetBlock(ws As Worksheet, ByVal r As Long, ByVal c As Long, ByVal nr As Long, ByVal nc As Long) As Variant
+    Dim v As Variant, a() As Variant
+    v = ws.Cells(r, c).Resize(nr, nc).Value
+    If nr = 1 And nc = 1 Then
+        ReDim a(1 To 1, 1 To 1)
+        a(1, 1) = v
+        GetBlock = a
+    Else
+        GetBlock = v
+    End If
+End Function
+
+' 日時 → 秒。CLng だと 2026年のシリアル値×86400（約40億）で桁あふれするため Double で持つ
+' 四捨五入は Int(x + 0.5)（VBA の Round は銀行型丸めのため使わない）
+Private Function ToSec(ByVal d As Variant) As Double
+    ToSec = Int(CDbl(d) * 86400# + 0.5)
+End Function
+
+Private Function SecToDate(ByVal sec As Double) As Date
+    SecToDate = CDate(sec / 86400#)
+End Function
+
+Private Function FmtSec(ByVal sec As Double) As String
+    FmtSec = Format$(SecToDate(sec), DT_FMT_VBA)
+End Function
+
+Private Function IsDateVal(ByVal v As Variant) As Boolean
+    IsDateVal = (VarType(v) = vbDate)
+End Function
+
+Private Function IsBlankVal(ByVal v As Variant) As Boolean
+    If IsEmpty(v) Then
+        IsBlankVal = True
+    ElseIf VarType(v) = vbString Then
+        IsBlankVal = (Len(v) = 0)
+    Else
+        IsBlankVal = False
+    End If
+End Function
+
+Private Function IsNumVal(ByVal v As Variant) As Boolean
+    Select Case VarType(v)
+        Case vbDouble, vbSingle, vbInteger, vbLong, vbCurrency, vbDecimal, vbByte
+            IsNumVal = True
+        Case Else
+            IsNumVal = False
+    End Select
+End Function
+
+Private Function TxtVal(ByVal v As Variant) As String
+    If IsError(v) Then
+        TxtVal = "#エラー値"
+    ElseIf IsEmpty(v) Or IsNull(v) Then
+        TxtVal = ""
+    Else
+        TxtVal = Trim$(CStr(v))
+    End If
+End Function
+
+Private Sub RaiseMsg(ByVal msg As String)
+    Err.Raise ERR_TOOL, APP_TITLE, msg
+End Sub
+
+Private Function ParseOnOff(ByVal v As Variant, ByVal label As String) As Boolean
+    Dim t As String
+    If VarType(v) = vbBoolean Then
+        ParseOnOff = v
+        Exit Function
+    End If
+    t = UCase$(StrConv(TxtVal(v), vbNarrow))
+    If t = "ON" Then
+        ParseOnOff = True
+    ElseIf t = "OFF" Then
+        ParseOnOff = False
+    Else
+        RaiseMsg label & " は ON か OFF で入力してください（現在：「" & TxtVal(v) & "」）"
+    End If
+End Function
+
+Private Function ColNum(ByVal v As Variant, ByVal label As String) As Long
+    Dim t As String, i As Long, n As Long, ch As String
+    t = UCase$(StrConv(TxtVal(v), vbNarrow))
+    If Len(t) < 1 Or Len(t) > 3 Then RaiseMsg label & " は列記号（例：A）で入力してください（現在：「" & TxtVal(v) & "」）"
+    For i = 1 To Len(t)
+        ch = Mid$(t, i, 1)
+        If ch < "A" Or ch > "Z" Then RaiseMsg label & " は列記号（例：A）で入力してください（現在：「" & TxtVal(v) & "」）"
+        n = n * 26 + (Asc(ch) - 64)
+    Next i
+    If n > 16384 Then RaiseMsg label & " の列記号が大きすぎます（現在：「" & TxtVal(v) & "」）"
+    ColNum = n
+End Function
+
+Private Sub ParseA1(ByVal v As Variant, ByVal label As String, ByRef r As Long, ByRef c As Long)
+    Dim t As String, i As Long, ch As String, letters As String, digits As String
+    t = UCase$(StrConv(TxtVal(v), vbNarrow))
+    i = 1
+    Do While i <= Len(t)
+        ch = Mid$(t, i, 1)
+        If ch < "A" Or ch > "Z" Then Exit Do
+        i = i + 1
+    Loop
+    letters = Left$(t, i - 1)
+    digits = Mid$(t, i)
+    If Len(letters) = 0 Or Len(digits) = 0 Or Len(digits) > 7 Or Left$(digits, 1) = "0" Then
+        RaiseMsg label & " はセル番地（例：A2）で入力してください（現在：「" & TxtVal(v) & "」）"
+    End If
+    For i = 1 To Len(digits)
+        ch = Mid$(digits, i, 1)
+        If ch < "0" Or ch > "9" Then RaiseMsg label & " はセル番地（例：A2）で入力してください（現在：「" & TxtVal(v) & "」）"
+    Next i
+    r = CLng(digits)
+    If r > 1048576 Then RaiseMsg label & " の行番号が大きすぎます（現在：「" & TxtVal(v) & "」）"
+    c = ColNum(letters, label)
+End Sub
+
+Private Function PosInt(ByVal v As Variant, ByVal label As String) As Long
+    Dim d As Double, t As String
+    If IsNumVal(v) Then
+        d = CDbl(v)
+    Else
+        t = StrConv(TxtVal(v), vbNarrow)
+        If Len(t) = 0 Or Not IsNumeric(t) Then RaiseMsg label & " は1以上の整数で入力してください（現在：「" & TxtVal(v) & "」）"
+        d = CDbl(t)
+    End If
+    If d < 1 Or d <> Int(d) Or d > 1048576 Then RaiseMsg label & " は1以上の整数で入力してください（現在：「" & TxtVal(v) & "」）"
+    PosInt = CLng(d)
+End Function
+
+Private Function NumVal(ByVal v As Variant, ByVal label As String, ByVal allowZero As Boolean) As Double
+    Dim d As Double, t As String, cond As String
+    If allowZero Then cond = "0以上" Else cond = "0より大きい"
+    If IsNumVal(v) Then
+        d = CDbl(v)
+    Else
+        t = StrConv(TxtVal(v), vbNarrow)
+        If Len(t) = 0 Or Not IsNumeric(t) Then RaiseMsg label & " は" & cond & "の数値で入力してください（現在：「" & TxtVal(v) & "」）"
+        d = CDbl(t)
+    End If
+    If d < 0 Or (Not allowZero And d = 0) Then RaiseMsg label & " は" & cond & "の数値で入力してください（現在：「" & TxtVal(v) & "」）"
+    NumVal = d
+End Function
+
+Private Function MinOf4(ByVal a As Long, ByVal b As Long, ByVal c As Long, ByVal d As Long) As Long
+    MinOf4 = a
+    If b < MinOf4 Then MinOf4 = b
+    If c < MinOf4 Then MinOf4 = c
+    If d < MinOf4 Then MinOf4 = d
+End Function
+
+Private Function MaxOf4(ByVal a As Long, ByVal b As Long, ByVal c As Long, ByVal d As Long) As Long
+    MaxOf4 = a
+    If b > MaxOf4 Then MaxOf4 = b
+    If c > MaxOf4 Then MaxOf4 = c
+    If d > MaxOf4 Then MaxOf4 = d
+End Function
+
+' MsgBox は 1024 文字までなので、長い時は切り詰める
+Private Function ShowMsg(ByVal msg As String, ByVal buttons As VbMsgBoxStyle, ByVal title As String) As VbMsgBoxResult
+    If Len(msg) > 1000 Then msg = Left$(msg, 990) & vbLf & "…（以下省略）"
+    ShowMsg = MsgBox(msg, buttons, title)
+End Function
+
+' 処理中は画面更新・イベント・自動再計算を止める（エラー時も EndFast で必ず戻す）
+Private Sub BeginFast()
+    If mFast Then Exit Sub
+    mScreen = Application.ScreenUpdating
+    mEvents = Application.EnableEvents
+    mCalc = Application.Calculation
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+    mFast = True
+End Sub
+
+Private Sub EndFast()
+    If Not mFast Then Exit Sub
+    On Error Resume Next
+    Application.Calculation = mCalc
+    Application.EnableEvents = mEvents
+    Application.ScreenUpdating = mScreen
+    mFast = False
+End Sub
+
+
+'#################################################################################
+'### 【貼り付け先 2】ThisWorkbook
+'### ここから下を全て ThisWorkbook のコードウィンドウに貼る（Workbook_Open だけ）
+'#################################################################################
+Option Explicit
+
+Private Sub Workbook_Open()
+    ' 記録はしない。通知の本体は標準モジュール modKiroku の Kiroku_NotifyOnOpen
+    On Error Resume Next
+    Kiroku_NotifyOnOpen
+End Sub
