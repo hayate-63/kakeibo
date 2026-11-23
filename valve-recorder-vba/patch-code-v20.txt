@@ -1,0 +1,1106 @@
+patch-code-v20.txt　VBA本実装 v1.4 → v2.0 差分パッチ（コード）
+作成：2026-11-23
+土台：code-v14.txt（標準モジュール modKiroku ／ ThisWorkbook）
+指示：引き継ぎメモ v2.0
+
+■ 当て方
+- P01 から P16 まで、番号の順に当てる。各パッチの「操作」に書かれた行（v1.4 の文字列そのまま）を VBAエディタの
+  「編集」→「検索」（Ctrl＋F）で探し、その位置で差し替え・追加する。
+- 「コード断片」は「---- ここから ----」の次の行から「---- ここまで ----」の前の行までを、そのまま貼る。
+- 「差し替え（範囲）」は、先頭行から末尾までを選択して削除してから断片を貼る。
+- 「プロシージャ全体」は、その Function／Sub の宣言行から対応する End Function／End Sub までを丸ごと置き換える。
+- 全て当てたら「デバッグ」→「VBAProject のコンパイル」でエラーが出ないことを確認する。
+- 制約の再掲：XLOOKUP 不使用。日時の秒換算は Double＋Int(x+0.5)（CLng 不使用）。直書きのシート名は「設定」「設定1〜3」のみ。
+
+■ パッチ一覧
+  P01  標準モジュール modKiroku ／ 冒頭のコメント1行
+  P02  標準モジュール modKiroku ／ 定数（系列別設定のアドレス表）
+  P03  標準モジュール modKiroku ／ 型 DestDef（削除）と SeriesCfg（差し替え）、型 ColCfg・StyleCfg（追加）
+  P04  標準モジュール modKiroku ／ モジュール変数
+  P05  標準モジュール modKiroku ／ ボタンの受け口 Btn_YearReset（新規）
+  P06  標準モジュール modKiroku ／ Public Sub Kiroku_OnSheetChange（新規）
+  P07  標準モジュール modKiroku ／ Private Sub RecordAll（1行差し替え）
+  P08  標準モジュール modKiroku ／ Private Sub ResetSeries（1行差し替え）
+  P09  標準モジュール modKiroku ／ 年度リセット一式（新規）：YearReset／TryLoadSeries／MakeBanner／SplitMergeAt
+  P10  標準モジュール modKiroku ／ Private Function LoadSeries（全体差し替え）
+  P11  標準モジュール modKiroku ／ Private Function WriteSeries（見出しコメントごと全体差し替え）と、段の探索・書式付け一式（新規）
+  P12  標準モジュール modKiroku ／ Private Function WriteReadStart（見出しコメントごと全体差し替え）
+  P13  標準モジュール modKiroku ／ 設定値の解釈の部品（新規）：ColOpt／ColLetter／NumOpt／Flag01／FmtText／IsDashText／HexColor／BorderStyleOf／BorderWeightOf
+  P14  標準モジュール modKiroku ／ Private Sub BeginFast（1行追加）
+  P15  標準モジュール modKiroku ／ Private Sub EndFast（1行追加）
+  P16  ThisWorkbook ／ Workbook_SheetChange（新規）
+
+==============================================================================
+【P01】
+対象：標準モジュール modKiroku ／ 冒頭のコメント1行
+操作：差し替え（1行）。次の行を、コード断片の1行で置き換える：
+  ' 自動弁→流量計積算値 記録（本体一式）  code-v14 / 設計メモ v0.8・引き継ぎメモ v1.4
+---- コード断片 ここから ----
+' 自動弁→流量計積算値 記録（本体一式）  code-v14 ＋ patch-code-v20（引き継ぎメモ v2.0）
+---- コード断片 ここまで ----
+
+==============================================================================
+【P02】
+対象：標準モジュール modKiroku ／ 定数（系列別設定のアドレス表）
+操作：差し替え（範囲）。次の先頭行から末尾行まで（両端を含む）を、コード断片で置き換える：
+  先頭行：' 系列別設定「設定1」「設定2」「設定3」（3枚とも同じ）
+  末尾行：Private Const S_LAST_ROW As Long = 28
+---- コード断片 ここから ----
+' 系列別設定「設定1」「設定2」「設定3」（3枚とも同じ）
+' v2.0：行7〜9 はユーザー専用欄（マクロは読み書きしない）。行10 以降は v1.4 から＋3行
+Private Const S_NAME As Long = 4
+Private Const S_ENABLED As Long = 5
+Private Const S_DATA_SHEET As Long = 6
+Private Const S_START_ROW As Long = 10
+Private Const S_COL_VTS As Long = 11
+Private Const S_COL_V As Long = 12
+Private Const S_COL_FTS As Long = 13
+Private Const S_COL_F As Long = 14
+Private Const S_REC_SHEET As Long = 15     ' 記録シート名
+Private Const S_REC_START As Long = 16     ' 記録開始セル（この行を段の起点にする）
+Private Const S_REC_COL1 As Long = 17      ' 記録先列n = 17 + (n-1)（n=1〜3。空欄＝その記録先なし）
+Private Const S_REC_ORDER As Long = 20     ' 記録順（例 H,E,F。空欄なら列1→2→3）
+Private Const S_DAYS As Long = 21
+Private Const S_TOL As Long = 22
+Private Const S_EX_START As Long = 23
+Private Const S_EX_END As Long = 24
+Private Const S_READ_TARGET As Long = 25   ' 読み込み開始日時の書き込み先（「シート名!セル」。空欄＝連動オフ）
+Private Const S_PTR_TS As Long = 27        ' 管理欄（触らない。行26＝見出し）
+Private Const S_PTR_ROW As Long = 28
+Private Const S_LAST_RUN As Long = 29
+Private Const S_LAST_COUNT As Long = 30
+Private Const S_READ_START As Long = 31    ' 読み込み開始日時（行25 の初期値の書き込み先）
+Private Const S_READ_END As Long = 32      ' 読み込み終了日時（固定。行25 とは独立に自系列のこのセルへ書く）
+' 様式設定ブロック（行33〜61）
+Private Const S_STYLE_HEAD As Long = 33    ' 見出し行
+Private Const S_ROW_H_TOP As Long = 34
+Private Const S_ROW_H_BOT As Long = 35
+Private Const S_BORDER_COLOR As Long = 36
+Private Const S_BORDER_STYLE As Long = 37
+Private Const S_BORDER_WEIGHT As Long = 38
+Private Const S_FILL_COLOR As Long = 39
+Private Const S_MIRROR1_TO As Long = 40
+Private Const S_MIRROR1_FROM As Long = 41
+Private Const S_MIRROR2_TO As Long = 42
+Private Const S_MIRROR2_FROM As Long = 43
+Private Const S_LINK_TO As Long = 44       ' 連動日付の書き込み列
+Private Const S_LINK_FROM As Long = 45     ' 連動日付のトリガー列
+Private Const S_BANNER_FROM As Long = 46
+Private Const S_BANNER_TO As Long = 47
+Private Const S_BANNER_H As Long = 48
+Private Const S_BANNER_FONT As Long = 49
+Private Const S_BANNER_FILL As Long = 50
+Private Const S_COLCFG_HEAD As Long = 51   ' 列別設定の見出し行
+Private Const S_COLCFG_FIRST As Long = 52  ' 列別設定 B52:I61（B 列記号／C 上段フォント／D 下段フォント／E 結合行数／
+                                           '   F 塗り（1=する）／G 折り返し（1=する）／H 上段の表示形式／I 下段の表示形式）
+Private Const S_COLCFG_COUNT As Long = 10
+Private Const S_LAST_ROW As Long = 61
+---- コード断片 ここまで ----
+
+==============================================================================
+【P03】
+対象：標準モジュール modKiroku ／ 型 DestDef（削除）と SeriesCfg（差し替え）、型 ColCfg・StyleCfg（追加）
+操作：差し替え（範囲）。次の先頭行から、SeriesCfg の End Type まで（両端を含む）を、コード断片で置き換える：
+  先頭行：Private Type DestDef
+  末尾　：SeriesCfg の最後の2行「    PtrSec As Double       ' 処理済みタイムスタンプ（秒）」と「End Type」
+  （型 DestDef は廃止。型 EventRec・ScanPlan・CommonCfg はそのまま）
+---- コード断片 ここから ----
+Private Type ColCfg           ' 列別設定（行52〜61 の1行分）
+    Col As Long               ' 列番号
+    FontTop As Double         ' 上段フォントサイズ（0＝変えない）
+    FontBot As Double         ' 下段フォントサイズ（0＝変えない）
+    MergeN As Long            ' 結合行数（1/2/4）
+    Fill As Boolean           ' 塗りつぶしする
+    Wrap As Boolean           ' 折り返しする
+    FmtTop As String          ' 上段の表示形式（空＝変えない）
+    FmtBot As String          ' 下段の表示形式（空＝変えない）
+End Type
+
+Private Type StyleCfg         ' 様式設定（行34〜61）
+    RowHTop As Double         ' 上段の行高（0＝変えない）
+    RowHBot As Double         ' 下段の行高（0＝変えない）
+    BorderColor As Long
+    BorderStyle As Long
+    BorderWeight As Long
+    FillColor As Long
+    MirTo(1 To 2) As Long     ' 日付ミラーの書き込み列（0＝なし）
+    MirFrom(1 To 2) As Long   ' 日付ミラーの参照列
+    LinkTo As Long            ' 連動日付の書き込み列（0＝なし）
+    LinkFrom As Long          ' 連動日付のトリガー列
+    BanFrom As Long           ' 年度バナーの列範囲（0＝未設定）
+    BanTo As Long
+    BanH As Double
+    BanFont As Double
+    BanFill As Long
+    ColCount As Long
+    Cols(1 To 10) As ColCfg
+End Type
+
+Private Type SeriesCfg
+    Index As Long
+    CfgSheet As String     ' 設定1〜設定3
+    Name As String
+    Status As Long         ' ST_OK / ST_BLANK / ST_DISABLED
+    DataSheet As String
+    StartRow As Long
+    ColVTs As Long
+    ColV As Long
+    ColFTs As Long
+    ColF As Long
+    RecSheet As String     ' 記録シート名（v2.0：記録先は1枚のシート内の列別）
+    RecStartRow As Long    ' 記録開始セルの行（段の起点）
+    DestCount As Long
+    DestCols(1 To 3) As Long   ' 記録先列（設定の列1→2→3 の順）
+    Order(1 To 3) As Long      ' 記録順に並べた記録先列
+    Style As StyleCfg
+    LookbackDays As Double
+    TolSec As Double
+    ExStartCell As Variant
+    ExEndCell As Variant
+    ReadTarget As Variant  ' 読み込み開始日時の書き込み先（未検証の生の値）
+    HasPtr As Boolean
+    PtrSec As Double       ' 処理済みタイムスタンプ（秒）
+End Type
+---- コード断片 ここまで ----
+
+==============================================================================
+【P04】
+対象：標準モジュール modKiroku ／ モジュール変数
+操作：追加（1行）。次の行の直後に挿入する：
+  Private mCalc As Long
+---- コード断片 ここから ----
+Private mAlerts As Boolean
+---- コード断片 ここまで ----
+
+==============================================================================
+【P05】
+対象：標準モジュール modKiroku ／ ボタンの受け口 Btn_YearReset（新規）
+操作：追加。Public Sub Btn_Reset3 の End Sub の直後に挿入する（空行1行をはさむ）。
+---- コード断片 ここから ----
+' 年度リセット（全系列共通。v2.0）
+Public Sub Btn_YearReset()
+    YearReset
+End Sub
+---- コード断片 ここまで ----
+
+==============================================================================
+【P06】
+対象：標準モジュール modKiroku ／ Public Sub Kiroku_OnSheetChange（新規）
+操作：追加。Public Sub Kiroku_NotifyOnOpen の End Sub の直後に挿入する（空行1行をはさむ）。
+  ThisWorkbook の Workbook_SheetChange（P17）から呼ばれる。引数があるのでマクロの登録一覧には出ない。
+---- コード断片 ここから ----
+' 連動日付（v2.0 変更5）：記録シートのトリガー列に入力 → 同じ段の書き込み列へ今日の日付
+' トリガーが空になったら書き込み列も消す。エラー時は静かに終わる（メッセージは出さない）
+Public Sub Kiroku_OnSheetChange(ByVal Sh As Object, ByVal Target As Range)
+    Dim ws As Worksheet, cfg As Worksheet, s As SeriesCfg, i As Long, errDummy As String
+    Dim rng As Range, ar As Range, r As Long, r1 As Long, r2 As Long, lastUsed As Long
+    Dim base As Long, u As Long, done As Object, trig As Range, wr As Range, fmt As String
+    Dim prevEv As Boolean, evOff As Boolean
+    On Error GoTo Quiet
+    If TypeName(Sh) <> "Worksheet" Then GoTo Quiet
+    Set ws = Sh
+    For i = 1 To SERIES_COUNT
+        Set cfg = GetSheet(SeriesSheetName(i))
+        If Not cfg Is Nothing Then
+            ' まず3セルだけ見て、この系列の記録シートで連動設定がある時だけ本読み込みする（軽くするため）
+            If TxtVal(cfg.Cells(S_REC_SHEET, VAL_COL).Value) = ws.Name _
+               And Len(TxtVal(cfg.Cells(S_LINK_TO, VAL_COL).Value)) > 0 _
+               And Len(TxtVal(cfg.Cells(S_LINK_FROM, VAL_COL).Value)) > 0 Then
+                If TryLoadSeries(i, s, errDummy) = ST_OK Then
+                    If s.Style.LinkTo > 0 And s.Style.LinkFrom > 0 Then
+                        Set rng = Application.Intersect(Target, ws.Columns(s.Style.LinkFrom))
+                        If Not rng Is Nothing Then
+                            fmt = ColFmtTop(s, s.Style.LinkTo)
+                            If Len(fmt) = 0 Then fmt = "mm/dd"
+                            lastUsed = ws.UsedRange.Row + ws.UsedRange.Rows.Count - 1
+                            Set done = CreateObject("Scripting.Dictionary")
+                            For Each ar In rng.Areas
+                                r1 = ar.Row
+                                r2 = ar.Row + ar.Rows.Count - 1
+                                If r1 < s.RecStartRow Then r1 = s.RecStartRow
+                                If r2 > lastUsed Then r2 = lastUsed
+                                If r1 <= r2 Then base = GroupBase(ws, s, r1)
+                                For r = r1 To r2
+                                    If IsBannerRow(ws, s, r) Then
+                                        base = r + 1                 ' バナーの次の行から段を数え直す
+                                    Else
+                                        u = base + ((r - base) \ 2) * 2   ' 2行1段の上段
+                                        If Not done.Exists(CStr(u)) Then
+                                            done.Item(CStr(u)) = True
+                                            Set trig = ws.Cells(u, s.Style.LinkFrom).MergeArea.Cells(1, 1)
+                                            Set wr = ws.Cells(u, s.Style.LinkTo).MergeArea.Cells(1, 1)
+                                            If Not evOff Then
+                                                prevEv = Application.EnableEvents
+                                                Application.EnableEvents = False   ' 再入防止
+                                                evOff = True
+                                            End If
+                                            If Not IsBlankVal(trig.Value) Then
+                                                If Len(wr.Formula) = 0 Then
+                                                    wr.Value = Date
+                                                    wr.NumberFormat = fmt
+                                                End If
+                                            Else
+                                                If Len(wr.Formula) > 0 Then wr.MergeArea.ClearContents
+                                            End If
+                                        End If
+                                    End If
+                                Next r
+                            Next ar
+                        End If
+                    End If
+                End If
+            End If
+        End If
+    Next i
+Quiet:
+    If evOff Then Application.EnableEvents = prevEv
+End Sub
+---- コード断片 ここまで ----
+
+==============================================================================
+【P07】
+対象：標準モジュール modKiroku ／ Private Sub RecordAll（1行差し替え）
+操作：差し替え（1行）。次の行を、コード断片の1行で置き換える：
+                            If Not WriteReadStart(s(i), p(i).LastSec, readErr) Then
+---- コード断片 ここから ----
+                            If Not WriteReadStart(s(i), SecToDate(p(i).LastSec), nowD, readErr) Then
+---- コード断片 ここまで ----
+
+==============================================================================
+【P08】
+対象：標準モジュール modKiroku ／ Private Sub ResetSeries（1行差し替え）
+操作：差し替え（1行）。次の行を、コード断片の2行（コメント＋1行）で置き換える：
+        If Not WriteReadStart(s, endSec, readErr) Then
+---- コード断片 ここから ----
+        ' v2.0：リセット時の開始日時＝現在日時−遡り日数（行21）、終了日時＝実行時刻
+        If Not WriteReadStart(s, SecToDate(ToSec(nowD) - Int(s.LookbackDays * 86400# + 0.5)), nowD, readErr) Then
+---- コード断片 ここまで ----
+
+==============================================================================
+【P09】
+対象：標準モジュール modKiroku ／ 年度リセット一式（新規）：YearReset／TryLoadSeries／MakeBanner／SplitMergeAt
+操作：追加。Private Function LastValveRowAtOrBefore の End Function の直後に挿入する（空行1行をはさむ）。
+---- コード断片 ここから ----
+'=================================================================================
+' 年度リセット（全系列共通。v2.0 変更6）
+' 各記録シートの次の段位置に年度バナー行を作る。記録停止フラグに関係なく実行できる。リセットログには書かない
+'=================================================================================
+Private Sub YearReset()
+    Dim c As CommonCfg, s(1 To 3) As SeriesCfg, st(1 To 3) As Long, er(1 To 3) As String
+    Dim i As Long, fy As Long, yLabel As String, ans As VbMsgBoxResult, resetPtr As Boolean
+    Dim res As String, rowB As Long, errText As String, changed As Boolean, saveNote As String
+    Dim wsCfg As Worksheet
+    Const T As String = "年度リセット"
+    On Error GoTo EH
+
+    c = LoadCommon()
+    fy = Year(Date)
+    If Month(Date) < 4 Then fy = fy - 1          ' 1〜3月は前年度
+    yLabel = fy & "年度"
+    For i = 1 To SERIES_COUNT
+        st(i) = TryLoadSeries(i, s(i), er(i))
+    Next i
+
+    ans = ShowMsg("有効な全系列の記録シートに「" & yLabel & "」のバナー行を作ります。" & vbLf & vbLf & _
+                  "ポインタもリセットしますか？" & vbLf & _
+                  "　はい　　　：バナーを作り、全系列のポインタをクリアする（次回は初回扱い＝遡り日数で走査）" & vbLf & _
+                  "　いいえ　　：バナーだけ作る" & vbLf & _
+                  "　キャンセル：何もしない", vbYesNoCancel + vbQuestion, T)
+    If ans = vbCancel Then
+        ShowMsg "キャンセルしました。何も変更していません。", vbInformation, T
+        Exit Sub
+    End If
+    resetPtr = (ans = vbYes)
+
+    BeginFast
+    For i = 1 To SERIES_COUNT
+        Select Case st(i)
+            Case ST_OK
+                errText = ""
+                If MakeBanner(s(i), yLabel, rowB, errText) Then
+                    changed = True
+                    res = res & "・" & s(i).Name & "：" & s(i).RecSheet & " の " & rowB & "行目にバナーを作成"
+                Else
+                    res = res & "・" & s(i).Name & "：バナーを作れませんでした（" & errText & "）"
+                End If
+                If resetPtr Then
+                    Set wsCfg = GetSheet(s(i).CfgSheet)
+                    wsCfg.Range(wsCfg.Cells(S_PTR_TS, VAL_COL), wsCfg.Cells(S_PTR_ROW, VAL_COL)).ClearContents
+                    changed = True
+                    res = res & "／ポインタをリセットしました" & vbLf
+                Else
+                    res = res & "／ポインタはそのまま" & vbLf
+                End If
+            Case ST_DISABLED
+                res = res & "・" & s(i).Name & "：有効フラグOFFのため対象外" & vbLf
+            Case ST_ERROR
+                res = res & "・" & SeriesSheetName(i) & "：設定異常のため何もしていません（" & er(i) & "）" & vbLf
+            Case Else
+                ' ST_BLANK は静かにスキップ
+        End Select
+    Next i
+    EndFast
+
+    If changed Then saveNote = SaveAfter(c.SaveMethod)
+    If Len(res) = 0 Then res = "処理対象の系列がありません。" & vbLf
+    If Len(saveNote) > 0 Then res = res & vbLf & saveNote
+    ShowMsg "年度リセットの結果（" & yLabel & "）" & vbLf & vbLf & res, vbInformation, T
+    Exit Sub
+EH:
+    EndFast
+    ShowMsg "エラー：" & Err.Description, vbCritical, T
+End Sub
+
+' 1系列の設定読込だけ（走査しない）。戻り値：ST_OK / ST_BLANK / ST_DISABLED / ST_ERROR
+Private Function TryLoadSeries(ByVal idx As Long, s As SeriesCfg, errText As String) As Long
+    On Error GoTo EH
+    s = LoadSeries(idx, True)
+    TryLoadSeries = s.Status
+    Exit Function
+EH:
+    errText = Err.Description
+    TryLoadSeries = ST_ERROR
+End Function
+
+' 次の段位置にバナー行（1行）を作る。成功したら True と行番号
+' バナー行は結合セルなので、段探索（FindNextStage）では自動的に使用済みとして読み飛ばされる
+Private Function MakeBanner(s As SeriesCfg, ByVal yLabel As String, ByRef rowOut As Long, ByRef errText As String) As Boolean
+    Dim ws As Worksheet, r As Long, col As Long, k As Long, br As Range, idx As Variant, da As Boolean
+    On Error GoTo EH
+    MakeBanner = False
+    If s.Style.BanFrom = 0 Then
+        errText = "バナーの列範囲（" & s.CfgSheet & " B" & S_BANNER_FROM & "・B" & S_BANNER_TO & "）が未設定です"
+        Exit Function
+    End If
+    Set ws = GetSheet(s.RecSheet)
+    r = FindNextStage(ws, s, s.RecStartRow)
+
+    ' バナー位置に手入力の値があれば作らない（数式＝日付ミラーは消してよい）
+    For col = s.Style.BanFrom To s.Style.BanTo
+        If Not ws.Cells(r, col).HasFormula Then
+            If Not IsBlankVal(ws.Cells(r, col).Value) Then
+                errText = ws.Name & " の " & ws.Cells(r, col).Address(False, False) & " に入力があるため作りませんでした"
+                Exit Function
+            End If
+        End If
+    Next col
+
+    ' 先行書式などの既存の結合を外す（上から続く結合は r より上の部分だけ結合し直す）
+    For col = s.Style.BanFrom To s.Style.BanTo
+        SplitMergeAt ws, ws.Cells(r, col), r
+    Next col
+    For k = 1 To s.Style.ColCount
+        SplitMergeAt ws, ws.Cells(r, s.Style.Cols(k).Col), r
+    Next k
+
+    Set br = ws.Range(ws.Cells(r, s.Style.BanFrom), ws.Cells(r, s.Style.BanTo))
+    br.ClearContents
+    da = Application.DisplayAlerts
+    Application.DisplayAlerts = False
+    br.Merge
+    Application.DisplayAlerts = da
+    br.Value = yLabel
+    br.HorizontalAlignment = xlCenter
+    br.VerticalAlignment = xlCenter
+    If s.Style.BanH > 0 Then ws.Rows(r).RowHeight = s.Style.BanH
+    If s.Style.BanFont > 0 Then br.Font.Size = s.Style.BanFont
+    br.Interior.Color = s.Style.BanFill
+    For Each idx In Array(xlEdgeTop, xlEdgeBottom, xlEdgeLeft, xlEdgeRight)
+        br.Borders(idx).LineStyle = xlDouble
+        br.Borders(idx).Color = s.Style.BorderColor
+    Next idx
+
+    ' バナーの次の行から段を数え直し、次の段を先行で書式付けしておく
+    FormatStage ws, s, r + 1, r + 1
+    rowOut = r
+    MakeBanner = True
+    Exit Function
+EH:
+    errText = Err.Description
+    MakeBanner = False
+End Function
+
+' cell を含む結合を外す。結合が r より上から続いていたら、r より上の部分（2行以上なら）だけ結合し直す
+Private Sub SplitMergeAt(ws As Worksheet, cell As Range, ByVal r As Long)
+    Dim ma As Range, tp As Long, c1 As Long, nc As Long, da As Boolean
+    If Not cell.MergeCells Then Exit Sub
+    Set ma = cell.MergeArea
+    tp = ma.Row
+    c1 = ma.Column
+    nc = ma.Columns.Count
+    ma.UnMerge
+    If r - tp >= 2 Then
+        da = Application.DisplayAlerts
+        Application.DisplayAlerts = False
+        ws.Cells(tp, c1).Resize(r - tp, nc).Merge
+        Application.DisplayAlerts = da
+    End If
+End Sub
+---- コード断片 ここまで ----
+
+==============================================================================
+【P10】
+対象：標準モジュール modKiroku ／ Private Function LoadSeries（全体差し替え）
+操作：差し替え（プロシージャ全体）。Private Function LoadSeries( の行から、その End Function までを、コード断片で置き換える。
+  直前のコメント行「' needDest：記録先を検証するか（リセットでは不要）」はそのまま残す。
+---- コード断片 ここから ----
+Private Function LoadSeries(ByVal idx As Long, ByVal needDest As Boolean) As SeriesCfg
+    Dim ws As Worksheet, s As SeriesCfg, v As Variant, sn As String
+    Dim d As Long, j As Long, r As Long, cc As Long, ptr As Variant
+
+    sn = SeriesSheetName(idx)
+    Set ws = GetSheet(sn)
+    If ws Is Nothing Then RaiseMsg "系列別設定シート「" & sn & "」が見つかりません"
+    v = GetBlock(ws, 1, VAL_COL, S_LAST_ROW, 1)          ' B1:B61（行7〜9 は読まない）
+
+    s.Index = idx
+    s.CfgSheet = sn
+    s.Name = TxtVal(v(S_NAME, 1))
+    If Len(s.Name) = 0 Then
+        s.Status = ST_BLANK            ' §12：静かにスキップ
+        LoadSeries = s
+        Exit Function
+    End If
+    If Not ParseOnOff(v(S_ENABLED, 1), "系列の有効フラグ（" & sn & " B" & S_ENABLED & "）") Then
+        s.Status = ST_DISABLED
+        LoadSeries = s
+        Exit Function
+    End If
+    s.Status = ST_OK
+
+    s.DataSheet = TxtVal(v(S_DATA_SHEET, 1))
+    If Len(s.DataSheet) = 0 Then RaiseMsg "データ抽出シート名が空欄です（" & sn & " B" & S_DATA_SHEET & "）"
+    If GetSheet(s.DataSheet) Is Nothing Then RaiseMsg "データ抽出シート「" & s.DataSheet & "」が見つかりません（" & sn & " B" & S_DATA_SHEET & "）"
+    s.StartRow = PosInt(v(S_START_ROW, 1), "データ開始行（" & sn & " B" & S_START_ROW & "）")
+    s.ColVTs = ColNum(v(S_COL_VTS, 1), "自動弁タイムスタンプ列（" & sn & " B" & S_COL_VTS & "）")
+    s.ColV = ColNum(v(S_COL_V, 1), "自動弁列（" & sn & " B" & S_COL_V & "）")
+    s.ColFTs = ColNum(v(S_COL_FTS, 1), "積算値タイムスタンプ列（" & sn & " B" & S_COL_FTS & "）")
+    s.ColF = ColNum(v(S_COL_F, 1), "積算値列（" & sn & " B" & S_COL_F & "）")
+
+    s.DestCount = 0
+    If needDest Then
+        ' 記録シート（v2.0：1枚のシート内の列別）
+        s.RecSheet = TxtVal(v(S_REC_SHEET, 1))
+        If Len(s.RecSheet) = 0 Then RaiseMsg "記録シート名が空欄です（" & sn & " B" & S_REC_SHEET & "）"
+        If GetSheet(s.RecSheet) Is Nothing Then RaiseMsg "記録シート「" & s.RecSheet & "」が見つかりません（" & sn & " B" & S_REC_SHEET & "）"
+        ParseA1 v(S_REC_START, 1), "記録開始セル（" & sn & " B" & S_REC_START & "）", r, cc
+        s.RecStartRow = r
+        For d = 1 To 3
+            cc = ColOpt(v(S_REC_COL1 + d - 1, 1), "記録先列" & d & "（" & sn & " B" & (S_REC_COL1 + d - 1) & "）")
+            If cc = 0 Then
+                If d = 1 Then RaiseMsg "記録先列1が空欄です（" & sn & " B" & S_REC_COL1 & "）"
+            Else
+                For j = 1 To s.DestCount
+                    If s.DestCols(j) = cc Then RaiseMsg "記録先列「" & ColLetter(cc) & "」が重複しています（" & sn & " B" & S_REC_COL1 & "〜B" & (S_REC_COL1 + 2) & "）"
+                Next j
+                s.DestCount = s.DestCount + 1
+                s.DestCols(s.DestCount) = cc
+            End If
+        Next d
+        ParseOrder v(S_REC_ORDER, 1), s
+        LoadStyle ws, v, s
+    End If
+
+    s.LookbackDays = NumVal(v(S_DAYS, 1), "遡り日数（" & sn & " B" & S_DAYS & "）", False)
+    s.TolSec = NumVal(v(S_TOL, 1), "照合許容差（秒）（" & sn & " B" & S_TOL & "）", True)
+    s.ExStartCell = v(S_EX_START, 1)
+    s.ExEndCell = v(S_EX_END, 1)
+    s.ReadTarget = v(S_READ_TARGET, 1)   ' ここでは検証しない（書けなくても記録は止めない：§4）
+
+    ptr = v(S_PTR_TS, 1)
+    If IsBlankVal(ptr) Then
+        s.HasPtr = False
+    ElseIf IsDateVal(ptr) Then
+        s.HasPtr = True
+        s.PtrSec = ToSec(ptr)
+    Else
+        RaiseMsg "管理欄の処理済みタイムスタンプが日時ではありません（" & sn & " B" & S_PTR_TS & "）"
+    End If
+
+    LoadSeries = s
+End Function
+
+' 記録順（行20）。空欄なら記録先列1→2→3。設定済みの記録先列の並べ替えでなければ設定エラー
+Private Sub ParseOrder(ByVal v As Variant, s As SeriesCfg)
+    Dim t As String, parts() As String, k As Long, j As Long, cc As Long, found As Boolean
+    Dim lab As String, cur As String
+    lab = "記録順（" & s.CfgSheet & " B" & S_REC_ORDER & "）"
+    t = StrConv(TxtVal(v), vbNarrow)
+    t = Replace(Replace(Replace(Replace(t, "、", ","), "､", ","), "，", ","), " ", "")
+    If Len(t) = 0 Or IsDashText(t) Then
+        For k = 1 To s.DestCount
+            s.Order(k) = s.DestCols(k)
+        Next k
+        Exit Sub
+    End If
+    For k = 1 To s.DestCount
+        If Len(cur) > 0 Then cur = cur & ","
+        cur = cur & ColLetter(s.DestCols(k))
+    Next k
+    parts = Split(t, ",")
+    If UBound(parts) + 1 <> s.DestCount Then
+        RaiseMsg lab & " は、設定済みの記録先列（" & cur & "）を並べ替えたものにしてください（現在：「" & TxtVal(v) & "」）"
+    End If
+    For k = 0 To UBound(parts)
+        cc = ColNum(parts(k), lab)
+        For j = 1 To k
+            If s.Order(j) = cc Then RaiseMsg lab & " に列「" & ColLetter(cc) & "」が重複しています（現在：「" & TxtVal(v) & "」）"
+        Next j
+        found = False
+        For j = 1 To s.DestCount
+            If s.DestCols(j) = cc Then found = True
+        Next j
+        If Not found Then RaiseMsg lab & " の列「" & ColLetter(cc) & "」は記録先列（" & cur & "）にありません"
+        s.Order(k + 1) = cc
+    Next k
+End Sub
+
+' 様式設定（行34〜61）の読み込みと検証。不正なら設定エラー
+Private Sub LoadStyle(ws As Worksheet, v As Variant, s As SeriesCfg)
+    Dim sn As String, a As Variant, k As Long, j As Long, n As Long, cc As Long, dm As Double, lab As String
+    sn = s.CfgSheet
+    s.Style.RowHTop = NumOpt(v(S_ROW_H_TOP, 1), "上段の行高（" & sn & " B" & S_ROW_H_TOP & "）", 409)
+    s.Style.RowHBot = NumOpt(v(S_ROW_H_BOT, 1), "下段の行高（" & sn & " B" & S_ROW_H_BOT & "）", 409)
+    s.Style.BorderColor = HexColor(v(S_BORDER_COLOR, 1), "罫線の色（" & sn & " B" & S_BORDER_COLOR & "）")
+    s.Style.BorderStyle = BorderStyleOf(v(S_BORDER_STYLE, 1), "罫線の種類（" & sn & " B" & S_BORDER_STYLE & "）")
+    s.Style.BorderWeight = BorderWeightOf(v(S_BORDER_WEIGHT, 1), "罫線の太さ（" & sn & " B" & S_BORDER_WEIGHT & "）")
+    s.Style.FillColor = HexColor(v(S_FILL_COLOR, 1), "塗りつぶしの色（" & sn & " B" & S_FILL_COLOR & "）")
+    ColPair v(S_MIRROR1_TO, 1), v(S_MIRROR1_FROM, 1), "日付ミラー1（" & sn & " B" & S_MIRROR1_TO & "・B" & S_MIRROR1_FROM & "）", _
+            s.Style.MirTo(1), s.Style.MirFrom(1)
+    ColPair v(S_MIRROR2_TO, 1), v(S_MIRROR2_FROM, 1), "日付ミラー2（" & sn & " B" & S_MIRROR2_TO & "・B" & S_MIRROR2_FROM & "）", _
+            s.Style.MirTo(2), s.Style.MirFrom(2)
+    ColPair v(S_LINK_TO, 1), v(S_LINK_FROM, 1), "連動日付（" & sn & " B" & S_LINK_TO & "・B" & S_LINK_FROM & "）", _
+            s.Style.LinkTo, s.Style.LinkFrom
+    lab = "年度バナーの列範囲（" & sn & " B" & S_BANNER_FROM & "・B" & S_BANNER_TO & "）"
+    s.Style.BanFrom = ColOpt(v(S_BANNER_FROM, 1), lab)
+    s.Style.BanTo = ColOpt(v(S_BANNER_TO, 1), lab)
+    If (s.Style.BanFrom = 0) <> (s.Style.BanTo = 0) Then RaiseMsg lab & " は両方入力するか、両方空欄にしてください"
+    If s.Style.BanFrom > 0 Then
+        If s.Style.BanFrom >= s.Style.BanTo Then RaiseMsg lab & " は左の列＜右の列（2列以上）にしてください"
+    End If
+    s.Style.BanH = NumOpt(v(S_BANNER_H, 1), "年度バナーの行高（" & sn & " B" & S_BANNER_H & "）", 409)
+    s.Style.BanFont = NumOpt(v(S_BANNER_FONT, 1), "年度バナーのフォントサイズ（" & sn & " B" & S_BANNER_FONT & "）", 409)
+    s.Style.BanFill = HexColor(v(S_BANNER_FILL, 1), "年度バナーの塗りつぶし（" & sn & " B" & S_BANNER_FILL & "）")
+
+    ' 列別設定（B52:I61）
+    a = GetBlock(ws, S_COLCFG_FIRST, 2, S_COLCFG_COUNT, 8)
+    n = 0
+    For k = 1 To S_COLCFG_COUNT
+        lab = "列別設定（" & sn & " " & (S_COLCFG_FIRST + k - 1) & "行目）"
+        cc = ColOpt(a(k, 1), lab & "の列記号")
+        If cc > 0 Then
+            For j = 1 To n
+                If s.Style.Cols(j).Col = cc Then RaiseMsg lab & "：列「" & ColLetter(cc) & "」が重複しています"
+            Next j
+            n = n + 1
+            s.Style.Cols(n).Col = cc
+            s.Style.Cols(n).FontTop = NumOpt(a(k, 2), lab & "の上段フォント", 409)
+            s.Style.Cols(n).FontBot = NumOpt(a(k, 3), lab & "の下段フォント", 409)
+            dm = NumOpt(a(k, 4), lab & "の結合行数", 4)
+            If dm = 0 Then dm = 1
+            If dm <> 1 And dm <> 2 And dm <> 4 Then RaiseMsg lab & "の結合行数は 1・2・4 のどれかにしてください（現在：「" & TxtVal(a(k, 4)) & "」）"
+            s.Style.Cols(n).MergeN = CLng(dm)
+            s.Style.Cols(n).Fill = Flag01(a(k, 5), lab & "の塗りつぶし")
+            s.Style.Cols(n).Wrap = Flag01(a(k, 6), lab & "の折り返し")
+            s.Style.Cols(n).FmtTop = FmtText(a(k, 7))
+            s.Style.Cols(n).FmtBot = FmtText(a(k, 8))
+        End If
+    Next k
+    s.Style.ColCount = n
+
+    ' 列の組み合わせの妥当性
+    For j = 1 To s.DestCount
+        If ColMergeN(s, s.DestCols(j)) <> 1 Then
+            RaiseMsg "記録先列「" & ColLetter(s.DestCols(j)) & "」は、列別設定の結合行数を1にしてください（" & sn & "）"
+        End If
+        For k = 1 To 2
+            If s.Style.MirTo(k) = s.DestCols(j) Then RaiseMsg "日付ミラー" & k & "の書き込み列「" & ColLetter(s.DestCols(j)) & "」が記録先列と同じです（" & sn & "）"
+        Next k
+        If s.Style.LinkTo = s.DestCols(j) Or s.Style.LinkFrom = s.DestCols(j) Then
+            RaiseMsg "連動日付の列「" & ColLetter(s.DestCols(j)) & "」が記録先列と同じです（" & sn & "）"
+        End If
+    Next j
+    If s.Style.MirTo(1) > 0 And s.Style.MirTo(1) = s.Style.MirTo(2) Then RaiseMsg "日付ミラー1と2の書き込み列が同じです（" & sn & "）"
+    If s.Style.LinkTo > 0 Then
+        If s.Style.LinkTo = s.Style.MirTo(1) Or s.Style.LinkTo = s.Style.MirTo(2) Then
+            RaiseMsg "連動日付の書き込み列が日付ミラーの書き込み列と同じです（" & sn & "）"
+        End If
+    End If
+End Sub
+
+' 2つの列記号の組（両方入力か両方空欄。同じ列は不可）
+Private Sub ColPair(ByVal vTo As Variant, ByVal vFrom As Variant, ByVal lab As String, ByRef toC As Long, ByRef fromC As Long)
+    toC = ColOpt(vTo, lab & "の書き込み列")
+    fromC = ColOpt(vFrom, lab & "の参照（トリガー）列")
+    If (toC = 0) <> (fromC = 0) Then RaiseMsg lab & " は2つとも入力するか、2つとも空欄にしてください"
+    If toC > 0 And toC = fromC Then RaiseMsg lab & " の2つの列が同じです"
+End Sub
+---- コード断片 ここまで ----
+
+==============================================================================
+【P11】
+対象：標準モジュール modKiroku ／ Private Function WriteSeries（見出しコメントごと全体差し替え）と、段の探索・書式付け一式（新規）
+操作：差し替え（範囲）。次の先頭行から、WriteSeries の End Function まで（両端を含む）を、コード断片で置き換える：
+  先頭行：' 書き込み（§3：開始セルから下の最初の空白セルへ追記、上書き禁止／§8：重複チェック）
+  末尾　：Private Function WriteSeries( の End Function
+  （先頭行の1行上の区切り線「'====…」は残る。その次のコメント2行と区切り線1行は断片の中に新しいものが入っている）
+---- コード断片 ここから ----
+' 書き込み（v2.0：1枚の記録シート内の記録先列へ、2行1段で追記。上段＝積算値タイムスタンプ、下段＝積算値）
+' 次の段：記録開始セルの行から下へ、記録順の先頭列が空白かつ結合の一部でない最初の行。
+'         その段の全記録先列の上下が空でなければ使用済みとして次の段へ（上書きしない）
+' 重複チェックは系列単位：記録順の先頭列に同じ積算値タイムスタンプ（秒丸め）があれば、そのイベントは書かない
+' 成功したら True。途中でエラーになったら False と errText（何件目の記録で失敗したか・記録先列ごとの書込件数）
+'=================================================================================
+Private Function WriteSeries(s As SeriesCfg, p As ScanPlan, ByVal dupCheck As Boolean, _
+                             ByRef recorded As Long, ByRef dupEvents As Long, ByRef partialDup As Long, _
+                             ByRef errText As String) As Boolean
+    Dim ws As Worksheet, dict As Object, written(1 To 3) As Long
+    Dim k As Long, j As Long, i As Long, u As Long, nextFrom As Long, base As Long, haveBase As Boolean
+    Dim key As String, matchedNo As Long, curNo As Long, curSec As Double, lastDone As String, info As String
+    Dim lastR As Long, a As Variant, fc As Long
+
+    recorded = 0: dupEvents = 0: partialDup = 0     ' partialDup は v2.0 では常に 0（重複は系列単位）
+    On Error GoTo EH
+    Set ws = GetSheet(s.RecSheet)
+    Set dict = CreateObject("Scripting.Dictionary")
+    fc = s.Order(1)
+    If dupCheck Then
+        lastR = ws.Cells(ws.Rows.Count, fc).End(xlUp).Row
+        If lastR >= s.RecStartRow Then
+            a = GetBlock(ws, s.RecStartRow, fc, lastR - s.RecStartRow + 1, 1)
+            For i = 1 To UBound(a, 1)
+                If IsDateVal(a(i, 1)) Then dict.Item(CStr(ToSec(a(i, 1)))) = True
+            Next i
+        End If
+    End If
+
+    nextFrom = s.RecStartRow
+    For k = 1 To p.Count
+        If p.Events(k).Matched Then
+            matchedNo = matchedNo + 1
+            key = CStr(p.Events(k).FlowSec)
+            If dupCheck And dict.Exists(key) Then
+                dupEvents = dupEvents + 1
+            Else
+                curNo = matchedNo
+                curSec = p.Events(k).FlowSec
+                u = FindNextStage(ws, s, nextFrom)
+                If Not haveBase Then
+                    base = GroupBase(ws, s, u)
+                    haveBase = True
+                End If
+                FormatStage ws, s, u, base             ' 当該段
+                FormatStage ws, s, u + 2, base         ' 次の1段（先行）
+                For j = 1 To s.DestCount               ' 記録順に、同じ内容を各記録先列へ
+                    WriteCellPair ws, s, s.Order(j), u, p.Events(k)
+                    written(j) = written(j) + 1
+                Next j
+                dict.Item(key) = True
+                recorded = recorded + 1
+                nextFrom = u + 2
+                lastDone = FmtSec(curSec)
+            End If
+        End If
+    Next k
+    WriteSeries = True
+    Exit Function
+
+EH:
+    For j = 1 To s.DestCount
+        If Len(info) > 0 Then info = info & "、"
+        info = info & "列" & ColLetter(s.Order(j)) & " " & written(j) & "件"
+    Next j
+    If curNo = 0 Then
+        errText = "　記録シートの準備中にエラー：" & Err.Description & vbLf & "　（何も書き込んでいません）"
+    Else
+        errText = "　" & curNo & "件目の記録（積算値タイムスタンプ " & FmtSec(curSec) & "）で失敗：" & Err.Description & vbLf & _
+                  "　記録先列ごとの書込件数：" & info
+        If Len(lastDone) > 0 Then errText = errText & vbLf & "　最後に完了した記録：" & lastDone
+    End If
+    WriteSeries = False
+End Function
+
+' 1つの記録先列の段へ、上段＝積算値タイムスタンプ、下段＝積算値 を書く
+Private Sub WriteCellPair(ws As Worksheet, s As SeriesCfg, ByVal col As Long, ByVal u As Long, e As EventRec)
+    ws.Cells(u, col).Value = SecToDate(e.FlowSec)
+    If Len(ColFmtTop(s, col)) = 0 Then ws.Cells(u, col).NumberFormat = DT_FMT
+    ws.Cells(u + 1, col).Value = e.FlowValue
+End Sub
+
+' 次の段の上段の行（fromRow から下へ探す）
+Private Function FindNextStage(ws As Worksheet, s As SeriesCfg, ByVal fromRow As Long) As Long
+    Dim fc As Long, lastR As Long, j As Long, r As Long, n As Long, used As Boolean, a As Variant, v As Variant
+    fc = s.Order(1)
+    lastR = fromRow
+    For j = 1 To s.DestCount
+        r = ws.Cells(ws.Rows.Count, s.DestCols(j)).End(xlUp).Row
+        If r > lastR Then lastR = r
+    Next j
+    n = lastR - fromRow + 1
+    a = GetBlock(ws, fromRow, fc, n, 1)
+    r = fromRow
+    Do While r < ws.Rows.Count
+        If r - fromRow + 1 <= n Then
+            v = a(r - fromRow + 1, 1)
+        Else
+            v = Empty
+        End If
+        If IsBlankVal(v) Then
+            If Not ws.Cells(r, fc).MergeCells Then
+                used = False
+                For j = 1 To s.DestCount
+                    If Not IsBlankVal(ws.Cells(r, s.DestCols(j)).Value) Then used = True
+                    If Not IsBlankVal(ws.Cells(r + 1, s.DestCols(j)).Value) Then used = True
+                Next j
+                If Not used Then
+                    FindNextStage = r
+                    Exit Function
+                End If
+                r = r + 2                    ' 使用済みの段は飛ばす（上書きしない）
+            Else
+                r = r + 1                    ' 結合（年度バナー等）は読み飛ばす
+            End If
+        Else
+            r = r + 1
+        End If
+    Loop
+    RaiseMsg "記録シート「" & ws.Name & "」に空いている段が見つかりません"
+End Function
+
+' 結合グループの起点行：段 u より上にある直近の年度バナー行の次の行。無ければ記録開始セルの行
+Private Function GroupBase(ws As Worksheet, s As SeriesCfg, ByVal u As Long) As Long
+    Dim r As Long
+    GroupBase = s.RecStartRow
+    If s.Style.BanFrom = 0 Then Exit Function
+    For r = u - 1 To s.RecStartRow Step -1
+        If IsBannerRow(ws, s, r) Then
+            GroupBase = r + 1
+            Exit Function
+        End If
+    Next r
+End Function
+
+' 年度バナー行か（バナー左端列のセルが、1行×2列以上の結合の一部）
+Private Function IsBannerRow(ws As Worksheet, s As SeriesCfg, ByVal r As Long) As Boolean
+    IsBannerRow = False
+    If s.Style.BanFrom = 0 Then Exit Function
+    If ws.Cells(r, s.Style.BanFrom).MergeCells Then
+        If ws.Cells(r, s.Style.BanFrom).MergeArea.Rows.Count = 1 And ws.Cells(r, s.Style.BanFrom).MergeArea.Columns.Count >= 2 Then
+            IsBannerRow = True
+        End If
+    End If
+End Function
+
+' 段（u 行目・u+1 行目）の書式付け：行高・列別設定・結合・罫線・日付ミラー
+Private Sub FormatStage(ws As Worksheet, s As SeriesCfg, ByVal u As Long, ByVal base As Long)
+    Dim k As Long
+    If s.Style.RowHTop > 0 Then ws.Rows(u).RowHeight = s.Style.RowHTop
+    If s.Style.RowHBot > 0 Then ws.Rows(u + 1).RowHeight = s.Style.RowHBot
+    For k = 1 To s.Style.ColCount
+        FormatColumnInStage ws, s, k, u, base
+    Next k
+    For k = 1 To 2
+        If s.Style.MirTo(k) > 0 Then WriteMirror ws, s.Style.MirTo(k), s.Style.MirFrom(k), u
+    Next k
+End Sub
+
+Private Sub FormatColumnInStage(ws As Worksheet, s As SeriesCfg, ByVal k As Long, ByVal u As Long, ByVal base As Long)
+    Dim col As Long, mN As Long, g As Long, area As Range
+    col = s.Style.Cols(k).Col
+    mN = s.Style.Cols(k).MergeN
+    If mN <= 1 Then
+        Set area = ws.Cells(u, col).Resize(2, 1)
+        ApplyCellFmt ws.Cells(u, col), s.Style.Cols(k).FontTop, s.Style.Cols(k).FmtTop, s.Style.Cols(k).Wrap, s.Style.Cols(k).Fill, s.Style.FillColor
+        ApplyCellFmt ws.Cells(u + 1, col), s.Style.Cols(k).FontBot, s.Style.Cols(k).FmtBot, s.Style.Cols(k).Wrap, s.Style.Cols(k).Fill, s.Style.FillColor
+        ApplyBorders area, s, True
+    Else
+        g = base + ((u - base) \ mN) * mN          ' 段を含む結合グループの先頭行
+        Set area = ws.Cells(g, col).Resize(mN, 1)
+        EnsureMerged area
+        ApplyCellFmt area, s.Style.Cols(k).FontTop, s.Style.Cols(k).FmtTop, s.Style.Cols(k).Wrap, s.Style.Cols(k).Fill, s.Style.FillColor
+        area.HorizontalAlignment = xlCenter
+        area.VerticalAlignment = xlCenter
+        ApplyBorders area, s, False
+    End If
+End Sub
+
+Private Sub ApplyCellFmt(rng As Range, ByVal fontSz As Double, ByVal fmt As String, ByVal wrapOn As Boolean, _
+                         ByVal fillOn As Boolean, ByVal fillColor As Long)
+    If fontSz > 0 Then rng.Font.Size = fontSz
+    If Len(fmt) > 0 Then rng.NumberFormat = fmt
+    rng.WrapText = wrapOn
+    If fillOn Then rng.Interior.Color = fillColor
+End Sub
+
+Private Sub ApplyBorders(area As Range, s As SeriesCfg, ByVal inner As Boolean)
+    Dim idx As Variant
+    For Each idx In Array(xlEdgeTop, xlEdgeBottom, xlEdgeLeft, xlEdgeRight)
+        SetBorder area.Borders(idx), s.Style.BorderStyle, s.Style.BorderWeight, s.Style.BorderColor
+    Next idx
+    If inner And area.Rows.Count > 1 Then SetBorder area.Borders(xlInsideHorizontal), s.Style.BorderStyle, s.Style.BorderWeight, s.Style.BorderColor
+End Sub
+
+Private Sub SetBorder(b As Border, ByVal ls As Long, ByVal wt As Long, ByVal clr As Long)
+    b.LineStyle = ls
+    If ls <> xlDouble Then b.Weight = wt
+    b.Color = clr
+End Sub
+
+' 結合（冪等）。同じ結合が既にあれば何もしない。値が2つ以上入っている、またははみ出す結合がある時は崩さない
+Private Sub EnsureMerged(area As Range)
+    Dim c As Range, da As Boolean
+    If area.Cells(1, 1).MergeCells Then
+        If area.Cells(1, 1).MergeArea.Address = area.Address Then Exit Sub
+    End If
+    If Application.WorksheetFunction.CountA(area) > 1 Then Exit Sub
+    For Each c In area.Cells
+        If c.MergeCells Then
+            If Application.Intersect(c.MergeArea, area).Cells.Count <> c.MergeArea.Cells.Count Then Exit Sub
+        End If
+    Next c
+    da = Application.DisplayAlerts
+    Application.DisplayAlerts = False
+    area.UnMerge
+    area.Merge
+    Application.DisplayAlerts = da
+End Sub
+
+' 日付ミラー：書き込み列の段の上段セル（結合なら左上）に =IF(参照="","",参照)。何か入っていれば書かない
+Private Sub WriteMirror(ws As Worksheet, ByVal toCol As Long, ByVal fromCol As Long, ByVal u As Long)
+    Dim tgt As Range, ref As String
+    Set tgt = ws.Cells(u, toCol).MergeArea.Cells(1, 1)
+    If Len(tgt.Formula) > 0 Then Exit Sub
+    ref = ws.Cells(u, fromCol).MergeArea.Cells(1, 1).Address(False, False)
+    tgt.Formula = "=IF(" & ref & "=,," & ref & ")"
+End Sub
+
+' 列別設定の参照
+Private Function ColMergeN(s As SeriesCfg, ByVal col As Long) As Long
+    Dim k As Long
+    ColMergeN = 1
+    For k = 1 To s.Style.ColCount
+        If s.Style.Cols(k).Col = col Then ColMergeN = s.Style.Cols(k).MergeN
+    Next k
+End Function
+
+Private Function ColFmtTop(s As SeriesCfg, ByVal col As Long) As String
+    Dim k As Long
+    For k = 1 To s.Style.ColCount
+        If s.Style.Cols(k).Col = col Then ColFmtTop = s.Style.Cols(k).FmtTop
+    Next k
+End Function
+---- コード断片 ここまで ----
+
+==============================================================================
+【P12】
+対象：標準モジュール modKiroku ／ Private Function WriteReadStart（見出しコメントごと全体差し替え）
+操作：差し替え（範囲）。次の先頭行から、WriteReadStart の End Function まで（両端を含む）を、コード断片で置き換える：
+  先頭行：' 読み込み開始日時の連動（設計メモ v0.8 §4）：ポインタ日時を、行22 で指定された「シート名!セル」へ上書きする
+---- コード断片 ここから ----
+' 読み込み開始・終了日時の連動（v2.0 変更4）
+' 行25 が空欄なら連動オフ：開始・終了とも書かず、エラー表示もしない（True を返す）
+' 終了日時（endDt）は行25 の指定とは独立に、自系列の設定シート B32 へ書く
+' 開始日時（startDt）は行25 の「シート名!セル」へ書く。書けなかったら False と理由（呼び出し側は巻き戻さない）
+Private Function WriteReadStart(s As SeriesCfg, ByVal startDt As Date, ByVal endDt As Date, ByRef errText As String) As Boolean
+    Dim t As String, pos As Long, shName As String, cellText As String
+    Dim ws As Worksheet, wsCfg As Worksheet, r As Long, c As Long
+    On Error GoTo EH
+    WriteReadStart = False
+    ' シート名側は半角化しない（カタカナのシート名が半角カナになって見つからなくなるため）。全角の「！」だけ半角に直す
+    t = Replace(TxtVal(s.ReadTarget), "！", "!")
+    If Len(t) = 0 Then
+        WriteReadStart = True                 ' 連動オフ
+        Exit Function
+    End If
+
+    ' 終了日時（実行時刻）→ 自系列の設定シート B32
+    Set wsCfg = GetSheet(s.CfgSheet)
+    wsCfg.Cells(S_READ_END, VAL_COL).Value = endDt
+    wsCfg.Cells(S_READ_END, VAL_COL).NumberFormat = DT_FMT
+
+    ' 開始日時 → 行25 の書き込み先
+    pos = InStrRev(t, "!")
+    If pos <= 1 Or pos = Len(t) Then
+        errText = "書き込み先（" & s.CfgSheet & " B" & S_READ_TARGET & "）は「シート名!セル」の形で入力してください（現在：「" & TxtVal(s.ReadTarget) & "」）"
+        Exit Function
+    End If
+    shName = Trim$(Left$(t, pos - 1))
+    If Len(shName) >= 2 And Left$(shName, 1) = "'" And Right$(shName, 1) = "'" Then shName = Mid$(shName, 2, Len(shName) - 2)
+    cellText = Replace(Trim$(Mid$(t, pos + 1)), "$", "")
+    Set ws = GetSheet(shName)
+    If ws Is Nothing Then
+        errText = "書き込み先のシート「" & shName & "」が見つかりません（" & s.CfgSheet & " B" & S_READ_TARGET & "）"
+        Exit Function
+    End If
+    ParseA1 cellText, "書き込み先のセル（" & s.CfgSheet & " B" & S_READ_TARGET & "）", r, c
+    ws.Cells(r, c).Value = startDt
+    ws.Cells(r, c).NumberFormat = DT_FMT
+    WriteReadStart = True
+    Exit Function
+EH:
+    errText = Err.Description
+    WriteReadStart = False
+End Function
+---- コード断片 ここまで ----
+
+==============================================================================
+【P13】
+対象：標準モジュール modKiroku ／ 設定値の解釈の部品（新規）：ColOpt／ColLetter／NumOpt／Flag01／FmtText／IsDashText／HexColor／BorderStyleOf／BorderWeightOf
+操作：追加。Private Function NumVal の End Function の直後に挿入する（空行1行をはさむ）。
+---- コード断片 ここから ----
+' 列記号（空欄・「－」なら 0）
+Private Function ColOpt(ByVal v As Variant, ByVal label As String) As Long
+    Dim t As String
+    t = StrConv(TxtVal(v), vbNarrow)
+    If Len(t) = 0 Or IsDashText(t) Then
+        ColOpt = 0
+    Else
+        ColOpt = ColNum(t, label)
+    End If
+End Function
+
+' 列番号 → 列記号（メッセージ用）
+Private Function ColLetter(ByVal n As Long) As String
+    Dim t As String, m As Long
+    Do While n > 0
+        m = (n - 1) Mod 26
+        t = Chr$(65 + m) & t
+        n = (n - 1) \ 26
+    Loop
+    ColLetter = t
+End Function
+
+' 0 より大きく maxV 以下の数値（空欄・「－」なら 0＝指定なし）
+Private Function NumOpt(ByVal v As Variant, ByVal label As String, ByVal maxV As Double) As Double
+    Dim d As Double, t As String
+    If IsBlankVal(v) Then Exit Function
+    If IsNumVal(v) Then
+        d = CDbl(v)
+    Else
+        t = StrConv(TxtVal(v), vbNarrow)
+        If Len(t) = 0 Or IsDashText(t) Then Exit Function
+        If Not IsNumeric(t) Then RaiseMsg label & " は数値で入力してください（現在：「" & TxtVal(v) & "」）"
+        d = CDbl(t)
+    End If
+    If d <= 0 Or d > maxV Then RaiseMsg label & " は0より大きく" & maxV & "以下の数値で入力してください（現在：「" & TxtVal(v) & "」）"
+    NumOpt = d
+End Function
+
+' 1＝する／0・空欄・「－」＝しない
+Private Function Flag01(ByVal v As Variant, ByVal label As String) As Boolean
+    Dim t As String
+    t = StrConv(TxtVal(v), vbNarrow)
+    If Len(t) = 0 Or IsDashText(t) Or t = "0" Then
+        Flag01 = False
+    ElseIf t = "1" Then
+        Flag01 = True
+    Else
+        RaiseMsg label & " は 1（する）か 0（しない）で入力してください（現在：「" & TxtVal(v) & "」）"
+    End If
+End Function
+
+' 表示形式（空欄・「－」なら ""＝変えない）
+Private Function FmtText(ByVal v As Variant) As String
+    Dim t As String
+    t = TxtVal(v)
+    If Len(t) = 0 Or IsDashText(StrConv(t, vbNarrow)) Then
+        FmtText = ""
+    Else
+        FmtText = t
+    End If
+End Function
+
+' 「－」「-」「―」「ー」などの「指定なし」の印か
+Private Function IsDashText(ByVal t As String) As Boolean
+    Select Case Trim$(t)
+        Case "-", "－", "―", "ー", "ｰ"
+            IsDashText = True
+        Case Else
+            IsDashText = False
+    End Select
+End Function
+
+' RGB 16進6桁（例 FBE5D6）→ 色の値。数字だけの色（000000 等）が数値として入っていても6桁として読む
+Private Function HexColor(ByVal v As Variant, ByVal label As String) As Long
+    Dim t As String, i As Long
+    If IsNumVal(v) Then
+        If CDbl(v) < 0 Or CDbl(v) > 999999 Or CDbl(v) <> Int(CDbl(v)) Then
+            RaiseMsg label & " は6桁の16進数（例 FBE5D6）で入力してください（現在：「" & TxtVal(v) & "」）"
+        End If
+        t = Format$(CDbl(v), "000000")
+    Else
+        t = UCase$(StrConv(TxtVal(v), vbNarrow))
+        If Left$(t, 1) = "#" Then t = Mid$(t, 2)
+    End If
+    If Len(t) <> 6 Then RaiseMsg label & " は6桁の16進数（例 FBE5D6）で入力してください（現在：「" & TxtVal(v) & "」）"
+    For i = 1 To 6
+        If InStr("0123456789ABCDEF", Mid$(t, i, 1)) = 0 Then
+            RaiseMsg label & " は6桁の16進数（例 FBE5D6）で入力してください（現在：「" & TxtVal(v) & "」）"
+        End If
+    Next i
+    HexColor = RGB(CLng("&H" & Mid$(t, 1, 2)), CLng("&H" & Mid$(t, 3, 2)), CLng("&H" & Mid$(t, 5, 2)))
+End Function
+
+' 罫線の種類（日本語名 → XlLineStyle）
+Private Function BorderStyleOf(ByVal v As Variant, ByVal label As String) As Long
+    Select Case TxtVal(v)
+        Case "実線": BorderStyleOf = xlContinuous
+        Case "破線": BorderStyleOf = xlDash
+        Case "点線": BorderStyleOf = xlDot
+        Case "一点鎖線": BorderStyleOf = xlDashDot
+        Case "二重線": BorderStyleOf = xlDouble
+        Case Else
+            RaiseMsg label & " は 実線／破線／点線／一点鎖線／二重線 のどれかにしてください（現在：「" & TxtVal(v) & "」）"
+    End Select
+End Function
+
+' 罫線の太さ（pt → 最も近い XlBorderWeight。0.75=xlHairline／1=xlThin／1.5=xlMedium／2=xlThick。同じ近さなら細い方）
+Private Function BorderWeightOf(ByVal v As Variant, ByVal label As String) As Long
+    Dim d As Double, pts As Variant, wts As Variant, i As Long, best As Long, bestD As Double
+    d = NumOpt(v, label, 100)
+    If d = 0 Then RaiseMsg label & " を pt の数値（例 0.75）で入力してください"
+    pts = Array(0.75, 1, 1.5, 2)
+    wts = Array(xlHairline, xlThin, xlMedium, xlThick)
+    best = 0
+    bestD = Abs(d - pts(0))
+    For i = 1 To 3
+        If Abs(d - pts(i)) < bestD Then
+            best = i
+            bestD = Abs(d - pts(i))
+        End If
+    Next i
+    BorderWeightOf = wts(best)
+End Function
+---- コード断片 ここまで ----
+
+==============================================================================
+【P14】
+対象：標準モジュール modKiroku ／ Private Sub BeginFast（1行追加）
+操作：追加（1行）。BeginFast の中の次の行の直後に挿入する：
+    mCalc = Application.Calculation
+---- コード断片 ここから ----
+    mAlerts = Application.DisplayAlerts
+---- コード断片 ここまで ----
+
+==============================================================================
+【P15】
+対象：標準モジュール modKiroku ／ Private Sub EndFast（1行追加）
+操作：追加（1行）。EndFast の中の次の行の直後に挿入する：
+    Application.ScreenUpdating = mScreen
+---- コード断片 ここから ----
+    Application.DisplayAlerts = mAlerts
+---- コード断片 ここまで ----
+
+==============================================================================
+【P16】
+対象：ThisWorkbook ／ Workbook_SheetChange（新規）
+操作：追加。ThisWorkbook の Private Sub Workbook_Open の End Sub の直後に挿入する（空行1行をはさむ）。
+  （ThisWorkbook はこれで Workbook_Open と Workbook_SheetChange の2つ。どちらも本体呼び出しのみ）
+---- コード断片 ここから ----
+Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
+    ' 連動日付（トリガー列に入力 → 書き込み列へ今日の日付）。本体は標準モジュール modKiroku の Kiroku_OnSheetChange
+    On Error Resume Next
+    Kiroku_OnSheetChange Sh, Target
+End Sub
+---- コード断片 ここまで ----
+
