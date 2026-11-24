@@ -14,8 +14,7 @@ tabicho/
     index.html      画面（build.js で生成。直接編集しない）
     appsscript.json マニフェスト
   integration/
-    spotcho_api.gs  スポット帳GASに追加するファイル
-    kakeibo_api.gs  家計簿GASに追加するファイル
+    spotcho_api.gs  スポット帳GASに追加するファイル（家計簿GASは変更不要）
   src/            画面のソース（index.html / styles.css / js/*.js）
   build.js        src → gas/index.html をまとめる
   test/           ロジック・保存処理・画面通しのテスト
@@ -38,10 +37,12 @@ tabicho/
 | `SPOTCHO_URL` | スポット帳GASのウェブアプリURL（/exec） |
 | `SPOTCHO_PIN` | スポット帳のPIN（画面側には出ません） |
 | `KAKEIBO_URL` | 家計簿GASのウェブアプリURL（/exec） |
-| `KAKEIBO_PIN` | 家計簿側でPINを確認する場合のみ |
-| `WORK_CALENDAR_ID` | 勤務カレンダーのID（行き先提案の連休検出。未設定なら土日祝） |
-| `WORK_OFF_REGEX` | 休みを表す予定名（既定 `休\|公休\|有給\|有休\|OFF\|オフ`） |
-| `WORK_EMPTY_IS_OFF` | 勤務予定が無い日を休みとみなすか（既定 `true`） |
+| `KAKEIBO_PIN` | 家計簿GASの `SECRET_PIN` と同じ値（必須） |
+| `SHIFT_MASTER_SS_ID` | 残業時間管理ブックのID（家計簿GASの `SALARY_SS_ID` と同じ）。「勤務マスタ」の勤務名でカレンダーの勤務を見分け、連休を出します |
+| `WORK_CALENDAR_ID` | 勤務が入っているカレンダー（未設定ならメインのカレンダー。家計簿と同じ） |
+| `WORK_OFF_REGEX` | 休みを表す勤務名・予定名（既定 `休\|公休\|有給\|有休\|OFF\|オフ`） |
+| `SHIFT_AKE_IS_OFF` | 夜勤明けの日を休みとみなすか（既定 `false`） |
+| `WORK_EMPTY_IS_OFF` | 勤務の予定が無い日を休みとみなすか（既定 `true`） |
 | `TRAVEL_CALENDAR_ID` | 予約を登録するカレンダー（未設定なら既定のカレンダー） |
 | `TABICHO_SHEET_ID` | 保存先（`setupTabicho` が自動で入れます） |
 
@@ -49,9 +50,15 @@ tabicho/
 `integration/spotcho_api.gs` をスポット帳のプロジェクトに追加し、ファイル冒頭の説明どおり既存の `doPost` の先頭に2行足します。`TABICHO_SPOT_CONFIG` の列名はスポット帳シートの見出しに合わせてください。**既存デプロイを「新バージョン」で更新すればURLは変わりません。**
 「行った」の訪問記録（訪問日・★・ひとこと・同行者）は `visits` シートに入り、スポットのステータスも「行った」になります。取り消すと元のステータスに戻ります。
 
-### 4. 家計簿GASに受け口を足す
-`integration/kakeibo_api.gs` を家計簿のプロジェクトに追加し、同じく `doPost` の先頭に2行足します。同じ明細を二度送っても `sourceKey` で弾きます。
-> 家計簿アプリは起動時にクラウドから読み込んで保存する作りなので、旅帳から送った後は家計簿アプリを開き直して（同期して）から編集してください。
+### 4. 家計簿（GAS v7.0 は変更不要）
+ほしいもの帳と同じ方式で送ります。
+1. 家計簿GASから `loadAll`（PIN付き）で明細と `rev` を読む
+2. 旅帳の明細を足す。支出は `catLock="1"` で用途（イベント・旅行・レジャー）と予算区分（特別費・レジャー）を固定。割り勘分の収入はカテゴリー「割り勘」のまま家計簿の判定に任せる
+3. `src="tabicho"`・`srcRef`（旅と明細の目印）を付け、同じ明細は二度入らない
+4. 明細一式を `baseRev` 付きで保存。別の端末が先に保存していたら読み直してやり直す（家計簿GASが保存前に Logs を10世代バックアップします）
+
+カテゴリー（支払方法）の初期値は家計簿 v7.0 の名前（三井住友ゴールド(NL)・Olive クレジット・PayPayカード・ガソリン代 など）に合わせてあります。
+> 家計簿アプリ側では、旅帳の明細は区分固定の印（今は「🛍️ほしいもの帳」と表示）が付きます。`src` が `tabicho` の時に「🧳旅帳」と出すには家計簿アプリの `catLockBadge` に1行足す必要があります。
 
 ### 5. 設定（⚙️）
 自分の名前・自宅（初期値は亀山）・支払方法と家計簿カテゴリー（カードかどうか）を確認します。「接続テスト」でスポット帳・家計簿・カレンダー・経路の疎通を確認できます。
@@ -83,7 +90,7 @@ tabicho/
 ```bash
 node tabicho/build.js              # src → gas/index.html
 node tabicho/test/logic.test.js    # 営業時間・割り勘・精算・実効レート・家計簿・工程・ステータス
-node tabicho/test/gas.test.js      # Code.gs の保存処理（分割保存・衝突検知）
+node tabicho/test/gas.test.js      # Code.gs の保存処理（分割保存・衝突検知）と家計簿連携（偽の家計簿GAS v7.0 相手）
 node tabicho/test/smoke.e2e.js     # 画面の通しテスト（Playwright、デモモード）
 ```
 

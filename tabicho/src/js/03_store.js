@@ -9,14 +9,19 @@ const DEFAULT_SETTINGS = () => ({
   dayStart: '09:00',
   departMarginMin: 10,
   memberPresets: [{ id: 'pr1', name: 'ひとり旅', members: ['自分'] }],
+  // 家計簿 v7.0 のカテゴリー（支払方法）に合わせた初期値
   payMethods: [
-    { id: 'cash', name: '現金', kakeiboCategory: 'その他（支出）', isCard: false },
+    { id: 'cash', name: '現金', kakeiboCategory: 'その他（支出）', isCard: false, isCash: true },
     { id: 'paypay', name: 'PayPay', kakeiboCategory: 'PayPay', isCard: false },
     { id: 'smbc', name: '三井住友ゴールド(NL)', kakeiboCategory: '三井住友ゴールド(NL)', isCard: true },
     { id: 'olive', name: 'Olive クレジット', kakeiboCategory: 'Olive クレジット', isCard: true },
-    { id: 'paypaycard', name: 'PayPayカード', kakeiboCategory: 'PayPayカード', isCard: true }
-  ],
-  kakeiboUsage: 'イベント・旅行・レジャー',
+    { id: 'paypaycard', name: 'PayPayカード', kakeiboCategory: 'PayPayカード', isCard: true },
+    { id: 'amazon', name: 'Amazonマスター', kakeiboCategory: 'Amazonマスター', isCard: true },
+    { id: 'mercard', name: 'mercard', kakeiboCategory: 'mercard', isCard: true },
+    { id: 'gas', name: 'ガソリン代（給油用カード）', kakeiboCategory: 'ガソリン代', isCard: true },
+    { id: 'supay', name: 'SU-PAY', kakeiboCategory: 'SU-PAY', isCard: false },
+    { id: 'olivedebit', name: 'Oliveデビット', kakeiboCategory: 'Oliveデビット', isCard: false }
+  ],  kakeiboUsage: 'イベント・旅行・レジャー',
   kakeiboBudget: '特別費・レジャー',
   kakeiboIncomeCategory: '割り勘',
   fuelEfficiency: 15,   // km/L（提案の概算用）

@@ -56,3 +56,44 @@ call('deleteTrip', { id: 't1' });
 assert.strictEqual(call('bootstrap', {}).trips.length, 0);
 assert.ok(call('nope', {}).error);
 console.log('gas storage tests passed');
+
+// ---- 家計簿連携：家計簿GAS v7.0 の振る舞いを真似た偽サーバ ----
+const kk = { rev: 5, logs: [{ id: 100, amount: -500, date: '2026-11-01', memo: 'コンビニ', category: 'PayPay', usageCat: 'コンビニ・飲料', isLegacy: false }], posts: 0, conflictOnce: true };
+props.KAKEIBO_URL = 'https://kakeibo/exec'; props.KAKEIBO_PIN = '9999';
+ctx.Utilities.sleep = () => {};
+ctx.UrlFetchApp.fetch = (url, opt) => {
+  const reply = (o) => ({ getContentText: () => JSON.stringify(o), getResponseCode: () => 200 });
+  if (!opt || opt.method !== 'post') {
+    const q = Object.fromEntries(new URL(url).searchParams);
+    if (q.pin !== '9999') return reply({ status: 'unauthorized' });
+    if (q.action === 'loadAll') return reply({ status: 'ok', rev: kk.rev, logs: JSON.parse(JSON.stringify(kk.logs)) });
+    return reply({ status: 'error', message: '不明な action です' });
+  }
+  const body = JSON.parse(opt.payload);
+  if (body.pin !== '9999') return reply({ status: 'unauthorized' });
+  kk.posts++;
+  if (kk.conflictOnce) { kk.conflictOnce = false; kk.rev++; kk.logs.push({ id: 101, amount: -300, date: '2026-11-02', memo: '他端末', category: 'PayPay' }); return reply({ status: 'conflict' }); }
+  if (Number(body.baseRev) !== kk.rev) return reply({ status: 'conflict' });
+  kk.logs = body.logs; kk.rev++;
+  return reply({ status: 'saved', rev: kk.rev });
+};
+const logs = [
+  { sourceKey: 't1:e:x:exp', date: '2026-11-30', amount: -30001, memo: '旅館 #淡路島', category: '三井住友ゴールド(NL)', usage: 'イベント・旅行・レジャー', budget: '特別費・レジャー' },
+  { sourceKey: 't1:e:x:inc', date: '2026-11-30', amount: 15000, memo: '旅館（割り勘分） #淡路島', category: '割り勘', usage: '', budget: '精算・移動' }
+];
+let k1 = call('kakeiboSend', { logs });
+assert.ok(k1.ok, JSON.stringify(k1));
+assert.strictEqual(k1.sent, 2);
+assert.strictEqual(kk.posts, 2, '1回目は conflict → 読み直して再送');
+assert.ok(kk.logs.some(l => l.id === 101), '他端末で増えた明細を消さない');
+assert.ok(kk.logs.some(l => l.id === 100 && l.usageCat === 'コンビニ・飲料'), '既存の明細はそのまま');
+const exp = kk.logs.find(l => l.srcRef === 't1:e:x:exp');
+assert.strictEqual(exp.catLock, '1'); assert.strictEqual(exp.usageCat, 'イベント・旅行・レジャー'); assert.strictEqual(exp.src, 'tabicho');
+const inc = kk.logs.find(l => l.srcRef === 't1:e:x:inc');
+assert.ok(!inc.catLock, '割り勘の収入は家計簿の判定に任せる');
+const k2 = call('kakeiboSend', { logs });
+assert.strictEqual(k2.sent, 0); assert.strictEqual(k2.skipped, 2, '同じ明細は二重に入らない');
+assert.strictEqual(kk.logs.length, 4);
+props.KAKEIBO_PIN = 'bad';
+assert.ok(/PINが一致しません/.test(call('kakeiboSend', { logs }).error));
+console.log('kakeibo integration tests passed');

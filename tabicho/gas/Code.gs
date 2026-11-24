@@ -7,10 +7,12 @@
  *   SPOTCHO_URL        スポット帳GASのウェブアプリURL（/exec）
  *   SPOTCHO_PIN        スポット帳のPIN（画面側には出さない）
  *   KAKEIBO_URL        家計簿GASのウェブアプリURL（/exec）
- *   KAKEIBO_PIN        家計簿側でPINを確認する場合のみ
- *   WORK_CALENDAR_ID   勤務カレンダーのID（行き先提案の連休検出）
- *   WORK_OFF_REGEX     休みを表す予定名（既定：休|公休|有給|有休|OFF|オフ）
- *   WORK_EMPTY_IS_OFF  勤務カレンダーに予定が無い日を休みとみなすか（既定 true）
+ *   KAKEIBO_PIN        家計簿GASの SECRET_PIN と同じ値（必須）
+ *   SHIFT_MASTER_SS_ID 残業時間管理ブックのID（「勤務マスタ」で勤務を見分ける。家計簿GASの SALARY_SS_ID と同じ）
+ *   WORK_CALENDAR_ID   勤務が入っているカレンダーのID（未設定ならメインのカレンダー）
+ *   WORK_OFF_REGEX     休みを表す勤務名・予定名（既定：休|公休|有給|有休|OFF|オフ）
+ *   SHIFT_AKE_IS_OFF   夜勤明けの日を休みとみなすか（既定 false）
+ *   WORK_EMPTY_IS_OFF  勤務の予定が無い日を休みとみなすか（既定 true）
  *   TRAVEL_CALENDAR_ID 予約を登録するカレンダー（未設定なら既定のカレンダー）
  */
 
@@ -179,13 +181,69 @@ API.spotSetVisited = function (a) { var r = spotcho_('setVisited', { spotId: a.s
 API.spotCreate = function (a) { var r = spotcho_('create', { spot: a.spot }); return { ok: true, spot: r.spot }; };
 
 // ---------------------------------------------------------------------------
-// 家計簿（ほしいもの帳→家計簿と同じ API 連携。sourceKey で二重送信を防ぐ）
+// 家計簿（ほしいもの帳→家計簿と同じ方式。家計簿GAS v7.0 は変更不要）
+//   1) loadAll（PIN付き GET）で明細と rev を読む
+//   2) 旅帳の明細を足す：用途・予算区分を catLock="1" で固定、src="tabicho"、srcRef で二重送信を防ぐ
+//   3) 明細一式を baseRev 付きで POST（家計簿GASが保存前に Logs を10世代バックアップする）
+//      別の端末が先に保存していたら（conflict）読み直してやり直す
 // ---------------------------------------------------------------------------
-API.kakeiboSend = function (a) {
-  var url = prop_('KAKEIBO_URL');
+function kakeiboCfg_() {
+  var url = prop_('KAKEIBO_URL'), pin = prop_('KAKEIBO_PIN');
   if (!url) throw new Error('家計簿のURL（KAKEIBO_URL）が未設定です');
-  var r = postJson_(url, { action: 'tabicho.appendLogs', pin: prop_('KAKEIBO_PIN', ''), logs: a.logs || [] });
-  return { ok: true, sent: r.sent, skipped: r.skipped, keys: r.keys };
+  if (!pin) throw new Error('家計簿のPIN（KAKEIBO_PIN）が未設定です');
+  return { url: url, pin: pin };
+}
+function kakeiboFetch_(url, opt) {
+  var res = UrlFetchApp.fetch(url, Object.assign({ muteHttpExceptions: true, followRedirects: true }, opt || {}));
+  var j;
+  try { j = JSON.parse(res.getContentText()); } catch (e) { throw new Error('家計簿の応答がJSONではありません（HTTP ' + res.getResponseCode() + '）。URLとデプロイのアクセス権を確認してください'); }
+  if (j.status === 'unauthorized') throw new Error('家計簿のPINが一致しません（KAKEIBO_PIN を家計簿GASの SECRET_PIN と同じにしてください）');
+  return j;
+}
+function kakeiboGet_(action) {
+  var c = kakeiboCfg_();
+  return kakeiboFetch_(c.url + '?pin=' + encodeURIComponent(c.pin) + '&action=' + encodeURIComponent(action));
+}
+function kakeiboRows_(existing, logs) {
+  var have = {};
+  var maxId = 0;
+  existing.forEach(function (l) {
+    if (String(l.src) === 'tabicho' && l.srcRef) have[String(l.srcRef)] = true;
+    maxId = Math.max(maxId, Number(l.id) || 0);
+  });
+  var nextId = Math.max(maxId + 1, Date.now());
+  var rows = [], keys = [], skipped = 0;
+  (logs || []).forEach(function (l) {
+    if (!l.sourceKey) return;
+    keys.push(l.sourceKey);
+    if (have[l.sourceKey]) { skipped++; return; }
+    have[l.sourceKey] = true;
+    var row = { id: nextId++, amount: Number(l.amount), date: String(l.date), memo: String(l.memo || ''), category: String(l.category || ''), src: 'tabicho', srcRef: String(l.sourceKey) };
+    // 用途が決まっている行（支出）は区分を固定。割り勘の収入は家計簿のカテゴリー判定に任せる
+    if (l.usage) { row.catLock = '1'; row.usageCat = String(l.usage); row.budgetCat = String(l.budget || ''); }
+    rows.push(row);
+  });
+  return { rows: rows, keys: keys, skipped: skipped };
+}
+API.kakeiboSend = function (a) {
+  var c = kakeiboCfg_();
+  var lastMsg = '';
+  for (var attempt = 0; attempt < 3; attempt++) {
+    var data = kakeiboGet_('loadAll');
+    if (data.status !== 'ok') throw new Error('家計簿を読み込めません：' + (data.message || data.status));
+    var existing = data.logs || [];
+    var r = kakeiboRows_(existing, a.logs);
+    if (!r.rows.length) return { ok: true, sent: 0, skipped: r.skipped, keys: r.keys };
+    var res = kakeiboFetch_(c.url, {
+      method: 'post', contentType: 'text/plain;charset=utf-8',
+      payload: JSON.stringify({ pin: c.pin, baseRev: data.rev, logs: existing.concat(r.rows) })
+    });
+    if (res.status === 'saved') return { ok: true, sent: r.rows.length, skipped: r.skipped, keys: r.keys, rev: res.rev };
+    lastMsg = res.message || res.status;
+    if (res.status !== 'conflict' && res.status !== 'busy') break;
+    Utilities.sleep(1500 * (attempt + 1));
+  }
+  throw new Error('家計簿へ保存できませんでした：' + lastMsg);
 };
 
 // ---------------------------------------------------------------------------
@@ -310,15 +368,65 @@ API.fxRates = function () {
 // 勤務カレンダーから休み（連休）を検出
 // ---------------------------------------------------------------------------
 function ymd_(d) { return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd'); }
+// 家計簿GASと同じ見分け方：勤務マスタ（残業時間管理ブック）にある予定名＝勤務。夜勤（翌日終了）は明けの日も持つ
+function normTitle_(s) { return String(s || '').normalize('NFKC').replace(/\s+/g, '').trim(); }
+function readShiftMaster_() {
+  var id = prop_('SHIFT_MASTER_SS_ID');
+  if (!id) return null;
+  var sh = SpreadsheetApp.openById(id).getSheetByName('勤務マスタ');
+  if (!sh) throw new Error('残業時間管理ブックに「勤務マスタ」タブがありません');
+  var rows = sh.getDataRange().getValues();
+  var master = {};
+  for (var i = 2; i < rows.length; i++) {
+    var name = normTitle_(rows[i][0]);
+    if (!name) break;
+    master[name] = { name: String(rows[i][0]).trim(), nextDay: String(rows[i][3]).trim() === 'はい', kubun: String(rows[i][4] || '').trim() };
+  }
+  return master;
+}
+function shiftDays_(from, to, master, offRe) {
+  var workId = prop_('WORK_CALENDAR_ID');
+  var cal = workId ? CalendarApp.getCalendarById(workId) : CalendarApp.getDefaultCalendar();
+  var work = {}, offMark = {}, ake = {};
+  // 夜勤が前日から続く分も拾うため1日前から読む
+  cal.getEvents(new Date(from.getTime() - 86400000), to).forEach(function (ev) {
+    var m = master[normTitle_(ev.getTitle())];
+    if (!m) return; // 勤務マスタに無い予定（私用など）は勤務として数えない
+    var s = ev.getStartTime();
+    var day = ymd_(s);
+    // 終日で入った夜勤は「終わる日」に書かれている前提（家計簿GASと同じ）
+    if (m.nextDay && ev.isAllDayEvent()) day = ymd_(new Date(s.getTime() - 86400000));
+    if (offRe.test(m.name) || offRe.test(m.kubun)) { offMark[day] = m.name; return; }
+    work[day] = m.name;
+    if (m.nextDay) { var nd = ymd_(new Date(new Date(day + 'T12:00:00+09:00').getTime() + 86400000)); ake[nd] = m.name + '明け'; }
+  });
+  return { cal: cal, work: work, offMark: offMark, ake: ake };
+}
 API.holidayBlocks = function (a) {
   var from = new Date(a.from + 'T00:00:00+09:00'), to = new Date(a.to + 'T23:59:59+09:00');
   var workId = prop_('WORK_CALENDAR_ID');
   var offRe = new RegExp(prop_('WORK_OFF_REGEX', '休|公休|有給|有休|OFF|オフ'), 'i');
   var emptyIsOff = String(prop_('WORK_EMPTY_IS_OFF', 'true')) !== 'false';
+  var akeIsOff = String(prop_('SHIFT_AKE_IS_OFF', 'false')) === 'true';
   var hol = {};
   try {
     CalendarApp.getCalendarById('ja.japanese#holiday@group.v.calendar.google.com').getEvents(from, to).forEach(function (e) { hol[ymd_(e.getStartTime())] = e.getTitle(); });
   } catch (e) {}
+  var master = readShiftMaster_();
+  if (master) {
+    var sd = shiftDays_(from, to, master, offRe);
+    var out = [];
+    for (var dd = new Date(from); dd <= to; dd = new Date(dd.getTime() + 86400000)) {
+      var key = ymd_(dd);
+      var off2, why = '';
+      if (sd.work[key]) { off2 = false; why = sd.work[key]; }
+      else if (sd.ake[key]) { off2 = akeIsOff; why = sd.ake[key]; }
+      else if (sd.offMark[key]) { off2 = true; why = sd.offMark[key]; }
+      else { off2 = emptyIsOff; why = off2 ? '勤務なし' + (hol[key] ? '（' + hol[key] + '）' : '') : ''; }
+      out.push({ date: key, off: off2, reason: why });
+    }
+    return { ok: true, days: out, source: '勤務マスタ × カレンダー「' + sd.cal.getName() + '」' };
+  }
   var byDay = {};
   var cal = workId ? CalendarApp.getCalendarById(workId) : null;
   if (cal) {
@@ -370,9 +478,13 @@ API.calendarAdd = function (a) {
 API.testConnections = function () {
   var r = {};
   try { var s = spotcho_('ping', {}); r.spotcho = { ok: true, note: s.note || 'OK' }; } catch (e) { r.spotcho = { ok: false, error: String(e.message || e) }; }
-  try { var k = postJson_(prop_('KAKEIBO_URL') || '', { action: 'tabicho.ping', pin: prop_('KAKEIBO_PIN', '') }); r.kakeibo = { ok: true, note: k.note || 'OK' }; }
-  catch (e) { r.kakeibo = { ok: false, error: prop_('KAKEIBO_URL') ? String(e.message || e) : 'KAKEIBO_URL 未設定' }; }
-  try { r.calendar = { ok: true, note: (prop_('TRAVEL_CALENDAR_ID') ? CalendarApp.getCalendarById(prop_('TRAVEL_CALENDAR_ID')) : CalendarApp.getDefaultCalendar()).getName() + (prop_('WORK_CALENDAR_ID') ? ' ／ 勤務：設定済' : ' ／ 勤務カレンダー未設定') }; }
+  // 家計簿：存在しない action を投げると、PIN が合っていれば「不明な action」、違えば unauthorized が返る（データに触れない）
+  try { var k = kakeiboGet_('tabichoPing'); r.kakeibo = { ok: k.status === 'error' || k.status === 'ok', note: 'PIN OK' }; }
+  catch (e) { r.kakeibo = { ok: false, error: String(e.message || e) }; }
+  try {
+    var m0 = readShiftMaster_();
+    r.calendar = { ok: true, note: (prop_('TRAVEL_CALENDAR_ID') ? CalendarApp.getCalendarById(prop_('TRAVEL_CALENDAR_ID')) : CalendarApp.getDefaultCalendar()).getName() + (m0 ? ' ／ 勤務マスタ ' + Object.keys(m0).length + '件' : (prop_('WORK_CALENDAR_ID') ? ' ／ 勤務カレンダー：設定済' : ' ／ 勤務：未設定（土日祝で判定）')) };
+  }
   catch (e) { r.calendar = { ok: false, error: String(e.message || e) }; }
   try { var m = route_({ from: { lat: 34.8556, lng: 136.4517 }, to: { lat: 34.6851, lng: 135.843 }, mode: 'car' }); r.maps = { ok: !m.estimated, note: m.km + 'km・' + m.min + '分' }; }
   catch (e) { r.maps = { ok: false, error: String(e.message || e) }; }

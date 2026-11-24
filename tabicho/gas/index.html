@@ -700,14 +700,19 @@ const DEFAULT_SETTINGS = () => ({
   dayStart: '09:00',
   departMarginMin: 10,
   memberPresets: [{ id: 'pr1', name: 'ひとり旅', members: ['自分'] }],
+  // 家計簿 v7.0 のカテゴリー（支払方法）に合わせた初期値
   payMethods: [
-    { id: 'cash', name: '現金', kakeiboCategory: 'その他（支出）', isCard: false },
+    { id: 'cash', name: '現金', kakeiboCategory: 'その他（支出）', isCard: false, isCash: true },
     { id: 'paypay', name: 'PayPay', kakeiboCategory: 'PayPay', isCard: false },
     { id: 'smbc', name: '三井住友ゴールド(NL)', kakeiboCategory: '三井住友ゴールド(NL)', isCard: true },
     { id: 'olive', name: 'Olive クレジット', kakeiboCategory: 'Olive クレジット', isCard: true },
-    { id: 'paypaycard', name: 'PayPayカード', kakeiboCategory: 'PayPayカード', isCard: true }
-  ],
-  kakeiboUsage: 'イベント・旅行・レジャー',
+    { id: 'paypaycard', name: 'PayPayカード', kakeiboCategory: 'PayPayカード', isCard: true },
+    { id: 'amazon', name: 'Amazonマスター', kakeiboCategory: 'Amazonマスター', isCard: true },
+    { id: 'mercard', name: 'mercard', kakeiboCategory: 'mercard', isCard: true },
+    { id: 'gas', name: 'ガソリン代（給油用カード）', kakeiboCategory: 'ガソリン代', isCard: true },
+    { id: 'supay', name: 'SU-PAY', kakeiboCategory: 'SU-PAY', isCard: false },
+    { id: 'olivedebit', name: 'Oliveデビット', kakeiboCategory: 'Oliveデビット', isCard: false }
+  ],  kakeiboUsage: 'イベント・旅行・レジャー',
   kakeiboBudget: '特別費・レジャー',
   kakeiboIncomeCategory: '割り勘',
   fuelEfficiency: 15,   // km/L（提案の概算用）
@@ -3198,7 +3203,7 @@ function fuelCard(trip) {
   return `<div class="card"><div class="row between"><b>⛽ 給油</b><button class="btn sm primary" data-act="fuelNew">＋ 給油を記録</button></div>
     ${trip.fuel.length ? trip.fuel.map(f => `<div class="list-row" data-act="fuelEdit" data-id="${f.id}"><span>${fmtDate(f.date)} ${f.liters ? f.liters + 'L' : ''} ${esc(f.station || '')}</span><b>${f.money && f.money.amount != null ? fmtMoney(num(f.money.amount), f.money.currency) : '—'}</b></div>`).join('') : '<div class="muted small">給油は記録するとお金タブの支出（給油）に自動で入ります</div>'}</div>`;
 }
-ACT.fuelNew = () => { const t = curTrip(); openFuelEditor(t, { id: uid('fu'), date: todayStr(), liters: '', unitPrice: '', odo: '', station: '', memo: '', money: newMoney(t, { method: (S.settings.payMethods.find(p => p.isCard) || {}).id || 'cash' }) }, true); };
+ACT.fuelNew = () => { const t = curTrip(); openFuelEditor(t, { id: uid('fu'), date: todayStr(), liters: '', unitPrice: '', odo: '', station: '', memo: '', money: newMoney(t, { method: (S.settings.payMethods.find(p => p.id === 'gas') || S.settings.payMethods.find(p => p.isCard) || {}).id || 'cash' }) }, true); };
 ACT.fuelEdit = (el) => { const t = curTrip(); openFuelEditor(t, t.fuel.find(f => f.id === el.dataset.id)); };
 function openFuelEditor(trip, f, isNew) {
   openModal(`<div class="form-grid">
@@ -3628,7 +3633,7 @@ ACT.openSettings = () => {
     <div class="set-sec"><div class="b">🎒 持ち物テンプレートに追加</div><div id="stPack">${(st.packCustom || []).map(packTmplRowHTML).join('')}</div><button class="btn sm" data-act="stPackAdd">＋ 追加</button></div>
     <button class="btn primary block" data-act="stSave">設定を保存</button>
     <div class="set-sec mt"><div class="b">🔌 接続</div><div id="stConn" class="small muted">${S.serverMock ? 'デモモード（GAS未接続）' : 'GAS接続中'}</div><button class="btn sm" data-act="stTest">接続テスト</button>
-      <div class="muted small">スポット帳・家計簿のURLとPINは画面に出さず、旅帳GASのスクリプトプロパティに保存します（README参照）</div></div>
+      <div class="muted small">スポット帳・家計簿のURLとPINは画面に出さず、旅帳GASのスクリプトプロパティに保存します（README参照）。家計簿へはほしいもの帳と同じ方式（区分を固定した明細を追加）で送ります</div></div>
     <div class="set-sec"><div class="b">💾 データ</div><div class="row gap wrap"><button class="btn sm" data-act="stExport">JSONを書き出す</button><button class="btn sm ghost" data-act="stClearCache">端末のキャッシュを消す</button>${S.serverMock ? '<button class="btn sm danger" data-act="stResetDemo">デモデータを初期化</button>' : ''}</div>
       <div class="muted small">旅帳 v${APP_VERSION}</div></div>`,
     { title: '⚙️ 設定', full: true });

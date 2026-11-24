@@ -148,7 +148,7 @@ function fuelCard(trip) {
   return `<div class="card"><div class="row between"><b>⛽ 給油</b><button class="btn sm primary" data-act="fuelNew">＋ 給油を記録</button></div>
     ${trip.fuel.length ? trip.fuel.map(f => `<div class="list-row" data-act="fuelEdit" data-id="${f.id}"><span>${fmtDate(f.date)} ${f.liters ? f.liters + 'L' : ''} ${esc(f.station || '')}</span><b>${f.money && f.money.amount != null ? fmtMoney(num(f.money.amount), f.money.currency) : '—'}</b></div>`).join('') : '<div class="muted small">給油は記録するとお金タブの支出（給油）に自動で入ります</div>'}</div>`;
 }
-ACT.fuelNew = () => { const t = curTrip(); openFuelEditor(t, { id: uid('fu'), date: todayStr(), liters: '', unitPrice: '', odo: '', station: '', memo: '', money: newMoney(t, { method: (S.settings.payMethods.find(p => p.isCard) || {}).id || 'cash' }) }, true); };
+ACT.fuelNew = () => { const t = curTrip(); openFuelEditor(t, { id: uid('fu'), date: todayStr(), liters: '', unitPrice: '', odo: '', station: '', memo: '', money: newMoney(t, { method: (S.settings.payMethods.find(p => p.id === 'gas') || S.settings.payMethods.find(p => p.isCard) || {}).id || 'cash' }) }, true); };
 ACT.fuelEdit = (el) => { const t = curTrip(); openFuelEditor(t, t.fuel.find(f => f.id === el.dataset.id)); };
 function openFuelEditor(trip, f, isNew) {
   openModal(`<div class="form-grid">

@@ -30,7 +30,7 @@ ACT.openSettings = () => {
     <div class="set-sec"><div class="b">🎒 持ち物テンプレートに追加</div><div id="stPack">${(st.packCustom || []).map(packTmplRowHTML).join('')}</div><button class="btn sm" data-act="stPackAdd">＋ 追加</button></div>
     <button class="btn primary block" data-act="stSave">設定を保存</button>
     <div class="set-sec mt"><div class="b">🔌 接続</div><div id="stConn" class="small muted">${S.serverMock ? 'デモモード（GAS未接続）' : 'GAS接続中'}</div><button class="btn sm" data-act="stTest">接続テスト</button>
-      <div class="muted small">スポット帳・家計簿のURLとPINは画面に出さず、旅帳GASのスクリプトプロパティに保存します（README参照）</div></div>
+      <div class="muted small">スポット帳・家計簿のURLとPINは画面に出さず、旅帳GASのスクリプトプロパティに保存します（README参照）。家計簿へはほしいもの帳と同じ方式（区分を固定した明細を追加）で送ります</div></div>
     <div class="set-sec"><div class="b">💾 データ</div><div class="row gap wrap"><button class="btn sm" data-act="stExport">JSONを書き出す</button><button class="btn sm ghost" data-act="stClearCache">端末のキャッシュを消す</button>${S.serverMock ? '<button class="btn sm danger" data-act="stResetDemo">デモデータを初期化</button>' : ''}</div>
       <div class="muted small">旅帳 v${APP_VERSION}</div></div>`,
     { title: '⚙️ 設定', full: true });
