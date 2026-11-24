@@ -72,6 +72,7 @@ ctx.UrlFetchApp.fetch = (url, opt) => {
   if (!opt || opt.method !== 'post') {
     const q = Object.fromEntries(new URL(url).searchParams);
     if (q.pin !== '9999') return reply({ status: 'unauthorized' });
+    if (q.action === 'loadAll') kk.lastYear = q.year;
     if (q.action === 'loadAll') return reply({ status: 'ok', rev: kk.rev, logs: kk.emptyOnce ? [] : JSON.parse(JSON.stringify(kk.logs)), categories: kk.categories, holidays: kk.holidays });
     return reply({ status: 'error', message: '不明な action です' });
   }
@@ -100,7 +101,8 @@ assert.strictEqual(exp.bigCat, '支出（クレカ）'); assert.strictEqual(exp.
 assert.strictEqual(exp.useYM, '2026-11'); assert.strictEqual(exp.absAmount, 30001);
 assert.deepStrictEqual(Object.keys(kk.logs[0]).filter(k => !(k in exp)), [], '既存明細と同じ列を持つ');
 const inc = kk.logs.find(l => l.srcRef === 't1:e:x:inc');
-assert.strictEqual(inc.bigCat, '精算・移動');
+assert.strictEqual(inc.bigCat, '精算・移動'); assert.strictEqual(inc.usageCat, '割り勘'); assert.strictEqual(inc.budgetCat, '精算・移動');
+assert.strictEqual(kk.lastYear, '2026', 'loadAll に送る明細の年を渡す');
 assert.ok(!inc.catLock, '割り勘の収入は家計簿の判定に任せる');
 const k2 = call('kakeiboSend', { logs });
 assert.strictEqual(k2.sent, 0); assert.strictEqual(k2.skipped, 2, '同じ明細は二重に入らない');

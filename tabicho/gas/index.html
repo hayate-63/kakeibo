@@ -3586,6 +3586,7 @@ function renderKakeibo(trip) {
         <option value="carry" ${r.close === 'carry' ? 'selected' : ''}>次回用に残す（取得レートで確定）</option></select></div>
       ${r.close === 'carry' ? `<div class="small">繰越残高：<b>${fmtMoney(r.carry || 0, c)}</b>（取得レート ${r.buyRate ? r.buyRate.toFixed(4) : '—'}円）</div>` : ''}
       ${r.note ? `<div class="muted small">${esc(r.note)}</div>` : ''}
+      <div class="muted small">※ 自分の両替と、自分が外貨現金で払った支出だけで計算します（他の人が払った分は精算で円になるため対象外）</div>
       ${r.final ? '<div class="ok small">✅ 確定。現金分を家計簿へ送れます</div>' : ''}</div>`;
   });
   // 家計簿

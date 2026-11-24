@@ -330,9 +330,9 @@ function kakeiboFetch_(url, opt) {
   if (j.status === 'unauthorized') throw new Error('家計簿のPINが一致しません（KAKEIBO_PIN を家計簿GASの SECRET_PIN と同じにしてください）');
   return j;
 }
-function kakeiboGet_(action) {
+function kakeiboGet_(action, year) {
   var c = kakeiboCfg_();
-  return kakeiboFetch_(c.url + '?pin=' + encodeURIComponent(c.pin) + '&action=' + encodeURIComponent(action));
+  return kakeiboFetch_(c.url + '?pin=' + encodeURIComponent(c.pin) + '&action=' + encodeURIComponent(action) + (year ? '&year=' + year : ''));
 }
 // ほしいもの帳 GAS v1.0.1 と同じ作り方：既存明細の列をひな形にし、引落日などの派生項目も家計簿 evaluateEntry と同じ計算で入れる
 function kkIsActive_(v) { return v === undefined || v === null || v === '' || v === 1 || v === true || String(v) === '1' || String(v).toUpperCase() === 'TRUE'; }
@@ -404,6 +404,9 @@ function kakeiboRows_(data, logs) {
     });
     // 用途が決まっている行（支出）は区分を固定。割り勘の収入は家計簿のカテゴリー判定に任せる
     if (l.usage) { row.catLock = '1'; row.usageCat = String(l.usage); row.budgetCat = String(l.budget || ''); }
+    else if (m && ['純収入', '精算・移動', '貯蓄移動', '投資移動'].indexOf(String(m.bigCat)) >= 0) {
+      row.usageCat = String(m.name).replace('（引出）', ''); row.budgetCat = String(m.bigCat);
+    }
     rows.push(row);
   });
   return { rows: rows, keys: keys, skipped: skipped, bad: bad };
@@ -411,8 +414,10 @@ function kakeiboRows_(data, logs) {
 API.kakeiboSend = function (a) {
   var c = kakeiboCfg_();
   var lastMsg = '';
+  // 祝日は「指定年の前年1月〜翌年12月」が返るので、送る明細の最も新しい年を渡す（年をまたぐ引落日の休日調整のため）
+  var year = (a.logs || []).reduce(function (y, l) { return Math.max(y, Number(String(l.date || '').slice(0, 4)) || 0); }, 0) || '';
   for (var attempt = 0; attempt < 3; attempt++) {
-    var data = kakeiboGet_('loadAll');
+    var data = kakeiboGet_('loadAll', year);
     if (data.status !== 'ok') throw new Error('家計簿を読み込めません：' + (data.message || data.status));
     var existing = data.logs;
     if (!Array.isArray(existing)) throw new Error('家計簿の応答に明細（logs）がありません');
