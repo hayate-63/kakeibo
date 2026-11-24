@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="旅帳">
+<title>旅帳</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+/*__CSS__*/
+</style>
+</head>
+<body>
+<header class="app-head">
+  <button class="head-trip" data-act="tab" data-tab="home" id="headTrip"><span class="ht-title">旅帳</span></button>
+  <div class="head-right"><span class="sync-badge" id="syncBadge"></span><button class="icon-btn light" data-act="openSettings" aria-label="設定">⚙️</button></div>
+</header>
+
+<main>
+  <section id="page-home" class="page active"></section>
+  <section id="page-shiori" class="page">
+    <div id="shioriTop"></div>
+    <div id="shioriMapWrap" class="map-wrap"><div id="leafletMap"></div><div class="map-overlay" id="mapOverlay"></div></div>
+    <div id="shioriBody"></div>
+  </section>
+  <section id="page-drive" class="page"></section>
+  <section id="page-money" class="page"></section>
+  <section id="page-record" class="page"></section>
+</main>
+
+<nav class="bottom-nav" id="nav"></nav>
+<div id="modalRoot"></div>
+<div id="toast" class="toast"></div>
+
+<script>
+/*__JS__*/
+</script>
+</body>
+</html>
