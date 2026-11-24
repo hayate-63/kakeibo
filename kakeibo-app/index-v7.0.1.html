@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="トレード家計簿">
 <meta name="robots" content="noindex, nofollow">
-<title>専業トレーダーへの道 - 統合家計簿アプリ v7.1</title>
+<title>専業トレーダーへの道 - 統合家計簿アプリ v7.0.1</title>
 <style>
   :root {
     --bg: #f4f5f7;
@@ -1012,7 +1012,7 @@
 <div id="lockScreenOverlay">
   <div class="lock-card">
     <div style="font-size: 40px; margin-bottom: 8px;">🔒</div>
-    <h2 style="font-size: 18px; font-weight: 800; margin-bottom: 6px;">専業トレーダー家計簿 v7.1</h2>
+    <h2 style="font-size: 18px; font-weight: 800; margin-bottom: 6px;">専業トレーダー家計簿 v7.0.1</h2>
     <p style="font-size: 12px; color: #cbd5e1; line-height: 1.5;">
       暗証番号（PIN）を入力してロックを解除してください。<br>（※GAS設定と同じ暗証番号を入力）
     </p>
@@ -1025,7 +1025,7 @@
 </div>
 
 <header>
-  <h1>📈 専業トレーダー家計簿 v7.1</h1>
+  <h1>📈 専業トレーダー家計簿 v7.0.1</h1>
   <div class="sync-bar">
     <span class="sync-badge" id="syncStatusBadge" onclick="onSyncBadgeTap()">☁️ 未接続</span>
     <span class="sync-badge" onclick="lockAppNow()" title="画面をロック">🔒</span>
@@ -3060,7 +3060,7 @@ function isCatLocked(log) {
   return v === 1 || v === true || String(v) === "1";
 }
 // v5.2 修正1-4: 一覧・詳細で ほしいもの帳 の明細に印を出す
-// v7.1: 旅帳から送られた明細（src="tabicho"）は「🧳旅帳」の印にする（区分を固定する扱いは同じ）
+// v7.0.1: 旅帳から送られた明細（src="tabicho"）は「🧳旅帳」の印にする（区分を固定する扱いは同じ）
 function isTabichoLog(log) { return String(log.src || "") === "tabicho"; }
 function catLockBadge(log) {
   if (!isCatLocked(log)) return "";
@@ -8715,7 +8715,7 @@ function logSourceText(log) {
   if (src === "mail") parts.push("📬 利用通知メールから登録");
   if (src === "amazon") parts.push("📦 Amazon の注文メールから登録");
   if (src === "csv") parts.push("📄 明細 CSV の照合で追加");
-  if (src === "tabicho") parts.push("🧳 旅帳から登録（自分の負担分）"); // v7.1
+  if (src === "tabicho") parts.push("🧳 旅帳から登録（自分の負担分）"); // v7.0.1
   if (prov === "fx") parts.push("外貨・仮（CSV の照合で確定額に差し替え）");
   if (prov === "amazon") parts.push("Amazon・仮（CSV の照合で確定）");
   if (log.fx) parts.push(`外貨 ${log.fx}`);

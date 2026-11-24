@@ -1,0 +1,43 @@
+旅帳 v1.0.1 検証ログ
+実行日時：2026-11-24 20:50:00 JST ／ Node.js v22.23.5 ／ コミット 5766fc8（この版の変更を含む作業ツリー）
+
+■ test/logic.test.js（計算ロジック）
+✓ 営業時間: 定休日
+✓ 営業時間: 平日/土日
+✓ 営業時間: 深夜
+✓ 営業時間: 構造化
+✓ 電卓
+✓ 割り勘の端数は払った人
+✓ 精算：最小送金
+✓ 精算チェックは支出変更でリセット
+✓ 実効レート（設計メモの例）
+✓ 家計簿：カード払いは引落額＋割り勘収入の2本
+✓ 工程：自動提案・固定枠の間に合わない警告・絵文字位置
+✓ ステータス自動判定
+
+12 tests passed
+
+■ test/gas.test.js（旅帳GAS：保存・家計簿連携・スポット帳連携）
+gas storage tests passed
+kakeibo integration tests passed
+spotcho integration tests passed
+
+■ test/smoke.e2e.js（画面の通し・デモモード）
+list 4 -> 3 | ▶ ✅ 行った済み（1）
+mode switch rows 4 0 4
+fixed rows from booking 1
+suggestions 3
+NO ERRORS
+
+■ 家計簿 v7.0.1 の画面（印の出し分け）
+{
+ "tabicho": " <span style=\"font-size:10px; font-weight:800; color:#0369a1; background:#e0f2fe; padding:1px 6px; border-radius:99px; white-space:nowrap;\">🧳旅帳</span>",
+ "hoshii": " <span style=\"font-size:10px; font-weight:800; color:#7c3aed; background:#f3e8ff; padding:1px 6px; border-radius:99px; white-space:nowrap;\">🛍️ほしいもの帳</span>",
+ "plain": "",
+ "srcText": "🧳 旅帳から登録（自分の負担分）"
+}
+NO PAGE ERRORS
+
+■ 構文チェック（node --check）
+OK tabicho/gas/Code.gs
+OK kakeibo-app/GAS_v7.0.1.gs
