@@ -85,7 +85,7 @@ async function computeSuggestions(cond) {
   let spots = Object.values(S.spots).filter(s => s.status !== 'visited' && s.lat != null);
   // その時期に行けないもの（候補日すべて定休）は落とす、旬でないものは順位を下げる
   spots = spots.map(s => {
-    const h = parseHours(s.hours);
+    const h = parseHours(S.hours[s.id] ? S.hours[s.id].week : null);
     const closedAll = candDays.length && candDays.every(d => dayAvailability(h, d) === 'closed');
     const sm = seasonMonths(s.tags);
     const season = sm.size ? (sm.has(month) ? 1 : -1) : 0;

@@ -258,3 +258,10 @@ a { color: var(--accent); }
   opacity: 0; pointer-events: none; transition: all .2s; z-index: 2000; max-width: 92vw; display: flex; gap: 10px; align-items: center; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
 .toast.show { opacity: 1; transform: translateX(-50%); pointer-events: auto; }
 .toast-btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 5px 10px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+
+/* 訪問の評価（スポット帳と同じ顔） */
+.faces { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.face { border: 1px solid var(--border); background: #fff; border-radius: 12px; padding: 8px 2px; font-size: 26px; cursor: pointer; display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+.face small { font-size: 10px; color: var(--sub); margin-top: 3px; white-space: nowrap; }
+.face.on { border-color: var(--accent); background: var(--accent-l); }
+.face-big { font-size: 22px; }

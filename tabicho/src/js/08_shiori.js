@@ -185,7 +185,7 @@ ACT.mvSave = () => {
   closeModal(); commitTrip(t);
   if (it.moveAuto) autoMoveTimes(t, it.date, true);
 };
-ACT.visitNow = (el) => { const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id); markVisited(t, it); };
+ACT.visitNow = (el) => { const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id); openQuickVisit(t, it); };
 ACT.visitEdit = (el) => { const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id); openVisitDialog(t, it); };
 ACT.visitUndo = (el) => { const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id); unmarkVisited(t, it); };
 
@@ -269,7 +269,7 @@ function listCardHTML(trip, it) {
 }
 function doneRowHTML(trip, it) {
   const info = itemInfo(trip, it); const v = it.visited;
-  return `<div class="done-row"><div class="grow"><div>✅ ${esc(info.name)}</div><div class="muted small">${fmtDate(v.date)} ${v.rating ? '★'.repeat(v.rating) : ''} ${esc(v.comment || '')}</div></div>
+  return `<div class="done-row"><div class="grow"><div>✅ ${esc(info.name)}</div><div class="muted small">${fmtDate(v.date)} ${v.rating ? faceHTML(v.rating) : ''} ${esc(v.comment || '')}${it._visitPending ? ' <span class="tag warn">スポット帳へ未送信</span>' : ''}</div></div>
     <button class="btn sm" data-act="visitEdit" data-id="${it.id}">記録</button><button class="btn sm ghost" data-act="visitUndo" data-id="${it.id}">取り消す</button></div>`;
 }
 ACT.togglePri = (el) => { const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id); it.priority = (it.priority === 'must' ? 'maybe' : 'must'); commitTrip(t); };

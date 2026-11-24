@@ -395,66 +395,100 @@ function addSpotItem(trip, o, target) {
 }
 
 // ---------------------------------------------------------------------------
-// 「行った」：その場で即時書き戻し、取り消しも即時
+// 「行った」：スポット帳の訪問記録（visits）へ即時書き戻し、取り消しも即時
+//   スポット帳 v3.1 と同じく 訪問日＋評価（😫😞😐😋🤩）が必須。旅帳は作った visit_id を覚えておく
 // ---------------------------------------------------------------------------
+const RATING_FACES = ['', '😫', '😞', '😐', '😋', '🤩'];
+const RATING_LABELS = ['', 'もう行かない', 'いまいち', 'ふつう', 'よかった', '最高'];
+function faceHTML(n) { return n ? `<span title="${RATING_LABELS[n]}">${RATING_FACES[n]}</span>` : '<span class="muted small">評価なし</span>'; }
+function faceButtonsHTML(sel, act) {
+  return `<div class="faces">${[1, 2, 3, 4, 5].map(n => `<button class="face ${n === sel ? 'on' : ''}" data-act="${act}" data-v="${n}">${RATING_FACES[n]}<small>${RATING_LABELS[n]}</small></button>`).join('')}</div>`;
+}
 async function markVisited(trip, it, visit) {
-  const v = Object.assign({ date: todayStr(), rating: 0, comment: '', companions: trip.members.map(m => m.name), at: new Date().toISOString() }, visit || {});
   const prev = it.visited;
+  const v = Object.assign({ date: todayStr(), rating: 0, comment: '', companions: trip.members.map(m => m.name), people: trip.members.length }, prev || {}, visit || {}, { at: new Date().toISOString() });
+  if (prev && prev.visitId) v.visitId = prev.visitId;
   it.visited = v;
   commitTrip(trip);
-  if (it.spotId) {
-    try {
-      const r = await api('spotSetVisited', { spotId: it.spotId, tripId: trip.id, visit: v });
-      if (r.spot) S.spots[it.spotId] = normalizeSpot(r.spot);
-    } catch (e) {
-      toast('スポット帳への書き戻しに失敗：' + e.message + '（旅帳には記録済み・次回再送）');
-      it._visitPending = true; commitTrip(trip, { noRender: true });
-      return;
-    }
+  if (!it.spotId) return;
+  try {
+    const r = await api('spotSetVisited', { spotId: it.spotId, visitId: v.visitId || '', visit: v });
+    if (r.visitId) it.visited.visitId = r.visitId;
+    if (r.spot) S.spots[it.spotId] = normalizeSpot(r.spot);
+    it._visitPending = false;
+    commitTrip(trip, { noRender: true });
+  } catch (e) {
+    toast('スポット帳への書き戻しに失敗：' + e.message + '（旅帳には記録済み・次回再送）');
+    it._visitPending = true; commitTrip(trip, { noRender: true });
   }
-  if (!visit) toast('「' + itemInfo(trip, it).name + '」を行ったにしました', { action: '記録を書く', onAction: () => openVisitDialog(trip, it) });
-  return prev;
 }
 async function unmarkVisited(trip, it) {
-  it.visited = null;
-  commitTrip(trip);
-  if (it.spotId) {
+  const v = it.visited;
+  if (it.spotId && v && v.visitId) {
     try {
-      const r = await api('spotSetVisited', { spotId: it.spotId, tripId: trip.id, visit: null });
+      const r = await api('spotSetVisited', { spotId: it.spotId, visitId: v.visitId, visit: null });
       if (r.spot) S.spots[it.spotId] = normalizeSpot(r.spot);
-    } catch (e) { toast('スポット帳の取り消しに失敗：' + e.message); }
+    } catch (e) { toast(e.message); return; }   // 取り消せなかった時は旅帳側も「行った」のまま
   }
+  it.visited = null; it._visitPending = false;
+  commitTrip(trip);
   toast('「行った」を取り消しました');
 }
 // 書き戻し失敗分の再送
 async function retryVisitWrites() {
   for (const trip of Object.values(S.trips)) {
-    for (const it of trip.items.filter(i => i._visitPending && i.spotId)) {
-      try { await api('spotSetVisited', { spotId: it.spotId, tripId: trip.id, visit: it.visited }); it._visitPending = false; commitTrip(trip, { noRender: true }); }
-      catch (e) { return; }
+    for (const it of trip.items.filter(i => i._visitPending && i.spotId && i.visited)) {
+      try {
+        const r = await api('spotSetVisited', { spotId: it.spotId, visitId: it.visited.visitId || '', visit: it.visited });
+        if (r.visitId) it.visited.visitId = r.visitId;
+        it._visitPending = false; commitTrip(trip, { noRender: true });
+      } catch (e) { return; }
     }
   }
 }
 
-function openVisitDialog(trip, it) {
-  const v = it.visited || { date: todayStr(), rating: 0, comment: '', companions: trip.members.map(m => m.name) };
+// クイック記録（スポット帳の［行った！］と同じ：日付＋評価をタップで即保存）
+function openQuickVisit(trip, it) {
+  const info = itemInfo(trip, it);
+  openModal(`<div class="form-grid"><label>訪問日</label><input type="date" id="qvDate" value="${todayStr()}"></div>
+    <div class="b mt">評価（タップで記録）</div>${faceButtonsHTML(0, 'qvFace')}
+    <div class="muted small">${it.spotId ? 'スポット帳の訪問記録に入ります。写真・金額はスポット帳で足せます' : 'スポット帳に未登録のため旅帳内だけに記録します'}</div>
+    <button class="btn block mt" data-act="qvFull">📝 ひとこと・同行者も書く</button>`, { title: '✅ 行った！ ' + esc(info.name), data: { trip, it } });
+}
+ACT.qvFace = async (el) => {
+  const b = topModalBody(); const { trip, it } = topModal().data;
+  const date = $('#qvDate', b).value;
+  if (!date) return toast('訪問日を入れてください');
+  closeModal();
+  await markVisited(trip, it, { date, rating: Number(el.dataset.v) });
+  toast('「' + itemInfo(trip, it).name + '」を行ったにしました ' + RATING_FACES[Number(el.dataset.v)]);
+};
+ACT.qvFull = () => { const { trip, it } = topModal().data; const d = $('#qvDate', topModalBody()).value; closeModal(); openVisitDialog(trip, it, d); };
+
+function openVisitDialog(trip, it, presetDate) {
+  const v = it.visited || { date: presetDate || todayStr(), rating: 0, comment: '', companions: trip.members.map(m => m.name) };
   const info = itemInfo(trip, it);
   const comp = new Set(v.companions || []);
   const allNames = Array.from(new Set(trip.members.map(m => m.name).concat(v.companions || [])));
+  const remote = it.spotId && v.visitId && S.spots[it.spotId] ? (S.spots[it.spotId].visits || []).find(x => x.visitId === v.visitId) : null;
   openModal(`<div class="form-grid">
     <label>訪問日</label><input type="date" id="vdDate" value="${esc(v.date || todayStr())}">
-    <label>評価</label><div id="vdStars" data-v="${v.rating || 0}">${stars(v.rating || 0, 'vdStar')}</div>
+    <label>評価<span class="req">必須</span></label><div id="vdFaces" data-v="${v.rating || 0}">${faceButtonsHTML(v.rating || 0, 'vdFace')}</div>
     <label>ひとこと</label><textarea id="vdComment" rows="2" placeholder="ひとことコメント">${esc(v.comment || '')}</textarea>
     <label>同行者</label><div class="chips" id="vdComp">${allNames.map(n => `<label class="chip"><input type="checkbox" value="${esc(n)}" ${comp.has(n) ? 'checked' : ''}><span>${esc(n)}</span></label>`).join('')}</div>
   </div>
-  <div class="muted small">${it.spotId ? 'スポット帳の訪問記録として保存されます' : 'このスポットはスポット帳に未登録のため旅帳内だけに保存されます'}</div>
+  <div class="muted small">${it.spotId ? 'スポット帳の訪問記録として保存されます（写真・何を・金額はスポット帳で足せます）' : 'このスポットはスポット帳に未登録のため旅帳内だけに保存されます'}</div>
+  ${remote && remote.hasExtras ? '<div class="info-box small">📷 スポット帳で写真や金額などが書き足されています（旅帳から保存してもそれらは残ります）</div>' : ''}
   <div class="row gap mt"><button class="btn primary grow" data-act="vdSave">保存</button>${it.visited ? '<button class="btn danger" data-act="vdUndo">行ったを取り消す</button>' : ''}</div>`,
     { title: '✅ ' + esc(info.name) + ' の訪問記録', data: { trip, it } });
 }
-ACT.vdStar = (el) => { const w = $('#vdStars'); w.dataset.v = el.dataset.v; w.innerHTML = stars(Number(el.dataset.v), 'vdStar'); };
+ACT.vdFace = (el) => { const w = $('#vdFaces'); w.dataset.v = el.dataset.v; w.innerHTML = faceButtonsHTML(Number(el.dataset.v), 'vdFace'); };
 ACT.vdSave = async () => {
   const b = topModalBody(); const { trip, it } = topModal().data;
-  const visit = { date: $('#vdDate', b).value || todayStr(), rating: Number($('#vdStars', b).dataset.v) || 0, comment: $('#vdComment', b).value.trim(), companions: $$('#vdComp input', b).filter(x => x.checked).map(x => x.value), at: new Date().toISOString() };
+  const rating = Number($('#vdFaces', b).dataset.v) || 0;
+  if (!rating) return toast('評価を選んでください');
+  const visit = { date: $('#vdDate', b).value || todayStr(), rating, comment: $('#vdComment', b).value.trim(), companions: $$('#vdComp input', b).filter(x => x.checked).map(x => x.value) };
+  visit.people = visit.companions.length || '';
   closeModal();
   await markVisited(trip, it, visit);
   toast('訪問記録を保存しました');

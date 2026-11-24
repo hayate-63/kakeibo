@@ -272,6 +272,13 @@ a { color: var(--accent); }
 .toast.show { opacity: 1; transform: translateX(-50%); pointer-events: auto; }
 .toast-btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 5px 10px; font-weight: 800; cursor: pointer; white-space: nowrap; }
 
+/* 訪問の評価（スポット帳と同じ顔） */
+.faces { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.face { border: 1px solid var(--border); background: #fff; border-radius: 12px; padding: 8px 2px; font-size: 26px; cursor: pointer; display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+.face small { font-size: 10px; color: var(--sub); margin-top: 3px; white-space: nowrap; }
+.face.on { border-color: var(--accent); background: var(--accent-l); }
+.face-big { font-size: 22px; }
+
 </style>
 </head>
 <body>
@@ -549,20 +556,20 @@ const MockServer = (() => {
   function seed() {
     const t = new Date().toISOString();
     const spots = [
-      { id: 'sp1', name: '淡路夢舞台', lat: 34.5636, lng: 135.0103, area: '淡路島', address: '兵庫県淡路市夢舞台2', hours: '9:00-18:00', tags: ['建築', '花', '春'], status: 'want', priority: 'must', stayMin: 60, price: 0, parking: true, station: '', updatedAt: t },
-      { id: 'sp2', name: 'あわじ花さじき', lat: 34.5398, lng: 134.9545, area: '淡路島', address: '兵庫県淡路市楠本2805-7', hours: '9:00-17:00 水曜定休', tags: ['花', '絶景'], status: 'want', priority: 'must', stayMin: 45, price: 0, parking: true, updatedAt: t },
-      { id: 'sp3', name: '淡路島バーガー本店', lat: 34.3445, lng: 134.8953, area: '淡路島', address: '兵庫県洲本市', hours: '10:00-17:00 火曜定休', tags: ['グルメ'], status: 'want', priority: 'maybe', stayMin: 40, price: 1500, parking: true, updatedAt: t },
-      { id: 'sp4', name: '大鳴門橋 渦の道', lat: 34.2381, lng: 134.6522, area: '淡路島', address: '徳島県鳴門市', hours: '9:00-18:00', tags: ['絶景'], status: 'want', priority: 'must', stayMin: 60, price: 510, parking: true, updatedAt: t },
-      { id: 'sp5', name: '洲本温泉', lat: 34.3401, lng: 134.9046, area: '淡路島', address: '兵庫県洲本市小路谷', hours: '', tags: ['温泉', '冬'], status: 'want', priority: 'maybe', stayMin: 90, price: 1000, parking: true, updatedAt: t },
-      { id: 'sp6', name: '伊勢神宮 内宮', lat: 34.4551, lng: 136.7254, area: '伊勢志摩', address: '三重県伊勢市宇治館町1', hours: '5:00-18:00', tags: ['神社'], status: 'want', priority: 'must', stayMin: 90, price: 0, parking: true, station: '五十鈴川駅', updatedAt: t },
-      { id: 'sp7', name: 'おかげ横丁', lat: 34.4626, lng: 136.7232, area: '伊勢志摩', address: '三重県伊勢市宇治中之切町', hours: '9:30-17:00', tags: ['グルメ', '街歩き'], status: 'want', priority: 'maybe', stayMin: 60, price: 2000, parking: false, station: '五十鈴川駅', updatedAt: t },
-      { id: 'sp8', name: '横山展望台', lat: 34.3016, lng: 136.7952, area: '伊勢志摩', address: '三重県志摩市阿児町', hours: '9:00-16:30', tags: ['絶景'], status: 'want', priority: 'must', stayMin: 40, price: 0, parking: true, updatedAt: t },
-      { id: 'sp9', name: '白川郷', lat: 36.2578, lng: 136.9060, area: '飛騨・白川郷', address: '岐阜県大野郡白川村', hours: '8:00-17:00', tags: ['世界遺産', '冬', '絶景'], status: 'want', priority: 'must', stayMin: 120, price: 0, parking: true, updatedAt: t },
-      { id: 'sp10', name: '飛騨高山 古い町並', lat: 36.1407, lng: 137.2622, area: '飛騨・白川郷', address: '岐阜県高山市上三之町', hours: '9:00-17:00', tags: ['街歩き', 'グルメ'], status: 'want', priority: 'maybe', stayMin: 90, price: 2000, parking: true, station: '高山駅', updatedAt: t },
-      { id: 'sp11', name: '新穂高ロープウェイ', lat: 36.2868, lng: 137.5744, area: '飛騨・白川郷', address: '岐阜県高山市奥飛騨温泉郷', hours: '8:30-16:45', tags: ['絶景', '紅葉', '秋'], status: 'want', priority: 'maybe', stayMin: 120, price: 3300, parking: true, updatedAt: t },
-      { id: 'sp12', name: '奈良公園', lat: 34.6851, lng: 135.8430, area: '奈良', address: '奈良県奈良市', hours: '', tags: ['公園', '紅葉', '秋'], status: 'want', priority: 'maybe', stayMin: 90, price: 0, parking: true, station: '近鉄奈良駅', updatedAt: t },
-      { id: 'sp13', name: '東大寺', lat: 34.6890, lng: 135.8398, area: '奈良', address: '奈良県奈良市雑司町406-1', hours: '7:30-17:30', tags: ['寺'], status: 'want', priority: 'must', stayMin: 60, price: 800, parking: true, station: '近鉄奈良駅', updatedAt: t },
-      { id: 'sp14', name: '位置不明の気になるカフェ', lat: null, lng: null, area: '', address: '', hours: '', tags: ['カフェ'], status: 'want', priority: 'maybe', updatedAt: t }
+      { id: 'SP0001', name: '淡路夢舞台', lat: 34.5636, lng: 135.0103, area: '淡路島', address: '兵庫県淡路市夢舞台2', hours: '9:00-18:00', tags: ['建築', '花', '春'], status: 'want', priority: 'must', stayMin: 60, price: 0, parking: true, station: '', updatedAt: t },
+      { id: 'SP0002', name: 'あわじ花さじき', lat: 34.5398, lng: 134.9545, area: '淡路島', address: '兵庫県淡路市楠本2805-7', hours: '9:00-17:00 水曜定休', tags: ['花', '絶景'], status: 'want', priority: 'must', stayMin: 45, price: 0, parking: true, updatedAt: t },
+      { id: 'SP0003', name: '淡路島バーガー本店', lat: 34.3445, lng: 134.8953, area: '淡路島', address: '兵庫県洲本市', hours: '10:00-17:00 火曜定休', tags: ['グルメ'], status: 'want', priority: 'maybe', stayMin: 40, price: 1500, parking: true, updatedAt: t },
+      { id: 'SP0004', name: '大鳴門橋 渦の道', lat: 34.2381, lng: 134.6522, area: '淡路島', address: '徳島県鳴門市', hours: '9:00-18:00', tags: ['絶景'], status: 'want', priority: 'must', stayMin: 60, price: 510, parking: true, updatedAt: t },
+      { id: 'SP0005', name: '洲本温泉', lat: 34.3401, lng: 134.9046, area: '淡路島', address: '兵庫県洲本市小路谷', hours: '', tags: ['温泉', '冬'], status: 'want', priority: 'maybe', stayMin: 90, price: 1000, parking: true, updatedAt: t },
+      { id: 'SP0006', name: '伊勢神宮 内宮', lat: 34.4551, lng: 136.7254, area: '伊勢志摩', address: '三重県伊勢市宇治館町1', hours: '5:00-18:00', tags: ['神社'], status: 'want', priority: 'must', stayMin: 90, price: 0, parking: true, station: '五十鈴川駅', updatedAt: t },
+      { id: 'SP0007', name: 'おかげ横丁', lat: 34.4626, lng: 136.7232, area: '伊勢志摩', address: '三重県伊勢市宇治中之切町', hours: '9:30-17:00', tags: ['グルメ', '街歩き'], status: 'want', priority: 'maybe', stayMin: 60, price: 2000, parking: false, station: '五十鈴川駅', updatedAt: t },
+      { id: 'SP0008', name: '横山展望台', lat: 34.3016, lng: 136.7952, area: '伊勢志摩', address: '三重県志摩市阿児町', hours: '9:00-16:30', tags: ['絶景'], status: 'want', priority: 'must', stayMin: 40, price: 0, parking: true, updatedAt: t },
+      { id: 'SP0009', name: '白川郷', lat: 36.2578, lng: 136.9060, area: '飛騨・白川郷', address: '岐阜県大野郡白川村', hours: '8:00-17:00', tags: ['世界遺産', '冬', '絶景'], status: 'want', priority: 'must', stayMin: 120, price: 0, parking: true, updatedAt: t },
+      { id: 'SP0010', name: '飛騨高山 古い町並', lat: 36.1407, lng: 137.2622, area: '飛騨・白川郷', address: '岐阜県高山市上三之町', hours: '9:00-17:00', tags: ['街歩き', 'グルメ'], status: 'want', priority: 'maybe', stayMin: 90, price: 2000, parking: true, station: '高山駅', updatedAt: t },
+      { id: 'SP0011', name: '新穂高ロープウェイ', lat: 36.2868, lng: 137.5744, area: '飛騨・白川郷', address: '岐阜県高山市奥飛騨温泉郷', hours: '8:30-16:45', tags: ['絶景', '紅葉', '秋'], status: 'want', priority: 'maybe', stayMin: 120, price: 3300, parking: true, updatedAt: t },
+      { id: 'SP0012', name: '奈良公園', lat: 34.6851, lng: 135.8430, area: '奈良', address: '奈良県奈良市', hours: '', tags: ['公園', '紅葉', '秋'], status: 'want', priority: 'maybe', stayMin: 90, price: 0, parking: true, station: '近鉄奈良駅', updatedAt: t },
+      { id: 'SP0013', name: '東大寺', lat: 34.6890, lng: 135.8398, area: '奈良', address: '奈良県奈良市雑司町406-1', hours: '7:30-17:30', tags: ['寺'], status: 'want', priority: 'must', stayMin: 60, price: 800, parking: true, station: '近鉄奈良駅', updatedAt: t },
+      { id: 'SP0014', name: '位置不明の気になるカフェ', lat: null, lng: null, area: '', address: '', hours: '', tags: ['カフェ'], status: 'want', priority: 'maybe', updatedAt: t }
     ];
     return { trips: {}, settings: null, spots, visits: [], kakeibo: [], calendar: [] };
   }
@@ -583,26 +590,49 @@ const MockServer = (() => {
     },
     async deleteTrip({ id }) { const db = load(); delete db.trips[id]; save(db); return { ok: true }; },
     async saveSettings({ settings }) { const db = load(); db.settings = settings; save(db); return { ok: true }; },
+    // 旅帳サーバ（Code.gs）がスポット帳 v3.1 の getAll から作る形と同じにする
+    //   スポット帳には営業時間・滞在目安・料金・駐車場の列は無い（営業時間は placeHours で取る）
     async spotList() {
       const db = load();
-      return { ok: true, spots: db.spots.map(s => Object.assign({}, s, { visits: db.visits.filter(v => v.spotId === s.id) })), serverTime: new Date().toISOString() };
+      const spots = db.spots.map(s => ({
+        id: s.id, name: s.name, lat: s.lat, lng: s.lng, address: s.address, area: s.area, prefecture: '', city: '',
+        tags: s.tags || [], status: db.visits.some(v => v.spotId === s.id) ? 'visited' : 'want', priority: s.priority === 'must' ? 'must' : null,
+        placeId: s.lat != null ? 'mock_' + s.id : '', url: '', updatedAt: s.updatedAt,
+        visits: db.visits.filter(v => v.spotId === s.id).map(v => ({ visitId: v.visitId, date: v.date, rating: v.rating, comment: v.comment || '', companions: v.companions || [], people: v.people || '', hasExtras: false }))
+      }));
+      return { ok: true, spots, serverTime: todayStr() };
     },
-    async spotSetVisited({ spotId, tripId, visit }) {
+    async spotSetVisited({ spotId, visitId, visit }) {
       const db = load();
-      const sp = db.spots.find(s => s.id === spotId);
-      if (!sp) return { error: 'スポット帳に見つかりません（削除済み）' };
-      db.visits = db.visits.filter(v => !(v.spotId === spotId && v.tripId === tripId));
-      if (visit) db.visits.push(Object.assign({}, visit, { spotId, tripId }));
-      sp.status = db.visits.some(v => v.spotId === spotId) ? 'visited' : 'want';
-      sp.updatedAt = new Date().toISOString();
+      if (!db.spots.find(s => s.id === spotId)) return { error: 'スポットが見つかりません: ' + spotId };
+      let id = visitId || '';
+      if (!visit) {
+        db.visits = db.visits.filter(v => v.visitId !== visitId);
+      } else {
+        const r = Number(visit.rating);
+        if (!(r >= 1 && r <= 5)) return { error: '評価（1〜5）を選んでください' };
+        const row = { spotId, date: visit.date, rating: r, comment: visit.comment || '', companions: visit.companions || [], people: visit.people || '' };
+        const cur = visitId && db.visits.find(v => v.visitId === visitId);
+        if (cur) Object.assign(cur, row);
+        else { db.seq = (db.seq || 0) + 1; id = 'V' + String(db.seq).padStart(4, '0'); db.visits.push(Object.assign({ visitId: id }, row)); }
+      }
       save(db);
-      return { ok: true, spot: Object.assign({}, sp, { visits: db.visits.filter(v => v.spotId === spotId) }) };
+      const all = await handlers.spotList();
+      return { ok: true, visitId: id, spot: all.spots.find(s => s.id === spotId) };
     },
     async spotCreate({ spot }) {
       const db = load();
-      const s = Object.assign({ id: uid('sp'), status: 'want', tags: [], updatedAt: new Date().toISOString() }, spot);
+      db.seqSpot = (db.seqSpot || 100) + 1;
+      const s = { id: 'SP' + String(db.seqSpot).padStart(4, '0'), name: spot.name, lat: spot.lat, lng: spot.lng, address: spot.address || '', area: '', tags: [], priority: spot.priority === 'must' ? 'must' : null, hours: '', updatedAt: todayStr() };
       db.spots.push(s); save(db);
-      return { ok: true, spot: s };
+      const all = await handlers.spotList();
+      return { ok: true, spot: all.spots.find(x => x.id === s.id) };
+    },
+    async placeHours({ spots }) {
+      const db = load();
+      const hours = {};
+      (spots || []).forEach(q => { const s = db.spots.find(x => x.id === q.id); hours[q.id] = s && s.hours ? s.hours : null; });
+      return { ok: true, hours };
     },
     async routes({ list }) {
       await sleep(150);
@@ -728,6 +758,7 @@ const S = {
   curTripId: null,
   tab: 'home',
   spots: {},            // spotId -> spot（スポット帳の最新）
+  hours: {},            // spotId -> { week, at }（place_id から取った営業時間。オフライン用に端末にも保存）
   spotsState: 'idle',   // idle|loading|ok|error|off
   spotsError: '',
   spotsAt: 0,
@@ -845,7 +876,8 @@ function itemInfo(trip, it) {
     base.lat = sp.lat != null && sp.lat !== '' ? Number(sp.lat) : base.lat;
     base.lng = sp.lng != null && sp.lng !== '' ? Number(sp.lng) : base.lng;
     base.address = sp.address || base.address;
-    base.hoursText = sp.hours != null && sp.hours !== '' ? sp.hours : base.hoursText;
+    // 営業時間：旅帳で手入力したもの → Google（place_id）から取ったもの の順
+    if (!it.hoursText && S.hours[sp.id] && S.hours[sp.id].week) { base.hoursRaw = S.hours[sp.id].week; base.hoursFrom = 'Google'; }
     base.tags = sp.tags || [];
     base.stay = it.stayEst != null ? it.stayEst : sp.stayMin;
     base.price = it.priceEst != null ? it.priceEst : sp.price;
@@ -858,7 +890,8 @@ function itemInfo(trip, it) {
     base.name = it.nameCache || it.name || '（削除済みスポット）';
   }
   if (base.lat === '' || base.lat == null || isNaN(base.lat)) { base.lat = null; base.lng = null; }
-  base.hours = parseHours(base.hoursText);
+  base.hours = parseHours(base.hoursRaw || base.hoursText);
+  if (base.hoursRaw) base.hoursText = hoursSummary(base.hours);
   return base;
 }
 function itemPoint(trip, it) { const i = itemInfo(trip, it); return i.lat != null ? { lat: i.lat, lng: i.lng, name: i.name, address: i.address } : null; }
@@ -873,6 +906,7 @@ async function loadSpots(force) {
     (r.spots || []).forEach(s => { map[String(s.id)] = normalizeSpot(s); });
     S.spots = map; S.spotsState = 'ok'; S.spotsAt = Date.now(); S.spotsError = '';
     reconcileVisits();
+    loadHours();
   } catch (e) {
     S.spotsState = 'error'; S.spotsError = e.message || String(e);
   }
@@ -896,7 +930,9 @@ function normalizeSpot(s) {
   return o;
 }
 
-// 旅帳側の「行った」とスポット帳側の訪問記録の食い違いは新しい更新時刻を正とする
+// 旅帳が作った訪問記録（visit_id）をスポット帳の最新に合わせる。
+// 旅帳の書き戻しは即時なので、書き戻し済みの記録はスポット帳側を正とする（スポット帳で編集・削除された分を取り込む）。
+// 未送信（_visitPending）のものは旅帳側を正として次回再送する
 function reconcileVisits() {
   Object.values(S.trips).forEach(trip => {
     let changed = false;
@@ -904,20 +940,45 @@ function reconcileVisits() {
       if (!it.spotId) return;
       const sp = S.spots[it.spotId];
       if (!sp) return;
-      it.nameCache = sp.name || it.nameCache;
-      const remote = (sp.visits || []).find(v => v.tripId === trip.id);
+      if (sp.name && it.nameCache !== sp.name) { it.nameCache = sp.name; changed = true; }
       const local = it.visited;
-      if (remote && (!local || (remote.at || '') > (local.at || ''))) {
-        if (JSON.stringify(remote) !== JSON.stringify(local)) {
-          it.visited = { date: remote.date, rating: Number(remote.rating) || 0, comment: remote.comment || '', companions: remote.companions || [], at: remote.at || '' };
-          changed = true;
-        }
-      } else if (!remote && local && local.at && (sp.updatedAt || '') > local.at) {
-        it.visited = null; changed = true;           // スポット帳側で取り消された
-      }
+      if (!local || !local.visitId || it._visitPending) return;
+      const remote = (sp.visits || []).find(v => v.visitId === local.visitId);
+      if (!remote) { it.visited = null; changed = true; return; }   // スポット帳で訪問記録が消された
+      const next = Object.assign({}, local, { date: remote.date, rating: Number(remote.rating) || 0, comment: remote.comment || '', companions: remote.companions && remote.companions.length ? remote.companions : (local.companions || []) });
+      if (JSON.stringify(next) !== JSON.stringify(local)) { it.visited = next; changed = true; }
     });
     if (changed) commitTrip(trip, { silent: true });
   });
+}
+
+// 営業時間：旅に入っているスポットだけ、place_id から取る（1日1回。結果は端末にも保存）
+let hoursLoading = false;
+async function loadHours(force) {
+  if (hoursLoading) return;
+  const need = {};
+  Object.values(S.trips).forEach(t => {
+    if (t._deleted || ['完了', '中止'].includes(tripStatus(t))) return;
+    t.items.forEach(it => {
+      const sp = it.spotId && S.spots[it.spotId];
+      if (!sp || !sp.placeId) return;
+      const h = S.hours[sp.id];
+      if (!force && h && Date.now() - h.at < 24 * 3600e3) return;
+      need[sp.id] = { id: sp.id, placeId: sp.placeId };
+    });
+  });
+  const list = Object.values(need);
+  if (!list.length) return;
+  hoursLoading = true;
+  try {
+    for (let i = 0; i < list.length; i += 40) {
+      const r = await api('placeHours', { spots: list.slice(i, i + 40) });
+      Object.keys(r.hours || {}).forEach(id => { S.hours[id] = { week: r.hours[id], at: Date.now() }; });
+    }
+    saveCache();
+    render();
+  } catch (e) { /* 営業時間は任意。取れなければ情報なし表示 */ }
+  hoursLoading = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -926,7 +987,7 @@ function reconcileVisits() {
 function saveCache() {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify({
-      settings: S.settings, trips: S.trips, curTripId: S.curTripId, dirty: S.dirty, settingsDirty: S.settingsDirty, ui: { listSort: S.ui.listSort }
+      settings: S.settings, trips: S.trips, curTripId: S.curTripId, dirty: S.dirty, settingsDirty: S.settingsDirty, ui: { listSort: S.ui.listSort }, hours: S.hours
     }));
   } catch (e) { console.warn(e); }
 }
@@ -939,6 +1000,7 @@ function loadCache() {
     S.curTripId = c.curTripId || null;
     S.dirty = c.dirty || {};
     S.settingsDirty = !!c.settingsDirty;
+    S.hours = c.hours || {};
     if (c.ui && c.ui.listSort) S.ui.listSort = c.ui.listSort;
     Object.values(S.trips).forEach(migrateTrip);
     return true;
@@ -961,6 +1023,8 @@ function commitTrip(trip, opt) {
   S.dirty[trip.id] = true;
   saveCache();
   queueSave();
+  // 新しく入ったスポットの営業時間（足りない分だけ取る）
+  if (typeof loadHours === 'function' && S.spotsState === 'ok') setTimeout(() => loadHours(), 0);
   if (!opt.silent && !opt.noRender) render();
 }
 function commitSettings() {
@@ -1188,6 +1252,15 @@ function parseHours(src) {
 }
 
 function hoursOn(hours, date) { return hours.week[weekday(date)]; }
+// 例「月〜金 9:00–18:00 ／ 土日 10:00–17:00 ／ 水 定休」
+function hoursSummary(hours) {
+  if (!hours || !hours.known) return '';
+  const lab = d => { const r = hours.week[d]; return r === null ? '?' : r.length ? rangesLabel(r) : '定休'; };
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  const groups = [];
+  order.forEach(d => { const l = lab(d); const g = groups[groups.length - 1]; if (g && g.l === l) g.days.push(d); else groups.push({ l, days: [d] }); });
+  return groups.map(g => (g.days.length > 2 ? WD[g.days[0]] + '〜' + WD[g.days[g.days.length - 1]] : g.days.map(d => WD[d]).join('')) + ' ' + g.l).join(' ／ ');
+}
 // 'open' | 'closed'(定休) | 'unknown'
 function dayAvailability(hours, date) {
   const r = hoursOn(hours, date);
@@ -2026,66 +2099,100 @@ function addSpotItem(trip, o, target) {
 }
 
 // ---------------------------------------------------------------------------
-// 「行った」：その場で即時書き戻し、取り消しも即時
+// 「行った」：スポット帳の訪問記録（visits）へ即時書き戻し、取り消しも即時
+//   スポット帳 v3.1 と同じく 訪問日＋評価（😫😞😐😋🤩）が必須。旅帳は作った visit_id を覚えておく
 // ---------------------------------------------------------------------------
+const RATING_FACES = ['', '😫', '😞', '😐', '😋', '🤩'];
+const RATING_LABELS = ['', 'もう行かない', 'いまいち', 'ふつう', 'よかった', '最高'];
+function faceHTML(n) { return n ? `<span title="${RATING_LABELS[n]}">${RATING_FACES[n]}</span>` : '<span class="muted small">評価なし</span>'; }
+function faceButtonsHTML(sel, act) {
+  return `<div class="faces">${[1, 2, 3, 4, 5].map(n => `<button class="face ${n === sel ? 'on' : ''}" data-act="${act}" data-v="${n}">${RATING_FACES[n]}<small>${RATING_LABELS[n]}</small></button>`).join('')}</div>`;
+}
 async function markVisited(trip, it, visit) {
-  const v = Object.assign({ date: todayStr(), rating: 0, comment: '', companions: trip.members.map(m => m.name), at: new Date().toISOString() }, visit || {});
   const prev = it.visited;
+  const v = Object.assign({ date: todayStr(), rating: 0, comment: '', companions: trip.members.map(m => m.name), people: trip.members.length }, prev || {}, visit || {}, { at: new Date().toISOString() });
+  if (prev && prev.visitId) v.visitId = prev.visitId;
   it.visited = v;
   commitTrip(trip);
-  if (it.spotId) {
-    try {
-      const r = await api('spotSetVisited', { spotId: it.spotId, tripId: trip.id, visit: v });
-      if (r.spot) S.spots[it.spotId] = normalizeSpot(r.spot);
-    } catch (e) {
-      toast('スポット帳への書き戻しに失敗：' + e.message + '（旅帳には記録済み・次回再送）');
-      it._visitPending = true; commitTrip(trip, { noRender: true });
-      return;
-    }
+  if (!it.spotId) return;
+  try {
+    const r = await api('spotSetVisited', { spotId: it.spotId, visitId: v.visitId || '', visit: v });
+    if (r.visitId) it.visited.visitId = r.visitId;
+    if (r.spot) S.spots[it.spotId] = normalizeSpot(r.spot);
+    it._visitPending = false;
+    commitTrip(trip, { noRender: true });
+  } catch (e) {
+    toast('スポット帳への書き戻しに失敗：' + e.message + '（旅帳には記録済み・次回再送）');
+    it._visitPending = true; commitTrip(trip, { noRender: true });
   }
-  if (!visit) toast('「' + itemInfo(trip, it).name + '」を行ったにしました', { action: '記録を書く', onAction: () => openVisitDialog(trip, it) });
-  return prev;
 }
 async function unmarkVisited(trip, it) {
-  it.visited = null;
-  commitTrip(trip);
-  if (it.spotId) {
+  const v = it.visited;
+  if (it.spotId && v && v.visitId) {
     try {
-      const r = await api('spotSetVisited', { spotId: it.spotId, tripId: trip.id, visit: null });
+      const r = await api('spotSetVisited', { spotId: it.spotId, visitId: v.visitId, visit: null });
       if (r.spot) S.spots[it.spotId] = normalizeSpot(r.spot);
-    } catch (e) { toast('スポット帳の取り消しに失敗：' + e.message); }
+    } catch (e) { toast(e.message); return; }   // 取り消せなかった時は旅帳側も「行った」のまま
   }
+  it.visited = null; it._visitPending = false;
+  commitTrip(trip);
   toast('「行った」を取り消しました');
 }
 // 書き戻し失敗分の再送
 async function retryVisitWrites() {
   for (const trip of Object.values(S.trips)) {
-    for (const it of trip.items.filter(i => i._visitPending && i.spotId)) {
-      try { await api('spotSetVisited', { spotId: it.spotId, tripId: trip.id, visit: it.visited }); it._visitPending = false; commitTrip(trip, { noRender: true }); }
-      catch (e) { return; }
+    for (const it of trip.items.filter(i => i._visitPending && i.spotId && i.visited)) {
+      try {
+        const r = await api('spotSetVisited', { spotId: it.spotId, visitId: it.visited.visitId || '', visit: it.visited });
+        if (r.visitId) it.visited.visitId = r.visitId;
+        it._visitPending = false; commitTrip(trip, { noRender: true });
+      } catch (e) { return; }
     }
   }
 }
 
-function openVisitDialog(trip, it) {
-  const v = it.visited || { date: todayStr(), rating: 0, comment: '', companions: trip.members.map(m => m.name) };
+// クイック記録（スポット帳の［行った！］と同じ：日付＋評価をタップで即保存）
+function openQuickVisit(trip, it) {
+  const info = itemInfo(trip, it);
+  openModal(`<div class="form-grid"><label>訪問日</label><input type="date" id="qvDate" value="${todayStr()}"></div>
+    <div class="b mt">評価（タップで記録）</div>${faceButtonsHTML(0, 'qvFace')}
+    <div class="muted small">${it.spotId ? 'スポット帳の訪問記録に入ります。写真・金額はスポット帳で足せます' : 'スポット帳に未登録のため旅帳内だけに記録します'}</div>
+    <button class="btn block mt" data-act="qvFull">📝 ひとこと・同行者も書く</button>`, { title: '✅ 行った！ ' + esc(info.name), data: { trip, it } });
+}
+ACT.qvFace = async (el) => {
+  const b = topModalBody(); const { trip, it } = topModal().data;
+  const date = $('#qvDate', b).value;
+  if (!date) return toast('訪問日を入れてください');
+  closeModal();
+  await markVisited(trip, it, { date, rating: Number(el.dataset.v) });
+  toast('「' + itemInfo(trip, it).name + '」を行ったにしました ' + RATING_FACES[Number(el.dataset.v)]);
+};
+ACT.qvFull = () => { const { trip, it } = topModal().data; const d = $('#qvDate', topModalBody()).value; closeModal(); openVisitDialog(trip, it, d); };
+
+function openVisitDialog(trip, it, presetDate) {
+  const v = it.visited || { date: presetDate || todayStr(), rating: 0, comment: '', companions: trip.members.map(m => m.name) };
   const info = itemInfo(trip, it);
   const comp = new Set(v.companions || []);
   const allNames = Array.from(new Set(trip.members.map(m => m.name).concat(v.companions || [])));
+  const remote = it.spotId && v.visitId && S.spots[it.spotId] ? (S.spots[it.spotId].visits || []).find(x => x.visitId === v.visitId) : null;
   openModal(`<div class="form-grid">
     <label>訪問日</label><input type="date" id="vdDate" value="${esc(v.date || todayStr())}">
-    <label>評価</label><div id="vdStars" data-v="${v.rating || 0}">${stars(v.rating || 0, 'vdStar')}</div>
+    <label>評価<span class="req">必須</span></label><div id="vdFaces" data-v="${v.rating || 0}">${faceButtonsHTML(v.rating || 0, 'vdFace')}</div>
     <label>ひとこと</label><textarea id="vdComment" rows="2" placeholder="ひとことコメント">${esc(v.comment || '')}</textarea>
     <label>同行者</label><div class="chips" id="vdComp">${allNames.map(n => `<label class="chip"><input type="checkbox" value="${esc(n)}" ${comp.has(n) ? 'checked' : ''}><span>${esc(n)}</span></label>`).join('')}</div>
   </div>
-  <div class="muted small">${it.spotId ? 'スポット帳の訪問記録として保存されます' : 'このスポットはスポット帳に未登録のため旅帳内だけに保存されます'}</div>
+  <div class="muted small">${it.spotId ? 'スポット帳の訪問記録として保存されます（写真・何を・金額はスポット帳で足せます）' : 'このスポットはスポット帳に未登録のため旅帳内だけに保存されます'}</div>
+  ${remote && remote.hasExtras ? '<div class="info-box small">📷 スポット帳で写真や金額などが書き足されています（旅帳から保存してもそれらは残ります）</div>' : ''}
   <div class="row gap mt"><button class="btn primary grow" data-act="vdSave">保存</button>${it.visited ? '<button class="btn danger" data-act="vdUndo">行ったを取り消す</button>' : ''}</div>`,
     { title: '✅ ' + esc(info.name) + ' の訪問記録', data: { trip, it } });
 }
-ACT.vdStar = (el) => { const w = $('#vdStars'); w.dataset.v = el.dataset.v; w.innerHTML = stars(Number(el.dataset.v), 'vdStar'); };
+ACT.vdFace = (el) => { const w = $('#vdFaces'); w.dataset.v = el.dataset.v; w.innerHTML = faceButtonsHTML(Number(el.dataset.v), 'vdFace'); };
 ACT.vdSave = async () => {
   const b = topModalBody(); const { trip, it } = topModal().data;
-  const visit = { date: $('#vdDate', b).value || todayStr(), rating: Number($('#vdStars', b).dataset.v) || 0, comment: $('#vdComment', b).value.trim(), companions: $$('#vdComp input', b).filter(x => x.checked).map(x => x.value), at: new Date().toISOString() };
+  const rating = Number($('#vdFaces', b).dataset.v) || 0;
+  if (!rating) return toast('評価を選んでください');
+  const visit = { date: $('#vdDate', b).value || todayStr(), rating, comment: $('#vdComment', b).value.trim(), companions: $$('#vdComp input', b).filter(x => x.checked).map(x => x.value) };
+  visit.people = visit.companions.length || '';
   closeModal();
   await markVisited(trip, it, visit);
   toast('訪問記録を保存しました');
@@ -2595,7 +2702,7 @@ ACT.mvSave = () => {
   closeModal(); commitTrip(t);
   if (it.moveAuto) autoMoveTimes(t, it.date, true);
 };
-ACT.visitNow = (el) => { const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id); markVisited(t, it); };
+ACT.visitNow = (el) => { const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id); openQuickVisit(t, it); };
 ACT.visitEdit = (el) => { const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id); openVisitDialog(t, it); };
 ACT.visitUndo = (el) => { const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id); unmarkVisited(t, it); };
 
@@ -2679,7 +2786,7 @@ function listCardHTML(trip, it) {
 }
 function doneRowHTML(trip, it) {
   const info = itemInfo(trip, it); const v = it.visited;
-  return `<div class="done-row"><div class="grow"><div>✅ ${esc(info.name)}</div><div class="muted small">${fmtDate(v.date)} ${v.rating ? '★'.repeat(v.rating) : ''} ${esc(v.comment || '')}</div></div>
+  return `<div class="done-row"><div class="grow"><div>✅ ${esc(info.name)}</div><div class="muted small">${fmtDate(v.date)} ${v.rating ? faceHTML(v.rating) : ''} ${esc(v.comment || '')}${it._visitPending ? ' <span class="tag warn">スポット帳へ未送信</span>' : ''}</div></div>
     <button class="btn sm" data-act="visitEdit" data-id="${it.id}">記録</button><button class="btn sm ghost" data-act="visitUndo" data-id="${it.id}">取り消す</button></div>`;
 }
 ACT.togglePri = (el) => { const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id); it.priority = (it.priority === 'must' ? 'maybe' : 'must'); commitTrip(t); };
@@ -3132,7 +3239,7 @@ function shiftDrive(d) {
 ACT.driveArrived = async (el) => {
   const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id);
   t.driveTargetId = null;
-  await markVisited(t, it);
+  openQuickVisit(t, it);
 };
 ON_CHANGE.parkMemo = (el) => { const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id); it.parkingMemo = el.value; commitTrip(t, { noRender: true }); toast('駐車場メモを保存しました'); };
 
@@ -3582,7 +3689,7 @@ function renderRecord(trip) {
   h += `<div class="section-title">✅ この旅で「行った」にしたスポット（${visited.length}）</div>`;
   if (visited.length) h += visited.map(it => {
     const info = itemInfo(trip, it); const v = it.visited;
-    return `<div class="card visit-card" data-act="visitEdit" data-id="${it.id}"><div class="row between"><b>${esc(info.name)}</b><span>${v.rating ? '★'.repeat(v.rating) + '☆'.repeat(5 - v.rating) : '<span class="muted small">評価なし</span>'}</span></div>
+    return `<div class="card visit-card" data-act="visitEdit" data-id="${it.id}"><div class="row between"><b>${esc(info.name)}</b><span class="face-big">${faceHTML(v.rating)}</span></div>
       <div class="muted small">${fmtDateFull(v.date)} ・ ${esc((v.companions || []).join('・'))}${it.spotId ? '' : ' ・ スポット帳未登録'}</div>${v.comment ? `<div>${esc(v.comment)}</div>` : ''}</div>`;
   }).join('');
   else h += `<div class="muted small pad">しおり・リスト・ドライブの「行った」ボタンで記録されます</div>`;
@@ -3773,7 +3880,7 @@ async function computeSuggestions(cond) {
   let spots = Object.values(S.spots).filter(s => s.status !== 'visited' && s.lat != null);
   // その時期に行けないもの（候補日すべて定休）は落とす、旬でないものは順位を下げる
   spots = spots.map(s => {
-    const h = parseHours(s.hours);
+    const h = parseHours(S.hours[s.id] ? S.hours[s.id].week : null);
     const closedAll = candDays.length && candDays.every(d => dayAvailability(h, d) === 'closed');
     const sm = seasonMonths(s.tags);
     const season = sm.size ? (sm.has(month) ? 1 : -1) : 0;

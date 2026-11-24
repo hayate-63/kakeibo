@@ -115,3 +115,89 @@ assert.strictEqual(kk.posts, before);
 props.KAKEIBO_PIN = 'bad';
 assert.ok(/PINが一致しません/.test(call('kakeiboSend', { logs }).error));
 console.log('kakeibo integration tests passed');
+
+// ---- スポット帳連携：スポット帳 GAS v3.1 の振る舞いを真似た偽サーバ ----
+const sp = {
+  spots: [
+    { id: 'SP0001', place_id: 'ChIJ1', name: '淡路夢舞台', prefecture: '兵庫県', city: '淡路市', categories: '観光地', tags: '建築/絶対行きたい', regions: '淡路島', rep_tag: '建築', address: '兵庫県淡路市夢舞台2', lat: '34.5636', lng: '135.0103', maps_url: 'u', status: '行きたい', rating: '', memo: '', google_saved: '済', coord_source: '', source_lists: '', created_at: '2026-11-01', updated_at: '2026-11-01' },
+    { id: 'SP0002', place_id: '', name: '座標なしカフェ', prefecture: '三重県', city: '亀山市', categories: 'カフェ', tags: 'カフェ', regions: '', rep_tag: '', address: '', lat: '', lng: '', maps_url: '', status: '行きたい', rating: '', memo: '', google_saved: '未', coord_source: '', source_lists: '', created_at: '2026-11-01', updated_at: '2026-11-01' }
+  ],
+  visits: [], seq: 0, calls: []
+};
+props.SPOTCHO_URL = 'https://spotcho/exec'; props.SPOTCHO_PIN = 'Abc!9';
+const spotStatus = (id) => { const s = sp.spots.find(x => x.id === id); s.status = sp.visits.some(v => v.spot_id === id) ? '行った' : '行きたい'; return s; };
+ctx.UrlFetchApp.fetch = (url, opt) => {
+  const reply = (o) => ({ getContentText: () => JSON.stringify(o), getResponseCode: () => 200 });
+  if (url.indexOf('places.googleapis.com') >= 0) {
+    return reply({ regularOpeningHours: { periods: [1, 2, 4, 5, 6].map(d => ({ open: { day: d, hour: 9, minute: 0 }, close: { day: d, hour: 17, minute: 30 } })).concat([{ open: { day: 0, hour: 18, minute: 0 }, close: { day: 1, hour: 2, minute: 0 } }]) } });
+  }
+  const req = JSON.parse(opt.payload);
+  sp.calls.push(req.action);
+  if (req.pin !== 'Abc!9') return reply({ status: 'error', code: 'AUTH', message: 'PINが一致しません' });
+  const V = ['visit_id', 'spot_id', 'date', 'rating', 'menu', 'price', 'companions', 'people', 'comment', 'photos', 'repeat', 'created_at', 'updated_at'];
+  switch (req.action) {
+    case 'ping': return reply({ status: 'ok' });
+    case 'getAll': return reply({ status: 'ok', spots: sp.spots, visits: sp.visits, tags: [], config: {}, serverDate: '2026-11-30' });
+    case 'addVisit': {
+      const v = {}; V.forEach(h => v[h] = String(req.visit[h] == null ? '' : req.visit[h]));
+      if (!/^[1-5]$/.test(v.rating)) return reply({ status: 'error', code: 'VALIDATION', message: '評価（1〜5）を選んでください' });
+      v.visit_id = 'V' + String(++sp.seq).padStart(4, '0'); sp.visits.push(v);
+      return reply({ status: 'ok', visit: v, spot: spotStatus(v.spot_id) });
+    }
+    case 'updateVisit': {
+      const i = sp.visits.findIndex(x => x.visit_id === req.visit.visit_id);
+      if (i < 0) return reply({ status: 'error', code: 'NOT_FOUND', message: 'なし' });
+      const v = {}; V.forEach(h => v[h] = String(req.visit[h] == null ? '' : req.visit[h])); sp.visits[i] = v;
+      return reply({ status: 'ok', visit: v, spot: spotStatus(v.spot_id) });
+    }
+    case 'deleteVisit': {
+      const v = sp.visits.find(x => x.visit_id === req.visit_id);
+      sp.lastDeletePhotos = req.deletePhotos;
+      sp.visits = sp.visits.filter(x => x.visit_id !== req.visit_id);
+      return reply({ status: 'ok', spot: spotStatus(v.spot_id) });
+    }
+    case 'addSpot': {
+      const s = Object.assign({}, req.spot, { id: 'SP0003', status: '行きたい', regions: '', place_id: '', updated_at: '2026-11-30' });
+      sp.spots.push(s); return reply({ status: 'ok', spot: s });
+    }
+    default: return reply({ status: 'error', code: 'UNKNOWN_ACTION', message: '不明' });
+  }
+};
+const L1 = call('spotList', {});
+const s1 = L1.spots.find(x => x.id === 'SP0001');
+assert.strictEqual(s1.area, '淡路島'); assert.strictEqual(s1.priority, 'must'); assert.strictEqual(s1.lat, 34.5636);
+assert.ok(!s1.tags.includes('絶対行きたい') && s1.tags.includes('建築') && s1.tags.includes('淡路島'));
+const s2 = L1.spots.find(x => x.id === 'SP0002');
+assert.strictEqual(s2.lat, null); assert.strictEqual(s2.area, '亀山市');
+// 評価なしの「行った」は送らない（スポット帳と同じく評価は必須）
+assert.ok(/評価/.test(call('spotSetVisited', { spotId: 'SP0001', visit: { date: '2026-11-30', rating: 0 } }).error));
+const w1 = call('spotSetVisited', { spotId: 'SP0001', visit: { date: '2026-11-30', rating: 4, comment: '花がきれい', companions: ['自分', '相方'], people: 2 } });
+assert.strictEqual(w1.visitId, 'V0001'); assert.strictEqual(w1.spot.status, 'visited');
+assert.strictEqual(sp.visits[0].companions, '自分、相方'); assert.strictEqual(sp.visits[0].rating, '4');
+// スポット帳で写真・金額を書き足した後、旅帳から編集しても消えない
+sp.visits[0].photos = 'file1'; sp.visits[0].price = '1200';
+const w2 = call('spotSetVisited', { spotId: 'SP0001', visitId: 'V0001', visit: { date: '2026-11-30', rating: 5, comment: '最高', companions: ['自分'] } });
+assert.strictEqual(w2.visitId, 'V0001'); assert.strictEqual(sp.visits.length, 1);
+assert.strictEqual(sp.visits[0].photos, 'file1'); assert.strictEqual(sp.visits[0].price, '1200'); assert.strictEqual(sp.visits[0].rating, '5');
+assert.ok(w2.spot.visits[0].hasExtras);
+// 写真などがある訪問は旅帳から取り消せない
+assert.ok(/取り消せません/.test(call('spotSetVisited', { spotId: 'SP0001', visitId: 'V0001', visit: null }).error));
+assert.strictEqual(sp.visits.length, 1);
+// 書き足しの無い訪問は取り消せる。写真は消さない指定で送る
+sp.visits[0].photos = ''; sp.visits[0].price = '';
+const w3 = call('spotSetVisited', { spotId: 'SP0001', visitId: 'V0001', visit: null });
+assert.ok(w3.ok); assert.strictEqual(sp.visits.length, 0); assert.strictEqual(sp.lastDeletePhotos, false); assert.strictEqual(w3.spot.status, 'want');
+// 手入力スポットの登録
+const c1 = call('spotCreate', { spot: { name: '旅帳の店', lat: 34.1, lng: 135.1, priority: 'must' } });
+assert.strictEqual(c1.spot.id, 'SP0003'); assert.ok(/旅帳から登録/.test(sp.spots[2].memo)); assert.strictEqual(sp.spots[2].tags, '絶対行きたい'); assert.strictEqual(c1.spot.priority, 'must');
+// 営業時間（Places の periods → 週の表。期間に無い曜日＝定休、日をまたぐ営業）
+props.PLACES_API_KEY = 'k';
+ctx.CacheService = { getScriptCache: () => ({ get: () => null, put() {} }) };
+const h = call('placeHours', { spots: [{ id: 'SP0001', placeId: 'ChIJ1' }, { id: 'SP0002', placeId: '' }] });
+assert.deepStrictEqual(h.hours.SP0001[1], [['09:00', '17:30']]);
+assert.strictEqual(h.hours.SP0001[3], 'closed');
+assert.deepStrictEqual(h.hours.SP0001[0], [['18:00', '26:00']]);
+assert.ok(!('SP0002' in h.hours));
+props.SPOTCHO_PIN = 'bad';
+assert.ok(/PINが一致しません/.test(call('spotList', {}).error));
+console.log('spotcho integration tests passed');

@@ -5,7 +5,8 @@
  * スクリプトプロパティ（プロジェクトの設定 → スクリプト プロパティ）：
  *   TABICHO_SHEET_ID   保存先スプレッドシートID（未設定なら初回に自動作成して保存）
  *   SPOTCHO_URL        スポット帳GASのウェブアプリURL（/exec）
- *   SPOTCHO_PIN        スポット帳のPIN（画面側には出さない）
+ *   SPOTCHO_PIN        スポット帳GASの SECRET_PIN と同じ値（画面側には出さない）
+ *   PLACES_API_KEY     Google Places API（New）のキー。営業時間を place_id から取る（スポット帳と同じキーでよい）
  *   KAKEIBO_URL        家計簿GASのウェブアプリURL（/exec）
  *   KAKEIBO_PIN        家計簿GASの SECRET_PIN と同じ値（必須）
  *   SHIFT_MASTER_SS_ID 残業時間管理ブックのID（「勤務マスタ」で勤務を見分ける。家計簿GASの SALARY_SS_ID と同じ）
@@ -156,29 +157,158 @@ API.saveSettings = function (a) {
 // ---------------------------------------------------------------------------
 // スポット帳（サーバ同士で通信。PINは画面に出さない）
 // ---------------------------------------------------------------------------
-function postJson_(url, body) {
+// スポット帳 GAS v3.1 の API をそのまま使う（スポット帳側の変更は不要）
+//   POST { action, pin, ... } → { status: 'ok', ... } / { status: 'error', code, message }
+function spotcho_(action, payload) {
+  var url = prop_('SPOTCHO_URL');
+  if (!url) throw new Error('スポット帳のURL（SPOTCHO_URL）が未設定です');
+  var body = { action: action, pin: prop_('SPOTCHO_PIN', '') };
+  for (var k in payload) body[k] = payload[k];
   var res = UrlFetchApp.fetch(url, {
     method: 'post', contentType: 'text/plain;charset=utf-8', payload: JSON.stringify(body),
     muteHttpExceptions: true, followRedirects: true
   });
-  var code = res.getResponseCode();
-  var text = res.getContentText();
   var j;
-  try { j = JSON.parse(text); } catch (e) { throw new Error('応答がJSONではありません（HTTP ' + code + '）。デプロイのアクセス権とURLを確認してください'); }
-  if (j.error) throw new Error(j.error);
-  if (j.ok === false) throw new Error(j.message || '失敗しました');
+  try { j = JSON.parse(res.getContentText()); } catch (e) { throw new Error('スポット帳の応答がJSONではありません（HTTP ' + res.getResponseCode() + '）。URLとデプロイのアクセス権を確認してください'); }
+  if (j.status !== 'ok') {
+    if (j.code === 'AUTH') throw new Error('スポット帳のPINが一致しません（SPOTCHO_PIN をスポット帳GASの SECRET_PIN と同じにしてください）');
+    var err = new Error(j.message || ('スポット帳：' + (j.code || j.status)));
+    err.code = j.code;
+    throw err;
+  }
   return j;
 }
-function spotcho_(action, payload) {
-  var url = prop_('SPOTCHO_URL');
-  if (!url) throw new Error('スポット帳のURL（SPOTCHO_URL）が未設定です');
-  var body = { action: 'tabicho.' + action, pin: prop_('SPOTCHO_PIN', '') };
-  for (var k in payload) body[k] = payload[k];
-  return postJson_(url, body);
+function splitSlash_(v) { return String(v || '').split('/').map(function (x) { return x.trim(); }).filter(String); }
+// スポット帳の訪問記録 → 旅帳の形（写真・何を・金額など、旅帳で扱わない項目があるかも返す）
+function spotVisit_(v) {
+  return {
+    visitId: v.visit_id, date: v.date, rating: Number(v.rating) || 0, comment: v.comment || '',
+    companions: String(v.companions || '').split(/[、,，・\/]/).map(function (x) { return x.trim(); }).filter(String),
+    people: v.people || '', updatedAt: v.updated_at || '',
+    hasExtras: !!(v.photos || v.menu || v.price || v.repeat)
+  };
 }
-API.spotList = function () { var r = spotcho_('list', {}); return { ok: true, spots: r.spots || [], serverTime: r.serverTime }; };
-API.spotSetVisited = function (a) { var r = spotcho_('setVisited', { spotId: a.spotId, tripId: a.tripId, visit: a.visit }); return { ok: true, spot: r.spot }; };
-API.spotCreate = function (a) { var r = spotcho_('create', { spot: a.spot }); return { ok: true, spot: r.spot }; };
+// スポット帳のスポット → 旅帳の形
+var MUST_TAG = '絶対行きたい';
+function spotOut_(s, visits) {
+  var tags = splitSlash_(s.tags), regions = splitSlash_(s.regions);
+  return {
+    id: String(s.id), name: s.name, lat: s.lat === '' ? null : Number(s.lat), lng: s.lng === '' ? null : Number(s.lng),
+    address: s.address || '', prefecture: s.prefecture || '', city: s.city || '',
+    area: regions[0] || s.city || s.prefecture || '',
+    tags: tags.concat(regions).filter(function (t) { return t !== MUST_TAG; }),
+    categories: s.categories || '',
+    status: s.status === '行った' ? 'visited' : 'want',
+    priority: tags.indexOf(MUST_TAG) >= 0 || regions.indexOf(MUST_TAG) >= 0 ? 'must' : null,
+    placeId: s.place_id || '', url: s.maps_url || '', memo: s.memo || '',
+    updatedAt: s.updated_at || '',
+    visits: (visits || []).filter(function (v) { return String(v.spot_id) === String(s.id); }).map(spotVisit_)
+  };
+}
+function spotAll_() {
+  var r = spotcho_('getAll', {});
+  return { spots: r.spots || [], visits: r.visits || [], serverDate: r.serverDate };
+}
+API.spotList = function () {
+  var all = spotAll_();
+  return { ok: true, spots: all.spots.map(function (s) { return spotOut_(s, all.visits); }), serverTime: all.serverDate };
+};
+// 「行った」の書き戻し：visit あり＝追加（visitId があれば更新）、visit が null＝取り消し（visitId の訪問を消す）
+API.spotSetVisited = function (a) {
+  var spotId = String(a.spotId);
+  var visitId = a.visitId ? String(a.visitId) : '';
+  if (!a.visit) {
+    if (!visitId) return { ok: true, spot: null };
+    var all = spotAll_();
+    var cur = all.visits.filter(function (v) { return v.visit_id === visitId; })[0];
+    if (cur) {
+      // スポット帳で写真・何を・金額などを書き足した訪問は、思い出を消さないよう旅帳からは消さない
+      if (spotVisit_(cur).hasExtras && !a.force) throw new Error('スポット帳で写真や金額などが書き足されているため、旅帳からは取り消せません（スポット帳で削除してください）');
+      spotcho_('deleteVisit', { visit_id: visitId, deletePhotos: false });
+    }
+    return { ok: true, spot: spotAfter_(spotId) };
+  }
+  var v = a.visit;
+  var rating = Math.round(Number(v.rating) || 0);
+  if (rating < 1 || rating > 5) throw new Error('評価（1〜5）を選んでください');
+  var fields = {
+    spot_id: spotId, date: String(v.date), rating: String(rating), comment: String(v.comment || ''),
+    companions: (v.companions || []).join('、'), people: v.people ? String(v.people) : ''
+  };
+  if (visitId) {
+    var all2 = spotAll_();
+    var old = all2.visits.filter(function (x) { return x.visit_id === visitId; })[0];
+    if (old) {
+      // スポット帳でしか扱わない項目（何を・金額・写真・また行きたいか）はそのまま残す
+      var merged = {};
+      for (var k in old) merged[k] = old[k];
+      for (var k2 in fields) merged[k2] = fields[k2];
+      var u = spotcho_('updateVisit', { visit: merged });
+      return { ok: true, visitId: visitId, spot: spotAfter_(spotId) };
+    }
+  }
+  var r = spotcho_('addVisit', { visit: { spot_id: fields.spot_id, date: fields.date, rating: fields.rating, menu: '', price: '', companions: fields.companions, people: fields.people, comment: fields.comment, photos: '', repeat: '' } });
+  return { ok: true, visitId: r.visit.visit_id, spot: spotAfter_(spotId) };
+};
+function spotAfter_(spotId) {
+  var all = spotAll_();
+  var s = all.spots.filter(function (x) { return String(x.id) === spotId; })[0];
+  return s ? spotOut_(s, all.visits) : null;
+}
+API.spotCreate = function (a) {
+  var sp = a.spot || {};
+  var r = spotcho_('addSpot', { spot: {
+    name: sp.name, address: sp.address || '', lat: sp.lat == null ? '' : sp.lat, lng: sp.lng == null ? '' : sp.lng,
+    coord_source: sp.lat != null ? '旅帳' : '', memo: '旅帳から登録' + (sp.memo ? '：' + sp.memo : ''),
+    tags: sp.priority === 'must' ? MUST_TAG : ''
+  } });
+  return { ok: true, spot: spotOut_(r.spot, []) };
+};
+
+// ---------------------------------------------------------------------------
+// 営業時間（スポット帳には無いので、place_id から Google Places API（New）で取る。6時間キャッシュ）
+// ---------------------------------------------------------------------------
+function placeHours_(placeId, key) {
+  var res = UrlFetchApp.fetch('https://places.googleapis.com/v1/places/' + encodeURIComponent(placeId) + '?languageCode=ja', {
+    headers: { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'regularOpeningHours' }, muteHttpExceptions: true
+  });
+  if (res.getResponseCode() >= 400) return null;
+  var j = JSON.parse(res.getContentText());
+  var oh = j.regularOpeningHours;
+  if (!oh || !oh.periods || !oh.periods.length) return null;
+  var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+  var week = {};
+  for (var d = 0; d < 7; d++) week[d] = 'closed'; // 期間に出てこない曜日は定休
+  oh.periods.forEach(function (p) {
+    var o = p.open; if (!o) return;
+    if (!p.close) { for (var i = 0; i < 7; i++) week[i] = [['00:00', '24:00']]; return; } // 24時間営業
+    var c = p.close;
+    var openMin = o.hour * 60 + (o.minute || 0);
+    var closeMin = c.hour * 60 + (c.minute || 0) + ((c.day - o.day + 7) % 7) * 1440;
+    if (closeMin <= openMin) closeMin += 1440;
+    var close = Math.floor(closeMin / 60) + ':' + p2(closeMin % 60);
+    if (week[o.day] === 'closed') week[o.day] = [];
+    week[o.day].push([p2(o.hour) + ':' + p2(o.minute || 0), close]);
+  });
+  return week;
+}
+API.placeHours = function (a) {
+  var key = prop_('PLACES_API_KEY');
+  if (!key) return { ok: true, hours: {}, note: 'PLACES_API_KEY 未設定のため営業時間は取得していません' };
+  var cache = CacheService.getScriptCache();
+  var out = {};
+  (a.spots || []).slice(0, 40).forEach(function (s) {
+    if (!s || !s.placeId) return;
+    var ck = 'oh:' + s.placeId;
+    var c = cache.get(ck);
+    if (c) { out[s.id] = JSON.parse(c); return; }
+    var w = null;
+    try { w = placeHours_(s.placeId, key); } catch (e) {}
+    out[s.id] = w;
+    cache.put(ck, JSON.stringify(w), 6 * 3600);
+  });
+  return { ok: true, hours: out };
+};
 
 // ---------------------------------------------------------------------------
 // 家計簿（ほしいもの帳→家計簿と同じ方式。家計簿GAS v7.0 は変更不要）
@@ -536,7 +666,7 @@ API.calendarAdd = function (a) {
 
 API.testConnections = function () {
   var r = {};
-  try { var s = spotcho_('ping', {}); r.spotcho = { ok: true, note: s.note || 'OK' }; } catch (e) { r.spotcho = { ok: false, error: String(e.message || e) }; }
+  try { spotcho_('ping', {}); r.spotcho = { ok: true, note: 'PIN OK' + (prop_('PLACES_API_KEY') ? ' ／ 営業時間：Places APIキー設定済' : ' ／ 営業時間：PLACES_API_KEY 未設定' ) }; } catch (e) { r.spotcho = { ok: false, error: String(e.message || e) }; }
   // 家計簿：存在しない action を投げると、PIN が合っていれば「不明な action」、違えば unauthorized が返る（データに触れない）
   try { var k = kakeiboGet_('tabichoPing'); r.kakeibo = { ok: k.status === 'error' || k.status === 'ok', note: 'PIN OK' }; }
   catch (e) { r.kakeibo = { ok: false, error: String(e.message || e) }; }

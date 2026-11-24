@@ -30,7 +30,7 @@ function renderRecord(trip) {
   h += `<div class="section-title">✅ この旅で「行った」にしたスポット（${visited.length}）</div>`;
   if (visited.length) h += visited.map(it => {
     const info = itemInfo(trip, it); const v = it.visited;
-    return `<div class="card visit-card" data-act="visitEdit" data-id="${it.id}"><div class="row between"><b>${esc(info.name)}</b><span>${v.rating ? '★'.repeat(v.rating) + '☆'.repeat(5 - v.rating) : '<span class="muted small">評価なし</span>'}</span></div>
+    return `<div class="card visit-card" data-act="visitEdit" data-id="${it.id}"><div class="row between"><b>${esc(info.name)}</b><span class="face-big">${faceHTML(v.rating)}</span></div>
       <div class="muted small">${fmtDateFull(v.date)} ・ ${esc((v.companions || []).join('・'))}${it.spotId ? '' : ' ・ スポット帳未登録'}</div>${v.comment ? `<div>${esc(v.comment)}</div>` : ''}</div>`;
   }).join('');
   else h += `<div class="muted small pad">しおり・リスト・ドライブの「行った」ボタンで記録されます</div>`;

@@ -96,6 +96,15 @@ function parseHours(src) {
 }
 
 function hoursOn(hours, date) { return hours.week[weekday(date)]; }
+// 例「月〜金 9:00–18:00 ／ 土日 10:00–17:00 ／ 水 定休」
+function hoursSummary(hours) {
+  if (!hours || !hours.known) return '';
+  const lab = d => { const r = hours.week[d]; return r === null ? '?' : r.length ? rangesLabel(r) : '定休'; };
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  const groups = [];
+  order.forEach(d => { const l = lab(d); const g = groups[groups.length - 1]; if (g && g.l === l) g.days.push(d); else groups.push({ l, days: [d] }); });
+  return groups.map(g => (g.days.length > 2 ? WD[g.days[0]] + '〜' + WD[g.days[g.days.length - 1]] : g.days.map(d => WD[d]).join('')) + ' ' + g.l).join(' ／ ');
+}
 // 'open' | 'closed'(定休) | 'unknown'
 function dayAvailability(hours, date) {
   const r = hoursOn(hours, date);

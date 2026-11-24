@@ -32,20 +32,20 @@ const MockServer = (() => {
   function seed() {
     const t = new Date().toISOString();
     const spots = [
-      { id: 'sp1', name: '淡路夢舞台', lat: 34.5636, lng: 135.0103, area: '淡路島', address: '兵庫県淡路市夢舞台2', hours: '9:00-18:00', tags: ['建築', '花', '春'], status: 'want', priority: 'must', stayMin: 60, price: 0, parking: true, station: '', updatedAt: t },
-      { id: 'sp2', name: 'あわじ花さじき', lat: 34.5398, lng: 134.9545, area: '淡路島', address: '兵庫県淡路市楠本2805-7', hours: '9:00-17:00 水曜定休', tags: ['花', '絶景'], status: 'want', priority: 'must', stayMin: 45, price: 0, parking: true, updatedAt: t },
-      { id: 'sp3', name: '淡路島バーガー本店', lat: 34.3445, lng: 134.8953, area: '淡路島', address: '兵庫県洲本市', hours: '10:00-17:00 火曜定休', tags: ['グルメ'], status: 'want', priority: 'maybe', stayMin: 40, price: 1500, parking: true, updatedAt: t },
-      { id: 'sp4', name: '大鳴門橋 渦の道', lat: 34.2381, lng: 134.6522, area: '淡路島', address: '徳島県鳴門市', hours: '9:00-18:00', tags: ['絶景'], status: 'want', priority: 'must', stayMin: 60, price: 510, parking: true, updatedAt: t },
-      { id: 'sp5', name: '洲本温泉', lat: 34.3401, lng: 134.9046, area: '淡路島', address: '兵庫県洲本市小路谷', hours: '', tags: ['温泉', '冬'], status: 'want', priority: 'maybe', stayMin: 90, price: 1000, parking: true, updatedAt: t },
-      { id: 'sp6', name: '伊勢神宮 内宮', lat: 34.4551, lng: 136.7254, area: '伊勢志摩', address: '三重県伊勢市宇治館町1', hours: '5:00-18:00', tags: ['神社'], status: 'want', priority: 'must', stayMin: 90, price: 0, parking: true, station: '五十鈴川駅', updatedAt: t },
-      { id: 'sp7', name: 'おかげ横丁', lat: 34.4626, lng: 136.7232, area: '伊勢志摩', address: '三重県伊勢市宇治中之切町', hours: '9:30-17:00', tags: ['グルメ', '街歩き'], status: 'want', priority: 'maybe', stayMin: 60, price: 2000, parking: false, station: '五十鈴川駅', updatedAt: t },
-      { id: 'sp8', name: '横山展望台', lat: 34.3016, lng: 136.7952, area: '伊勢志摩', address: '三重県志摩市阿児町', hours: '9:00-16:30', tags: ['絶景'], status: 'want', priority: 'must', stayMin: 40, price: 0, parking: true, updatedAt: t },
-      { id: 'sp9', name: '白川郷', lat: 36.2578, lng: 136.9060, area: '飛騨・白川郷', address: '岐阜県大野郡白川村', hours: '8:00-17:00', tags: ['世界遺産', '冬', '絶景'], status: 'want', priority: 'must', stayMin: 120, price: 0, parking: true, updatedAt: t },
-      { id: 'sp10', name: '飛騨高山 古い町並', lat: 36.1407, lng: 137.2622, area: '飛騨・白川郷', address: '岐阜県高山市上三之町', hours: '9:00-17:00', tags: ['街歩き', 'グルメ'], status: 'want', priority: 'maybe', stayMin: 90, price: 2000, parking: true, station: '高山駅', updatedAt: t },
-      { id: 'sp11', name: '新穂高ロープウェイ', lat: 36.2868, lng: 137.5744, area: '飛騨・白川郷', address: '岐阜県高山市奥飛騨温泉郷', hours: '8:30-16:45', tags: ['絶景', '紅葉', '秋'], status: 'want', priority: 'maybe', stayMin: 120, price: 3300, parking: true, updatedAt: t },
-      { id: 'sp12', name: '奈良公園', lat: 34.6851, lng: 135.8430, area: '奈良', address: '奈良県奈良市', hours: '', tags: ['公園', '紅葉', '秋'], status: 'want', priority: 'maybe', stayMin: 90, price: 0, parking: true, station: '近鉄奈良駅', updatedAt: t },
-      { id: 'sp13', name: '東大寺', lat: 34.6890, lng: 135.8398, area: '奈良', address: '奈良県奈良市雑司町406-1', hours: '7:30-17:30', tags: ['寺'], status: 'want', priority: 'must', stayMin: 60, price: 800, parking: true, station: '近鉄奈良駅', updatedAt: t },
-      { id: 'sp14', name: '位置不明の気になるカフェ', lat: null, lng: null, area: '', address: '', hours: '', tags: ['カフェ'], status: 'want', priority: 'maybe', updatedAt: t }
+      { id: 'SP0001', name: '淡路夢舞台', lat: 34.5636, lng: 135.0103, area: '淡路島', address: '兵庫県淡路市夢舞台2', hours: '9:00-18:00', tags: ['建築', '花', '春'], status: 'want', priority: 'must', stayMin: 60, price: 0, parking: true, station: '', updatedAt: t },
+      { id: 'SP0002', name: 'あわじ花さじき', lat: 34.5398, lng: 134.9545, area: '淡路島', address: '兵庫県淡路市楠本2805-7', hours: '9:00-17:00 水曜定休', tags: ['花', '絶景'], status: 'want', priority: 'must', stayMin: 45, price: 0, parking: true, updatedAt: t },
+      { id: 'SP0003', name: '淡路島バーガー本店', lat: 34.3445, lng: 134.8953, area: '淡路島', address: '兵庫県洲本市', hours: '10:00-17:00 火曜定休', tags: ['グルメ'], status: 'want', priority: 'maybe', stayMin: 40, price: 1500, parking: true, updatedAt: t },
+      { id: 'SP0004', name: '大鳴門橋 渦の道', lat: 34.2381, lng: 134.6522, area: '淡路島', address: '徳島県鳴門市', hours: '9:00-18:00', tags: ['絶景'], status: 'want', priority: 'must', stayMin: 60, price: 510, parking: true, updatedAt: t },
+      { id: 'SP0005', name: '洲本温泉', lat: 34.3401, lng: 134.9046, area: '淡路島', address: '兵庫県洲本市小路谷', hours: '', tags: ['温泉', '冬'], status: 'want', priority: 'maybe', stayMin: 90, price: 1000, parking: true, updatedAt: t },
+      { id: 'SP0006', name: '伊勢神宮 内宮', lat: 34.4551, lng: 136.7254, area: '伊勢志摩', address: '三重県伊勢市宇治館町1', hours: '5:00-18:00', tags: ['神社'], status: 'want', priority: 'must', stayMin: 90, price: 0, parking: true, station: '五十鈴川駅', updatedAt: t },
+      { id: 'SP0007', name: 'おかげ横丁', lat: 34.4626, lng: 136.7232, area: '伊勢志摩', address: '三重県伊勢市宇治中之切町', hours: '9:30-17:00', tags: ['グルメ', '街歩き'], status: 'want', priority: 'maybe', stayMin: 60, price: 2000, parking: false, station: '五十鈴川駅', updatedAt: t },
+      { id: 'SP0008', name: '横山展望台', lat: 34.3016, lng: 136.7952, area: '伊勢志摩', address: '三重県志摩市阿児町', hours: '9:00-16:30', tags: ['絶景'], status: 'want', priority: 'must', stayMin: 40, price: 0, parking: true, updatedAt: t },
+      { id: 'SP0009', name: '白川郷', lat: 36.2578, lng: 136.9060, area: '飛騨・白川郷', address: '岐阜県大野郡白川村', hours: '8:00-17:00', tags: ['世界遺産', '冬', '絶景'], status: 'want', priority: 'must', stayMin: 120, price: 0, parking: true, updatedAt: t },
+      { id: 'SP0010', name: '飛騨高山 古い町並', lat: 36.1407, lng: 137.2622, area: '飛騨・白川郷', address: '岐阜県高山市上三之町', hours: '9:00-17:00', tags: ['街歩き', 'グルメ'], status: 'want', priority: 'maybe', stayMin: 90, price: 2000, parking: true, station: '高山駅', updatedAt: t },
+      { id: 'SP0011', name: '新穂高ロープウェイ', lat: 36.2868, lng: 137.5744, area: '飛騨・白川郷', address: '岐阜県高山市奥飛騨温泉郷', hours: '8:30-16:45', tags: ['絶景', '紅葉', '秋'], status: 'want', priority: 'maybe', stayMin: 120, price: 3300, parking: true, updatedAt: t },
+      { id: 'SP0012', name: '奈良公園', lat: 34.6851, lng: 135.8430, area: '奈良', address: '奈良県奈良市', hours: '', tags: ['公園', '紅葉', '秋'], status: 'want', priority: 'maybe', stayMin: 90, price: 0, parking: true, station: '近鉄奈良駅', updatedAt: t },
+      { id: 'SP0013', name: '東大寺', lat: 34.6890, lng: 135.8398, area: '奈良', address: '奈良県奈良市雑司町406-1', hours: '7:30-17:30', tags: ['寺'], status: 'want', priority: 'must', stayMin: 60, price: 800, parking: true, station: '近鉄奈良駅', updatedAt: t },
+      { id: 'SP0014', name: '位置不明の気になるカフェ', lat: null, lng: null, area: '', address: '', hours: '', tags: ['カフェ'], status: 'want', priority: 'maybe', updatedAt: t }
     ];
     return { trips: {}, settings: null, spots, visits: [], kakeibo: [], calendar: [] };
   }
@@ -66,26 +66,49 @@ const MockServer = (() => {
     },
     async deleteTrip({ id }) { const db = load(); delete db.trips[id]; save(db); return { ok: true }; },
     async saveSettings({ settings }) { const db = load(); db.settings = settings; save(db); return { ok: true }; },
+    // 旅帳サーバ（Code.gs）がスポット帳 v3.1 の getAll から作る形と同じにする
+    //   スポット帳には営業時間・滞在目安・料金・駐車場の列は無い（営業時間は placeHours で取る）
     async spotList() {
       const db = load();
-      return { ok: true, spots: db.spots.map(s => Object.assign({}, s, { visits: db.visits.filter(v => v.spotId === s.id) })), serverTime: new Date().toISOString() };
+      const spots = db.spots.map(s => ({
+        id: s.id, name: s.name, lat: s.lat, lng: s.lng, address: s.address, area: s.area, prefecture: '', city: '',
+        tags: s.tags || [], status: db.visits.some(v => v.spotId === s.id) ? 'visited' : 'want', priority: s.priority === 'must' ? 'must' : null,
+        placeId: s.lat != null ? 'mock_' + s.id : '', url: '', updatedAt: s.updatedAt,
+        visits: db.visits.filter(v => v.spotId === s.id).map(v => ({ visitId: v.visitId, date: v.date, rating: v.rating, comment: v.comment || '', companions: v.companions || [], people: v.people || '', hasExtras: false }))
+      }));
+      return { ok: true, spots, serverTime: todayStr() };
     },
-    async spotSetVisited({ spotId, tripId, visit }) {
+    async spotSetVisited({ spotId, visitId, visit }) {
       const db = load();
-      const sp = db.spots.find(s => s.id === spotId);
-      if (!sp) return { error: 'スポット帳に見つかりません（削除済み）' };
-      db.visits = db.visits.filter(v => !(v.spotId === spotId && v.tripId === tripId));
-      if (visit) db.visits.push(Object.assign({}, visit, { spotId, tripId }));
-      sp.status = db.visits.some(v => v.spotId === spotId) ? 'visited' : 'want';
-      sp.updatedAt = new Date().toISOString();
+      if (!db.spots.find(s => s.id === spotId)) return { error: 'スポットが見つかりません: ' + spotId };
+      let id = visitId || '';
+      if (!visit) {
+        db.visits = db.visits.filter(v => v.visitId !== visitId);
+      } else {
+        const r = Number(visit.rating);
+        if (!(r >= 1 && r <= 5)) return { error: '評価（1〜5）を選んでください' };
+        const row = { spotId, date: visit.date, rating: r, comment: visit.comment || '', companions: visit.companions || [], people: visit.people || '' };
+        const cur = visitId && db.visits.find(v => v.visitId === visitId);
+        if (cur) Object.assign(cur, row);
+        else { db.seq = (db.seq || 0) + 1; id = 'V' + String(db.seq).padStart(4, '0'); db.visits.push(Object.assign({ visitId: id }, row)); }
+      }
       save(db);
-      return { ok: true, spot: Object.assign({}, sp, { visits: db.visits.filter(v => v.spotId === spotId) }) };
+      const all = await handlers.spotList();
+      return { ok: true, visitId: id, spot: all.spots.find(s => s.id === spotId) };
     },
     async spotCreate({ spot }) {
       const db = load();
-      const s = Object.assign({ id: uid('sp'), status: 'want', tags: [], updatedAt: new Date().toISOString() }, spot);
+      db.seqSpot = (db.seqSpot || 100) + 1;
+      const s = { id: 'SP' + String(db.seqSpot).padStart(4, '0'), name: spot.name, lat: spot.lat, lng: spot.lng, address: spot.address || '', area: '', tags: [], priority: spot.priority === 'must' ? 'must' : null, hours: '', updatedAt: todayStr() };
       db.spots.push(s); save(db);
-      return { ok: true, spot: s };
+      const all = await handlers.spotList();
+      return { ok: true, spot: all.spots.find(x => x.id === s.id) };
+    },
+    async placeHours({ spots }) {
+      const db = load();
+      const hours = {};
+      (spots || []).forEach(q => { const s = db.spots.find(x => x.id === q.id); hours[q.id] = s && s.hours ? s.hours : null; });
+      return { ok: true, hours };
     },
     async routes({ list }) {
       await sleep(150);

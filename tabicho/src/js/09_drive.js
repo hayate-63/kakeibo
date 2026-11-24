@@ -77,7 +77,7 @@ function shiftDrive(d) {
 ACT.driveArrived = async (el) => {
   const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id);
   t.driveTargetId = null;
-  await markVisited(t, it);
+  openQuickVisit(t, it);
 };
 ON_CHANGE.parkMemo = (el) => { const t = curTrip(); const it = t.items.find(i => i.id === el.dataset.id); it.parkingMemo = el.value; commitTrip(t, { noRender: true }); toast('駐車場メモを保存しました'); };
 

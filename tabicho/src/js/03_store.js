@@ -37,6 +37,7 @@ const S = {
   curTripId: null,
   tab: 'home',
   spots: {},            // spotId -> spot（スポット帳の最新）
+  hours: {},            // spotId -> { week, at }（place_id から取った営業時間。オフライン用に端末にも保存）
   spotsState: 'idle',   // idle|loading|ok|error|off
   spotsError: '',
   spotsAt: 0,
@@ -154,7 +155,8 @@ function itemInfo(trip, it) {
     base.lat = sp.lat != null && sp.lat !== '' ? Number(sp.lat) : base.lat;
     base.lng = sp.lng != null && sp.lng !== '' ? Number(sp.lng) : base.lng;
     base.address = sp.address || base.address;
-    base.hoursText = sp.hours != null && sp.hours !== '' ? sp.hours : base.hoursText;
+    // 営業時間：旅帳で手入力したもの → Google（place_id）から取ったもの の順
+    if (!it.hoursText && S.hours[sp.id] && S.hours[sp.id].week) { base.hoursRaw = S.hours[sp.id].week; base.hoursFrom = 'Google'; }
     base.tags = sp.tags || [];
     base.stay = it.stayEst != null ? it.stayEst : sp.stayMin;
     base.price = it.priceEst != null ? it.priceEst : sp.price;
@@ -167,7 +169,8 @@ function itemInfo(trip, it) {
     base.name = it.nameCache || it.name || '（削除済みスポット）';
   }
   if (base.lat === '' || base.lat == null || isNaN(base.lat)) { base.lat = null; base.lng = null; }
-  base.hours = parseHours(base.hoursText);
+  base.hours = parseHours(base.hoursRaw || base.hoursText);
+  if (base.hoursRaw) base.hoursText = hoursSummary(base.hours);
   return base;
 }
 function itemPoint(trip, it) { const i = itemInfo(trip, it); return i.lat != null ? { lat: i.lat, lng: i.lng, name: i.name, address: i.address } : null; }
@@ -182,6 +185,7 @@ async function loadSpots(force) {
     (r.spots || []).forEach(s => { map[String(s.id)] = normalizeSpot(s); });
     S.spots = map; S.spotsState = 'ok'; S.spotsAt = Date.now(); S.spotsError = '';
     reconcileVisits();
+    loadHours();
   } catch (e) {
     S.spotsState = 'error'; S.spotsError = e.message || String(e);
   }
@@ -205,7 +209,9 @@ function normalizeSpot(s) {
   return o;
 }
 
-// 旅帳側の「行った」とスポット帳側の訪問記録の食い違いは新しい更新時刻を正とする
+// 旅帳が作った訪問記録（visit_id）をスポット帳の最新に合わせる。
+// 旅帳の書き戻しは即時なので、書き戻し済みの記録はスポット帳側を正とする（スポット帳で編集・削除された分を取り込む）。
+// 未送信（_visitPending）のものは旅帳側を正として次回再送する
 function reconcileVisits() {
   Object.values(S.trips).forEach(trip => {
     let changed = false;
@@ -213,20 +219,45 @@ function reconcileVisits() {
       if (!it.spotId) return;
       const sp = S.spots[it.spotId];
       if (!sp) return;
-      it.nameCache = sp.name || it.nameCache;
-      const remote = (sp.visits || []).find(v => v.tripId === trip.id);
+      if (sp.name && it.nameCache !== sp.name) { it.nameCache = sp.name; changed = true; }
       const local = it.visited;
-      if (remote && (!local || (remote.at || '') > (local.at || ''))) {
-        if (JSON.stringify(remote) !== JSON.stringify(local)) {
-          it.visited = { date: remote.date, rating: Number(remote.rating) || 0, comment: remote.comment || '', companions: remote.companions || [], at: remote.at || '' };
-          changed = true;
-        }
-      } else if (!remote && local && local.at && (sp.updatedAt || '') > local.at) {
-        it.visited = null; changed = true;           // スポット帳側で取り消された
-      }
+      if (!local || !local.visitId || it._visitPending) return;
+      const remote = (sp.visits || []).find(v => v.visitId === local.visitId);
+      if (!remote) { it.visited = null; changed = true; return; }   // スポット帳で訪問記録が消された
+      const next = Object.assign({}, local, { date: remote.date, rating: Number(remote.rating) || 0, comment: remote.comment || '', companions: remote.companions && remote.companions.length ? remote.companions : (local.companions || []) });
+      if (JSON.stringify(next) !== JSON.stringify(local)) { it.visited = next; changed = true; }
     });
     if (changed) commitTrip(trip, { silent: true });
   });
+}
+
+// 営業時間：旅に入っているスポットだけ、place_id から取る（1日1回。結果は端末にも保存）
+let hoursLoading = false;
+async function loadHours(force) {
+  if (hoursLoading) return;
+  const need = {};
+  Object.values(S.trips).forEach(t => {
+    if (t._deleted || ['完了', '中止'].includes(tripStatus(t))) return;
+    t.items.forEach(it => {
+      const sp = it.spotId && S.spots[it.spotId];
+      if (!sp || !sp.placeId) return;
+      const h = S.hours[sp.id];
+      if (!force && h && Date.now() - h.at < 24 * 3600e3) return;
+      need[sp.id] = { id: sp.id, placeId: sp.placeId };
+    });
+  });
+  const list = Object.values(need);
+  if (!list.length) return;
+  hoursLoading = true;
+  try {
+    for (let i = 0; i < list.length; i += 40) {
+      const r = await api('placeHours', { spots: list.slice(i, i + 40) });
+      Object.keys(r.hours || {}).forEach(id => { S.hours[id] = { week: r.hours[id], at: Date.now() }; });
+    }
+    saveCache();
+    render();
+  } catch (e) { /* 営業時間は任意。取れなければ情報なし表示 */ }
+  hoursLoading = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,7 +266,7 @@ function reconcileVisits() {
 function saveCache() {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify({
-      settings: S.settings, trips: S.trips, curTripId: S.curTripId, dirty: S.dirty, settingsDirty: S.settingsDirty, ui: { listSort: S.ui.listSort }
+      settings: S.settings, trips: S.trips, curTripId: S.curTripId, dirty: S.dirty, settingsDirty: S.settingsDirty, ui: { listSort: S.ui.listSort }, hours: S.hours
     }));
   } catch (e) { console.warn(e); }
 }
@@ -248,6 +279,7 @@ function loadCache() {
     S.curTripId = c.curTripId || null;
     S.dirty = c.dirty || {};
     S.settingsDirty = !!c.settingsDirty;
+    S.hours = c.hours || {};
     if (c.ui && c.ui.listSort) S.ui.listSort = c.ui.listSort;
     Object.values(S.trips).forEach(migrateTrip);
     return true;
@@ -270,6 +302,8 @@ function commitTrip(trip, opt) {
   S.dirty[trip.id] = true;
   saveCache();
   queueSave();
+  // 新しく入ったスポットの営業時間（足りない分だけ取る）
+  if (typeof loadHours === 'function' && S.spotsState === 'ok') setTimeout(() => loadHours(), 0);
   if (!opt.silent && !opt.noRender) render();
 }
 function commitSettings() {
