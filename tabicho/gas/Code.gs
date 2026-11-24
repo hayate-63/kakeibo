@@ -204,26 +204,79 @@ function kakeiboGet_(action) {
   var c = kakeiboCfg_();
   return kakeiboFetch_(c.url + '?pin=' + encodeURIComponent(c.pin) + '&action=' + encodeURIComponent(action));
 }
-function kakeiboRows_(existing, logs) {
+// ほしいもの帳 GAS v1.0.1 と同じ作り方：既存明細の列をひな形にし、引落日などの派生項目も家計簿 evaluateEntry と同じ計算で入れる
+function kkIsActive_(v) { return v === undefined || v === null || v === '' || v === 1 || v === true || String(v) === '1' || String(v).toUpperCase() === 'TRUE'; }
+function kkFmt_(dt) { return dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2) + '-' + ('0' + dt.getDate()).slice(-2); }
+function kkNormYMD_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd');
+  var m = String(v == null ? '' : v).trim().match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  return m ? m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2) : String(v || '');
+}
+function kkIsHoliday_(dt, set) {
+  var w = dt.getDay();
+  if (w === 0 || w === 6) return true;
+  return !!(set && set[kkFmt_(dt)]);
+}
+function kkCalcPayDate_(m, ymd, holidays) {
+  var p = ymd.split('-').map(Number);
+  var y = p[0], mo = p[1], d = p[2];
+  var closeDay = Number(m.closeDay) || 0, payDay = Number(m.payDay) || 0, off = Number(m.payMonthOffset) || 0;
+  var dt = new Date(y, mo - 1, d);
+  var adjust = m.adjust === undefined || m.adjust === null || String(m.adjust) === '' ? ((m.bigCat === '支出（クレカ）' || m.bigCat === '固定引落') ? 'next' : 'none') : String(m.adjust);
+  var set = null;
+  if (Array.isArray(holidays) && holidays.length) { set = {}; holidays.forEach(function (h) { set[kkNormYMD_(h)] = true; }); }
+  var shift = function (x) {
+    if (adjust === 'none') return x;
+    var cur = new Date(x.getFullYear(), x.getMonth(), x.getDate()), g = 0;
+    while (kkIsHoliday_(cur, set) && g++ < 15) cur.setDate(cur.getDate() + (adjust === 'prev' ? -1 : 1));
+    return cur;
+  };
+  if (m.bigCat === '支出（クレカ）' && closeDay > 0 && payDay > 0) {
+    var tm = mo + off; if (d > closeDay) tm += 1;
+    dt = shift(new Date(y, tm - 1, payDay));
+  } else if (m.bigCat === '固定引落' && payDay > 0) {
+    dt = shift(new Date(y, mo - 1, payDay));
+  }
+  return kkFmt_(dt);
+}
+function kakeiboRows_(data, logs) {
+  var existing = data.logs || [];
+  var cats = {};
+  (data.categories || []).forEach(function (c) { if (c && kkIsActive_(c.active)) cats[String(c.name)] = c; });
+  var hasCats = Object.keys(cats).length > 0;
   var have = {};
   var maxId = 0;
   existing.forEach(function (l) {
     if (String(l.src) === 'tabicho' && l.srcRef) have[String(l.srcRef)] = true;
     maxId = Math.max(maxId, Number(l.id) || 0);
   });
+  var tmplKeys = Object.keys(existing[0] || {});
   var nextId = Math.max(maxId + 1, Date.now());
-  var rows = [], keys = [], skipped = 0;
+  var rows = [], keys = [], skipped = 0, bad = [];
   (logs || []).forEach(function (l) {
     if (!l.sourceKey) return;
     keys.push(l.sourceKey);
     if (have[l.sourceKey]) { skipped++; return; }
+    var date = String(l.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { bad.push('日付が不正：' + l.memo); return; }
+    var m = cats[String(l.category)];
+    if (hasCats && !m) { bad.push('カテゴリー「' + l.category + '」が家計簿の有効なマスタにありません'); return; }
     have[l.sourceKey] = true;
-    var row = { id: nextId++, amount: Number(l.amount), date: String(l.date), memo: String(l.memo || ''), category: String(l.category || ''), src: 'tabicho', srcRef: String(l.sourceKey) };
+    var amt = Math.round(Number(l.amount) || 0);
+    var row = {};
+    tmplKeys.forEach(function (k) { row[k] = ''; });
+    var payDate = m ? kkCalcPayDate_(m, date, data.holidays) : date;
+    Object.assign(row, {
+      id: nextId++, amount: amt, absAmount: Math.abs(amt), date: date, useDate: date, useYM: date.slice(0, 7),
+      payDate: payDate, payYM: payDate.slice(0, 7), bigCat: m ? String(m.bigCat || '') : '',
+      memo: String(l.memo || ''), category: String(l.category || ''), ruleId: '', isLegacy: '',
+      src: 'tabicho', srcRef: String(l.sourceKey)
+    });
     // 用途が決まっている行（支出）は区分を固定。割り勘の収入は家計簿のカテゴリー判定に任せる
     if (l.usage) { row.catLock = '1'; row.usageCat = String(l.usage); row.budgetCat = String(l.budget || ''); }
     rows.push(row);
   });
-  return { rows: rows, keys: keys, skipped: skipped };
+  return { rows: rows, keys: keys, skipped: skipped, bad: bad };
 }
 API.kakeiboSend = function (a) {
   var c = kakeiboCfg_();
@@ -231,15 +284,21 @@ API.kakeiboSend = function (a) {
   for (var attempt = 0; attempt < 3; attempt++) {
     var data = kakeiboGet_('loadAll');
     if (data.status !== 'ok') throw new Error('家計簿を読み込めません：' + (data.message || data.status));
-    var existing = data.logs || [];
-    var r = kakeiboRows_(existing, a.logs);
+    var existing = data.logs;
+    if (!Array.isArray(existing)) throw new Error('家計簿の応答に明細（logs）がありません');
+    // 読み込みに失敗して0件で返ってきた時に、家計簿の明細を旅帳の分だけで上書きしない（ほしいもの帳と同じ守り）
+    if (!existing.length) throw new Error('家計簿の明細が0件で返ってきたため、書き込みを中止しました');
+    var r = kakeiboRows_(data, a.logs);
+    if (r.bad.length) throw new Error('家計簿へ送れない明細があります：' + r.bad.join('／'));
     if (!r.rows.length) return { ok: true, sent: 0, skipped: r.skipped, keys: r.keys };
+    var next = existing.concat(r.rows);
+    if (next.length !== existing.length + r.rows.length) throw new Error('件数チェックに失敗しました');
     var res = kakeiboFetch_(c.url, {
       method: 'post', contentType: 'text/plain;charset=utf-8',
-      payload: JSON.stringify({ pin: c.pin, baseRev: data.rev, logs: existing.concat(r.rows) })
+      payload: JSON.stringify({ pin: c.pin, baseRev: data.rev, logs: next })
     });
     if (res.status === 'saved') return { ok: true, sent: r.rows.length, skipped: r.skipped, keys: r.keys, rev: res.rev };
-    lastMsg = res.message || res.status;
+    lastMsg = res.message || res.reason || res.status;
     if (res.status !== 'conflict' && res.status !== 'busy') break;
     Utilities.sleep(1500 * (attempt + 1));
   }

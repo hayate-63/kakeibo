@@ -58,7 +58,13 @@ assert.ok(call('nope', {}).error);
 console.log('gas storage tests passed');
 
 // ---- 家計簿連携：家計簿GAS v7.0 の振る舞いを真似た偽サーバ ----
-const kk = { rev: 5, logs: [{ id: 100, amount: -500, date: '2026-11-01', memo: 'コンビニ', category: 'PayPay', usageCat: 'コンビニ・飲料', isLegacy: false }], posts: 0, conflictOnce: true };
+const kk = { rev: 5, logs: [{ id: 100, amount: -500, date: '2026-11-01', memo: 'コンビニ', category: 'PayPay', usageCat: 'コンビニ・飲料', isLegacy: false, bigCat: '支出（即時）', payDate: '2026-11-01', payYM: '2026-11', useYM: '2026-11', useDate: '2026-11-01', budgetCat: '変動費（食費）', absAmount: 500, catLock: '', src: '', srcRef: '' }], posts: 0, conflictOnce: true,
+  categories: [
+    { name: '三井住友ゴールド(NL)', mode: '支出', bigCat: '支出（クレカ）', closeDay: 31, payMonthOffset: 1, payDay: 26, active: 1, adjust: 'next' },
+    { name: 'PayPay', mode: '支出', bigCat: '支出（即時）', closeDay: 0, payMonthOffset: 0, payDay: 0, active: 1, adjust: 'none' },
+    { name: 'イオンカード', mode: '支出', bigCat: '支出（クレカ）', closeDay: 10, payMonthOffset: 1, payDay: 2, active: 0 },
+    { name: '割り勘', mode: '収入', bigCat: '精算・移動', closeDay: 0, payMonthOffset: 0, payDay: 0, active: 1 }
+  ], holidays: ['2026-11-03', '2026-11-23'] };
 props.KAKEIBO_URL = 'https://kakeibo/exec'; props.KAKEIBO_PIN = '9999';
 ctx.Utilities.sleep = () => {};
 ctx.UrlFetchApp.fetch = (url, opt) => {
@@ -66,7 +72,7 @@ ctx.UrlFetchApp.fetch = (url, opt) => {
   if (!opt || opt.method !== 'post') {
     const q = Object.fromEntries(new URL(url).searchParams);
     if (q.pin !== '9999') return reply({ status: 'unauthorized' });
-    if (q.action === 'loadAll') return reply({ status: 'ok', rev: kk.rev, logs: JSON.parse(JSON.stringify(kk.logs)) });
+    if (q.action === 'loadAll') return reply({ status: 'ok', rev: kk.rev, logs: kk.emptyOnce ? [] : JSON.parse(JSON.stringify(kk.logs)), categories: kk.categories, holidays: kk.holidays });
     return reply({ status: 'error', message: '不明な action です' });
   }
   const body = JSON.parse(opt.payload);
@@ -89,11 +95,23 @@ assert.ok(kk.logs.some(l => l.id === 101), '他端末で増えた明細を消さ
 assert.ok(kk.logs.some(l => l.id === 100 && l.usageCat === 'コンビニ・飲料'), '既存の明細はそのまま');
 const exp = kk.logs.find(l => l.srcRef === 't1:e:x:exp');
 assert.strictEqual(exp.catLock, '1'); assert.strictEqual(exp.usageCat, 'イベント・旅行・レジャー'); assert.strictEqual(exp.src, 'tabicho');
+// 引落日などの派生項目（家計簿 evaluateEntry と同じ計算）：11/30 利用 → 12/26(土) → 翌営業日 12/28(月)
+assert.strictEqual(exp.bigCat, '支出（クレカ）'); assert.strictEqual(exp.payDate, '2026-12-28'); assert.strictEqual(exp.payYM, '2026-12');
+assert.strictEqual(exp.useYM, '2026-11'); assert.strictEqual(exp.absAmount, 30001);
+assert.deepStrictEqual(Object.keys(kk.logs[0]).filter(k => !(k in exp)), [], '既存明細と同じ列を持つ');
 const inc = kk.logs.find(l => l.srcRef === 't1:e:x:inc');
+assert.strictEqual(inc.bigCat, '精算・移動');
 assert.ok(!inc.catLock, '割り勘の収入は家計簿の判定に任せる');
 const k2 = call('kakeiboSend', { logs });
 assert.strictEqual(k2.sent, 0); assert.strictEqual(k2.skipped, 2, '同じ明細は二重に入らない');
 assert.strictEqual(kk.logs.length, 4);
+// 0件で返ってきたら書かない
+kk.emptyOnce = true; const before = kk.posts;
+assert.ok(/0件/.test(call('kakeiboSend', { logs: [{ sourceKey: 'z1', date: '2026-11-30', amount: -100, memo: 'x', category: 'PayPay', usage: 'u', budget: 'b' }] }).error));
+assert.strictEqual(kk.posts, before); kk.emptyOnce = false;
+// 無効・存在しないカテゴリーは送らない
+assert.ok(/有効なマスタにありません/.test(call('kakeiboSend', { logs: [{ sourceKey: 'z2', date: '2026-11-30', amount: -100, memo: 'x', category: 'イオンカード', usage: 'u', budget: 'b' }] }).error));
+assert.strictEqual(kk.posts, before);
 props.KAKEIBO_PIN = 'bad';
 assert.ok(/PINが一致しません/.test(call('kakeiboSend', { logs }).error));
 console.log('kakeibo integration tests passed');
