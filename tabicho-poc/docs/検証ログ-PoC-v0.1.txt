@@ -1,0 +1,56 @@
+旅帳 PoC v0.1 検証ログ（模擬サーバ相手・Chromium。実機・実 Google での確認ではない）
+実行日時：2026-11-25 07:25:26 JST ／ Node.js v22.23.5
+構文チェック：gas-poc-v0.1.txt・index.html の script 部 とも node --check 通過
+
+✓ 接続（別オリジンの HTML → GAS へ PIN 付き POST）
+✓ 項目1：Origin あり＝直接 PUT 成／なし＝CORS で否、判定「送れた」
+✓ 項目2：チャンク分割・308 で進捗・一時エラー（503）と通信断（オフライン）から再開・中身一致（md5）
+✓ 項目2：Range が読めない時は GAS で受信位置を確認して続行
+✓ 代替：GAS 中継チャンク（CORS なしのセッション）で完走・中身一致
+✓ 項目2：再読み込み後にファイルを選び直して途中から再開・中身一致
+✓ 項目3：サムネイル（GAS 経由）・判定の記録
+✓ 項目4：GAS 経由の保存と所要時間の記録
+
+--- 自動生成された結果（模擬サーバ相手） ---
+旅帳 PoC 実機結果（自動生成）
+作成：2026/11/24 22:25:39
+端末：iOS （iOS 以外） ／ ホーム画面アプリ：いいえ ／ 画面の配信元：外部（http://127.0.0.1:8701）
+UA：Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/158.0.8127.36 Safari/537.36
+
+■ 1. セッション発行（GAS）
+　［Origin を送る］発行：成（HTTP 200）
+　　UrlFetchApp の送信予定ヘッダの Origin：あり（http://127.0.0.1:8701）
+　　Google の応答の access-control-*：{"Access-Control-Allow-Origin":"http://127.0.0.1:8701"}
+　　画面から直接 PUT：成（HTTP 200）／Google 側の受信：あり
+　［Origin を送らない］発行：成（HTTP 200）
+　　Google の応答の access-control-*：{}
+　　画面から直接 PUT：否（network（CORS または通信断））／Google 側の受信：なし
+　→ Origin の転送：送れた（根拠：Google が Access-Control-Allow-Origin: http://127.0.0.1:8701 を返した。直接 PUT 成）
+　→ 比較：Origin を送らないセッションへの直接 PUT は 否
+
+■ 2. 直接アップロード
+　写真：成 ／ 動画：成 ／ チャンク＋308 で進捗管理：成 ／ 途中再開（通信断・スリープ）：成 ／ 再読み込み後の再開：成
+　1) IMG_0001.HEIC（image/heic・3.01MB）方式=直接PUT チャンク=1.00MB Origin=send：成・8.2秒・3.1Mbps
+　　チャンク 6回・308 3回・Range を画面で読めた 5回／GAS で確認 0回
+　　中断→再開：HTTP 503／1.00MB から
+　　中断→再開：network（CORS または通信断）／3.00MB から
+　2) clip.mov（video/quicktime・2.00MB）方式=直接PUT チャンク=1.00MB Origin=send：成・0.0秒・466.04Mbps
+　　チャンク 3回・308 2回・Range を画面で読めた 0回／GAS で確認 2回（308 の Range ヘッダが画面から読めなかった）
+　3) relay.jpg（image/jpeg・585.9KB）方式=GAS中継 チャンク=256.0KB Origin=omit：成・0.0秒・106.67Mbps
+　　チャンク 3回・308 2回・Range を画面で読めた 0回／GAS で確認 0回
+　4) IMG_0002.MOV（video/quicktime・5.00MB）方式=直接PUT チャンク=1.00MB Origin=send：成・0.0秒・1310.74Mbps
+　　チャンク 5回・308 4回・Range を画面で読めた 5回／GAS で確認 0回
+　　中断→再開：再読み込み後にファイルを選び直し／2.00MB から
+
+■ 3. 表示・再生
+　relay.jpg（image/jpeg・585.9KB）共有=非公開（未変更）
+　　サムネイル（GAS 経由）：取得できた／表示できた
+　　判定 サムネ表示：成（その時の共有：（未変更＝非公開））
+
+■ 4. 参考：GAS 経由（〜5MB）
+　small.jpg（image/jpeg・390.6KB）：成・0.0秒（base64 化 16ms・GAS 内 5ms）
+
+
+✓ 結果のまとめ（実装報告に貼る形）
+
+9 checks passed（ページのエラーなし）

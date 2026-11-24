@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="旅帳PoC">
+<title>旅帳 PoC</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --pri:#1e293b; --acc:#6366f1; --ok:#059669; --ng:#dc2626; --warn:#b45309; --sub:#64748b; --bd:#e2e8f0; }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 720px; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif; background: var(--bg); color: #0f172a; font-size: 15px; padding-bottom: 40px; }
+  header { background: var(--pri); color: #fff; padding: calc(10px + env(safe-area-inset-top)) 14px 10px; position: sticky; top: 0; z-index: 9; }
+  header b { font-size: 16px; } header small { display: block; opacity: .8; font-size: 11px; word-break: break-all; }
+  section { background: var(--card); border: 1px solid var(--bd); border-radius: 14px; margin: 12px; padding: 14px; }
+  h2 { font-size: 16px; margin: 0 0 8px; } h3 { font-size: 14px; margin: 12px 0 6px; }
+  label { display: block; font-size: 13px; font-weight: 700; margin-top: 8px; }
+  input, select, textarea { width: 100%; font-size: 16px; padding: 8px; border: 1px solid var(--bd); border-radius: 8px; background: #fff; }
+  input[type=checkbox], input[type=radio] { width: auto; }
+  button { font-size: 14px; font-weight: 700; border: 1px solid var(--bd); background: #fff; border-radius: 10px; padding: 9px 12px; margin: 4px 4px 0 0; }
+  button.pri { background: var(--pri); color: #fff; border-color: var(--pri); } button:disabled { opacity: .4; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .muted { color: var(--sub); font-size: 12px; } .ok { color: var(--ok); font-weight: 800; } .ng { color: var(--ng); font-weight: 800; } .warn { color: var(--warn); font-weight: 700; }
+  .bar { height: 12px; background: #e2e8f0; border-radius: 99px; overflow: hidden; margin: 8px 0; } .bar > div { height: 100%; width: 0; background: var(--acc); transition: width .2s; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 10px; font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 260px; overflow: auto; }
+  .file { border: 1px solid var(--bd); border-radius: 10px; padding: 10px; margin-top: 8px; }
+  .file img { max-width: 100%; border-radius: 8px; display: block; margin-top: 6px; background: #eee; }
+  .file iframe { width: 100%; height: 260px; border: 0; border-radius: 8px; margin-top: 6px; background: #000; }
+  .judge button { padding: 5px 9px; font-size: 12px; }
+  .judge button.on { background: var(--acc); color: #fff; }
+  .kv { font-size: 12px; } .kv b { display: inline-block; min-width: 9em; color: var(--sub); font-weight: 600; }
+</style>
+</head>
+<body>
+<header><b>旅帳 PoC v0.1 — Drive resumable upload</b><small id="envLine"></small></header>
+
+<section>
+  <h2>⚙️ 接続</h2>
+  <div id="urlBox"><label>GAS のウェブアプリ URL（この HTML を GAS 以外に置いた時だけ）</label><input id="gasUrl" placeholder="https://script.google.com/macros/s/.../exec"></div>
+  <label>PIN（GAS の SECRET_PIN）</label><input id="pin" type="password" autocomplete="current-password">
+  <div class="row"><button class="pri" id="btnSave">保存して接続確認</button><span id="connState" class="muted"></span></div>
+</section>
+
+<section>
+  <h2>1. セッション発行・Origin の転送</h2>
+  <div class="muted">GAS が Drive の resumable セッションを「Origin を送る／送らない」の2通りで発行し、それぞれにこの画面から直接 PUT して、CORS が通るかを比べます。テスト用の4バイトのファイルは終わったらゴミ箱へ移します。</div>
+  <button class="pri" id="btnT1">テストを実行</button>
+  <div id="t1Out"></div>
+</section>
+
+<section>
+  <h2>2. 直接アップロード（チャンク・308・途中再開）</h2>
+  <label>ファイル</label>
+  <div class="row">
+    <input type="file" id="fPick" accept="image/*,video/*">
+  </div>
+  <div class="muted">写真アプリから選ぶと iOS が JPEG / H.264 に変換することがあります。HEIC・HEVC のまま試すには「ファイル」アプリに保存してから下の欄で選んでください。</div>
+  <input type="file" id="fPickRaw">
+  <div class="row">
+    <div style="flex:1"><label>方式</label><select id="method"><option value="direct">画面から直接 PUT</option><option value="relay">GAS 中継（CORS が通らない時の代替）</option></select></div>
+    <div style="flex:1"><label>チャンク</label><select id="chunk"><option value="262144">256KB</option><option value="1048576">1MB（256KB×4）</option><option value="4194304" selected>4MB（256KB×16）</option><option value="8388608">8MB（256KB×32）</option></select></div>
+    <div style="flex:1"><label>Origin</label><select id="originMode"><option value="send">送る</option><option value="omit">送らない</option></select></div>
+  </div>
+  <div class="row"><button class="pri" id="btnUp">アップロード開始</button><button id="btnPause" disabled>一時停止</button><button id="btnResume" disabled>再開</button></div>
+  <div class="bar"><div id="bar"></div></div>
+  <div id="upState" class="muted">待機中</div>
+  <h3>未完了のセッション（再読み込み・スリープ後の再開）</h3>
+  <div id="pending" class="muted">なし</div>
+  <input type="file" id="fResume" style="display:none">
+</section>
+
+<section>
+  <h2>3. 表示・再生</h2>
+  <div class="muted">サムネイルは GAS が自分の権限で取って渡します（共有設定なし）。原本表示は HEIC を Safari がそのまま表示できるかの確認。動画は Drive のプレビュー（埋め込み）と「Drive で開く」を試し、見えたかどうかを判定ボタンで記録してください。</div>
+  <button id="btnList">「旅帳PoC」フォルダの一覧</button>
+  <div id="files"></div>
+</section>
+
+<section>
+  <h2>4. 参考：GAS 経由（〜5MB）</h2>
+  <div class="muted">写真を base64 で GAS に送り、GAS が DriveApp で保存する方式。所要時間を直接 PUT と比べます。</div>
+  <input type="file" id="fSmall" accept="image/*">
+  <div class="row"><button class="pri" id="btnSmall">GAS 経由で送る</button><button id="btnSmallDirect">同じファイルを直接 PUT でも送る</button></div>
+  <div id="smallOut" class="muted"></div>
+</section>
+
+<section>
+  <h2>📝 結果</h2>
+  <div class="row"><button class="pri" id="btnReport">結果をまとめる</button><button id="btnCopy">コピー</button><button id="btnSaveLog">Drive に保存</button><button id="btnClear">結果を消す</button></div>
+  <pre id="report">（「結果をまとめる」で、実装報告に貼る形の文章ができます）</pre>
+  <h3>ログ</h3>
+  <pre id="log"></pre>
+</section>
+
+<script>
+// ============================================================================
+// 共通
+// ============================================================================
+const IS_GAS = typeof google !== 'undefined' && google.script && google.script.run;
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem('poc_' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('poc_' + k, JSON.stringify(v)); } catch (e) {} }
+};
+const $ = (id) => document.getElementById(id);
+const R = LS.get('results', { t1: null, uploads: [], display: {}, small: [] });
+function saveR() { LS.set('results', R); }
+const logLines = LS.get('log', []);
+function log(msg) {
+  const line = new Date().toLocaleTimeString('ja-JP') + ' ' + msg;
+  logLines.push(line); if (logLines.length > 400) logLines.shift();
+  LS.set('log', logLines);
+  $('log').textContent = logLines.slice(-120).join('\n');
+  $('log').scrollTop = 1e9;
+}
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function fmtB(n) { return n >= 1048576 ? (n / 1048576).toFixed(2) + 'MB' : n >= 1024 ? (n / 1024).toFixed(1) + 'KB' : n + 'B'; }
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+function env() {
+  const ua = navigator.userAgent;
+  const m = ua.match(/OS (\d+)_(\d+)(?:_(\d+))? like Mac OS X/);
+  return {
+    ua, ios: m ? m.slice(1).filter(Boolean).join('.') : '（iOS 以外）',
+    standalone: !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)),
+    origin: location.origin, servedBy: IS_GAS ? 'GAS（HtmlService）' : '外部（' + location.origin + '）'
+  };
+}
+function cfg() { return { url: LS.get('gasUrl', ''), pin: LS.get('pin', '') }; }
+
+async function api(action, args) {
+  args = Object.assign({}, args || {}, { pin: cfg().pin });
+  if (IS_GAS) {
+    return new Promise((res, rej) => google.script.run.withSuccessHandler(s => { const o = JSON.parse(s); o.status === 'error' ? rej(new Error(o.message)) : res(o); })
+      .withFailureHandler(e => rej(new Error(e && e.message || String(e)))).apiCall(action, JSON.stringify(args)));
+  }
+  if (!cfg().url) throw new Error('GAS の URL を入れてください');
+  const r = await fetch(cfg().url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ action }, args)) });
+  const o = await r.json();
+  if (o.status === 'error') throw new Error(o.message);
+  return o;
+}
+
+// 直接 PUT（XMLHttpRequest：送信の進捗が取れる）。CORS で弾かれると status 0 になり応答は読めない
+function xhrPut(uri, body, contentRange, onProgress) {
+  return new Promise((resolve) => {
+    const x = new XMLHttpRequest();
+    const t0 = performance.now();
+    x.open('PUT', uri);
+    x.setRequestHeader('Content-Range', contentRange);
+    if (onProgress) x.upload.onprogress = (e) => onProgress(e.loaded);
+    x.timeout = 5 * 60 * 1000;
+    const done = (extra) => resolve(Object.assign({
+      status: x.status, range: safeHdr(x, 'Range'), headers: x.getAllResponseHeaders(), body: x.status && x.status !== 308 ? x.responseText : '', ms: Math.round(performance.now() - t0)
+    }, extra || {}));
+    x.onload = () => done();
+    x.onerror = () => done({ error: 'network（CORS または通信断）' });
+    x.ontimeout = () => done({ error: 'timeout' });
+    x.onabort = () => done({ error: 'abort' });
+    currentXhr = x;
+    x.send(body);
+  });
+}
+function safeHdr(x, h) { try { return x.getResponseHeader(h) || ''; } catch (e) { return ''; } }
+function parseRangeEnd(r) { const m = String(r || '').match(/bytes=0-(\d+)/); return m ? Number(m[1]) + 1 : 0; }
+async function blobToB64(blob) {
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let s = ''; const step = 0x8000;
+  for (let i = 0; i < buf.length; i += step) s += String.fromCharCode.apply(null, buf.subarray(i, i + step));
+  return btoa(s);
+}
+
+// ============================================================================
+// 接続
+// ============================================================================
+$('gasUrl').value = cfg().url; $('pin').value = cfg().pin;
+if (IS_GAS) $('urlBox').style.display = 'none';
+const E = env();
+$('envLine').textContent = `iOS ${E.ios} ／ ホーム画面アプリ：${E.standalone ? 'はい' : 'いいえ'} ／ 配信元：${E.servedBy}`;
+$('btnSave').onclick = async () => {
+  LS.set('gasUrl', $('gasUrl').value.trim()); LS.set('pin', $('pin').value);
+  $('connState').textContent = '確認中…';
+  try { const r = await api('ping'); $('connState').innerHTML = `<span class="ok">接続OK</span> GAS v${esc(r.version)}・フォルダ「${esc(r.folder)}」`; log('接続OK'); }
+  catch (e) { $('connState').innerHTML = `<span class="ng">${esc(e.message)}</span>`; log('接続失敗：' + e.message); }
+};
+
+// ============================================================================
+// 1. セッション発行・Origin 転送・CORS
+// ============================================================================
+$('btnT1').onclick = async () => {
+  $('btnT1').disabled = true; $('t1Out').textContent = '実行中…';
+  const out = { at: new Date().toISOString(), origin: location.origin, modes: {} };
+  for (const mode of ['send', 'omit']) {
+    const m = out.modes[mode] = {};
+    try {
+      const s = await api('createSession', { name: 'probe-' + mode + '.txt', mimeType: 'text/plain', size: 4, origin: location.origin, originMode: mode });
+      m.created = !!s.ok; m.evidence = s.evidence; m.gasMs = s.gasMs;
+      log(`[1] Origin ${mode}：セッション発行 ${s.ok ? '成' : '否'}（HTTP ${s.evidence.responseCode}）`);
+      if (!s.ok) continue;
+      const p = await xhrPut(s.sessionUri, new Blob(['test']), 'bytes 0-3/4');
+      m.put = { status: p.status, error: p.error || '', readable: p.status !== 0, responseHeaders: p.headers };
+      if (p.status === 200 || p.status === 201) { try { m.fileId = JSON.parse(p.body).id; } catch (e) {} }
+      // 画面で読めなくても、Google には届いたかを GAS から確かめる
+      const st = await api('status', { sessionUri: s.sessionUri, size: 4 });
+      m.serverStatus = st.code; m.serverSaw = st.code === 200 || st.code === 201;
+      if (!m.fileId && st.file) m.fileId = st.file.id;
+      if (m.fileId) await api('trash', { id: m.fileId }).catch(() => {});
+      log(`[1] Origin ${mode}：直接PUT status=${p.status}${p.error ? '（' + p.error + '）' : ''}／Google 側の受信=${m.serverSaw ? 'あり' : 'なし'}`);
+    } catch (e) { m.error = e.message; log('[1] エラー：' + e.message); }
+  }
+  R.t1 = out; saveR(); renderT1(); $('btnT1').disabled = false;
+};
+function t1Verdict(t) {
+  const s = t && t.modes.send || {};
+  const ev = s.evidence || {};
+  const acao = Object.keys(ev.responseCorsHeaders || {}).find(k => /allow-origin/i.test(k));
+  return {
+    plannedOrigin: ev.originInPlannedRequest,
+    acao: acao ? ev.responseCorsHeaders[acao] : '',
+    sendPut: s.put ? (s.put.readable ? '成' : '否') : '未実施',
+    omitPut: t && t.modes.omit && t.modes.omit.put ? (t.modes.omit.put.readable ? '成' : '否') : '未実施'
+  };
+}
+function renderT1() {
+  const t = R.t1; if (!t) { $('t1Out').textContent = ''; return; }
+  const v = t1Verdict(t);
+  const row = (mode) => {
+    const m = t.modes[mode] || {};
+    const ev = m.evidence || {};
+    return `<div class="file"><b>Origin を${mode === 'send' ? '送る' : '送らない'}</b>
+      <div class="kv"><b>セッション発行</b>${m.created ? '<span class="ok">成</span>' : '<span class="ng">否</span>'} ${m.error ? esc(m.error) : ''}</div>
+      <div class="kv"><b>GAS の送信ヘッダに Origin</b>${mode === 'send' ? (ev.originInPlannedRequest ? 'あり（' + esc(ev.plannedRequestHeaders && (ev.plannedRequestHeaders.Origin || ev.plannedRequestHeaders.origin)) + '）' : '<span class="ng">なし（UrlFetchApp が外した）</span>') : '—'}</div>
+      <div class="kv"><b>Google の CORS 応答</b>${esc(JSON.stringify(ev.responseCorsHeaders || {}))}</div>
+      <div class="kv"><b>画面から直接 PUT</b>${m.put ? (m.put.readable ? '<span class="ok">成</span>（HTTP ' + m.put.status + '）' : '<span class="ng">否</span>（' + esc(m.put.error) + '）') : '—'}</div>
+      <div class="kv"><b>Google 側の受信</b>${m.serverSaw === undefined ? '—' : m.serverSaw ? 'あり（届いたが画面で読めない場合は CORS の問題）' : 'なし'}</div></div>`;
+  };
+  $('t1Out').innerHTML = row('send') + row('omit') +
+    `<div class="file"><b>判定</b>：Origin の転送は ${v.acao ? '<span class="ok">送れた</span>（Google が Access-Control-Allow-Origin: ' + esc(v.acao) + ' を返した）' : v.plannedOrigin === false ? '<span class="ng">送れなかった</span>（UrlFetchApp の送信ヘッダから Origin が消えた）' : (v.sendPut === '成' ? '<span class="ok">CORS は通った</span>' : '<span class="ng">確認できず</span>（Allow-Origin が返らなかった）')}</div>`;
+}
+
+// ============================================================================
+// 2. 直接アップロード
+// ============================================================================
+let currentXhr = null;
+let U = null; // 実行中のアップロード
+function pendingList() { return LS.get('sessions', []); }
+function savePending(list) { LS.set('sessions', list); renderPending(); }
+function upsertPending(u) {
+  const list = pendingList().filter(p => p.sessionUri !== u.sessionUri);
+  if (!u.done) list.push({ sessionUri: u.sessionUri, name: u.file.name, size: u.file.size, lastModified: u.file.lastModified, type: u.file.type, method: u.method, chunk: u.chunk, originMode: u.originMode, offset: u.offset, rec: u.recIndex, at: Date.now() });
+  savePending(list);
+}
+function renderPending() {
+  const list = pendingList();
+  $('pending').innerHTML = list.length ? list.map((p, i) => `<div class="file">${esc(p.name)}（${fmtB(p.size)}）${fmtB(p.offset)} まで送信済み
+    <div class="row"><button data-i="${i}" class="resumeSel">ファイルを選び直して再開</button><button data-i="${i}" class="dropSel">破棄</button></div></div>`).join('') : 'なし';
+  document.querySelectorAll('.resumeSel').forEach(b => b.onclick = () => { $('fResume').dataset.i = b.dataset.i; $('fResume').click(); });
+  document.querySelectorAll('.dropSel').forEach(b => b.onclick = () => { const l = pendingList(); l.splice(Number(b.dataset.i), 1); savePending(l); });
+}
+$('fResume').onchange = async () => {
+  const p = pendingList()[Number($('fResume').dataset.i)];
+  const f = $('fResume').files[0];
+  $('fResume').value = '';
+  if (!p || !f) return;
+  if (f.name !== p.name || f.size !== p.size) { alert('前と同じファイルを選んでください（' + p.name + '・' + fmtB(p.size) + '）'); return; }
+  log(`[2] 再読み込み後の再開：${p.name}`);
+  await runUpload(f, { method: p.method, chunk: p.chunk, originMode: p.originMode, sessionUri: p.sessionUri, recIndex: p.rec, afterReload: true });
+};
+function pickedFile() { return $('fPickRaw').files[0] || $('fPick').files[0]; }
+$('btnUp').onclick = async () => {
+  const f = pickedFile();
+  if (!f) return alert('ファイルを選んでください');
+  await runUpload(f, { method: $('method').value, chunk: Number($('chunk').value), originMode: $('originMode').value });
+};
+$('btnPause').onclick = () => { if (U) { U.paused = true; if (currentXhr) currentXhr.abort(); log('[2] 一時停止'); } };
+$('btnResume').onclick = () => { if (U && U.paused) { U.paused = false; loop(U); } };
+
+async function runUpload(file, o) {
+  const rec = o.recIndex != null && R.uploads[o.recIndex] ? R.uploads[o.recIndex] : {
+    name: file.name, type: file.type || '（不明）', size: file.size, method: o.method, chunk: o.chunk, originMode: o.originMode,
+    startedAt: new Date().toISOString(), chunks: 0, retries: 0, interruptions: [], rangeVia: { header: 0, gas: 0 }, status308: 0, result: '途中', ms: 0
+  };
+  if (o.recIndex == null) { R.uploads.push(rec); saveR(); }
+  U = { file, method: o.method, chunk: o.chunk, originMode: o.originMode, sessionUri: o.sessionUri || '', offset: 0, paused: false, done: false, rec, recIndex: R.uploads.indexOf(rec), t0: performance.now(), afterReload: !!o.afterReload, busy: false };
+  $('btnPause').disabled = false; $('btnResume').disabled = true;
+  try {
+    if (!U.sessionUri) {
+      const s = await api('createSession', { name: file.name, mimeType: file.type || 'application/octet-stream', size: file.size, origin: location.origin, originMode: o.originMode });
+      if (!s.ok) throw new Error('セッション発行に失敗（HTTP ' + s.evidence.responseCode + '）');
+      U.sessionUri = s.sessionUri; rec.sessionEvidence = s.evidence;
+      log(`[2] セッション発行：${file.name}（${fmtB(file.size)}・${file.type || '型不明'}）`);
+    } else {
+      U.offset = await queryOffset(U, '再開前の確認');
+      rec.interruptions.push({ at: new Date().toISOString(), reason: '再読み込み後にファイルを選び直し', resumedFrom: U.offset });
+      rec.resumedAfterReload = true;
+    }
+    upsertPending(U);
+    await loop(U);
+  } catch (e) { rec.result = '否'; rec.error = e.message; saveR(); log('[2] 失敗：' + e.message); setState('失敗：' + e.message, true); }
+}
+
+// 受信済み位置の確認：直接（Range が読めれば）→ だめなら GAS から
+async function queryOffset(u, why) {
+  if (u.method === 'direct') {
+    const r = await xhrPut(u.sessionUri, null, 'bytes */' + u.file.size);
+    if (r.status === 308 && r.range) { u.rec.rangeVia.header++; return parseRangeEnd(r.range); }
+    if (r.status === 200 || r.status === 201) return u.file.size;
+  }
+  const st = await api('status', { sessionUri: u.sessionUri, size: u.file.size });
+  u.rec.rangeVia.gas++;
+  if (st.code === 200 || st.code === 201) { if (st.file) finish(u, st.file); return u.file.size; }
+  if (st.code === 404 || st.code === 410) throw new Error('セッションが期限切れです（HTTP ' + st.code + '）');
+  log(`[2] ${why}：受信済み ${st.range || 'なし'}（GAS で確認）`);
+  return parseRangeEnd(st.range);
+}
+
+async function loop(u) {
+  if (u.busy) return;
+  u.busy = true;
+  const rec = u.rec;
+  try {
+    while (!u.done && !u.paused) {
+      if (u.offset >= u.file.size && u.file.size > 0) { u.offset = await queryOffset(u, '最後の確認'); if (u.done) break; }
+      const start = u.offset;
+      const end = Math.min(start + u.chunk, u.file.size) - 1;
+      setState(`送信中 ${fmtB(start)}〜${fmtB(end + 1)} / ${fmtB(u.file.size)}`);
+      let r;
+      if (u.method === 'direct') {
+        r = await xhrPut(u.sessionUri, u.file.slice(start, end + 1), `bytes ${start}-${end}/${u.file.size}`, (n) => bar((start + n) / u.file.size));
+      } else {
+        const b64 = await blobToB64(u.file.slice(start, end + 1));
+        try { r = await api('relayChunk', { sessionUri: u.sessionUri, start, total: u.file.size, b64 }); r.status = r.code; r.file = r.file; }
+        catch (e) { r = { status: 0, error: e.message }; }
+      }
+      rec.chunks++;
+      if (r.status === 308) {
+        rec.status308++;
+        if (r.range) { u.offset = parseRangeEnd(r.range); if (u.method === 'direct') rec.rangeVia.header++; }
+        else if (u.method === 'direct') { rec.rangeNotReadable = true; u.offset = await queryOffset(u, 'Range が読めないため'); }
+        else u.offset = 0;
+        upsertPending(u); bar(u.offset / u.file.size);
+      } else if (r.status === 200 || r.status === 201) {
+        let fobj = r.file; if (!fobj) { try { fobj = JSON.parse(r.body); } catch (e) {} }
+        finish(u, fobj || {});
+      } else {
+        if (u.paused) break;
+        rec.retries++;
+        const reason = r.error || ('HTTP ' + r.status);
+        log(`[2] 中断：${reason}（${rec.retries}回目）`);
+        if (r.status === 0 && u.method === 'direct' && rec.chunks === 1 && start === 0) rec.firstPutBlocked = true;
+        if (rec.retries > 8) throw new Error('再試行の上限：' + reason);
+        setState(`中断（${reason}）。再開位置を確認して続けます…`, true);
+        await sleep(Math.min(30000, 1000 * Math.pow(2, Math.min(rec.retries, 5))));
+        const from = await queryOffset(u, '中断後の確認');
+        rec.interruptions.push({ at: new Date().toISOString(), reason, resumedFrom: from });
+        u.offset = from; upsertPending(u);
+      }
+      saveR();
+    }
+  } catch (e) { rec.result = '否'; rec.error = e.message; saveR(); log('[2] 失敗：' + e.message); setState('失敗：' + e.message, true); }
+  u.busy = false;
+  $('btnResume').disabled = !u.paused || u.done;
+  if (u.paused) setState('一時停止中（' + fmtB(u.offset) + ' 送信済み）');
+}
+function finish(u, fobj) {
+  if (u.done) return;
+  u.done = true;
+  const rec = u.rec;
+  rec.result = '成'; rec.fileId = fobj.id || rec.fileId || ''; rec.ms = Math.round(performance.now() - u.t0);
+  rec.finishedAt = new Date().toISOString();
+  rec.mbps = rec.ms ? +((u.file.size * 8 / 1e6) / (rec.ms / 1000)).toFixed(2) : null;
+  saveR(); upsertPending(u); bar(1);
+  setState(`完了：${u.file.name}（${(rec.ms / 1000).toFixed(1)}秒・${rec.chunks}チャンク・308 ${rec.status308}回・再開 ${rec.interruptions.length}回）`);
+  log(`[2] 完了 fileId=${rec.fileId}`);
+  $('btnPause').disabled = true; $('btnResume').disabled = true;
+}
+function setState(t, bad) { $('upState').innerHTML = bad ? `<span class="warn">${esc(t)}</span>` : esc(t); }
+function bar(f) { $('bar').style.width = Math.round(Math.max(0, Math.min(1, f)) * 100) + '%'; }
+
+// スリープ復帰・画面復帰：止まっていたら受信済み位置を確認して続ける
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { if (U && !U.done) { U.hiddenAt = Date.now(); log('[2] 画面が隠れた（送信中）'); } return; }
+  if (U && !U.done && !U.paused && U.hiddenAt) {
+    const sec = Math.round((Date.now() - U.hiddenAt) / 1000); U.hiddenAt = 0;
+    log(`[2] 画面に戻った（${sec}秒後）`);
+    U.rec.returnedAfterHidden = (U.rec.returnedAfterHidden || 0) + 1;
+    if (!U.busy) { U.rec.interruptions.push({ at: new Date().toISOString(), reason: '画面復帰時に停止していた', resumedFrom: U.offset }); loop(U); }
+  }
+});
+window.addEventListener('online', () => { if (U && !U.done && !U.paused && !U.busy) loop(U); });
+
+// ============================================================================
+// 3. 表示・再生
+// ============================================================================
+$('btnList').onclick = async () => {
+  try {
+    const r = await api('listFiles');
+    $('files').innerHTML = r.files.map(f => `<div class="file" data-id="${f.id}">
+      <b>${esc(f.name)}</b> <span class="muted">${esc(f.mimeType)}・${fmtB(f.size)}</span>
+      <div class="row"><button class="bThumb">サムネイル（GAS 経由）</button>${/^image\//.test(f.mimeType) && f.size <= 8388608 ? '<button class="bOrig">原本をそのまま表示</button>' : ''}
+      ${/^video\//.test(f.mimeType) ? '<button class="bPrev">Drive プレビューで再生</button>' : ''}
+      <a href="https://drive.google.com/file/d/${f.id}/view" target="_blank" rel="noopener"><button>Drive で開く</button></a>
+      <button class="bShare">共有 ON/OFF</button><button class="bTrash">ゴミ箱へ</button></div>
+      <div class="out muted"></div><div class="media"></div>
+      <div class="judge">判定：${judgeBtns(f.id, /^video\//.test(f.mimeType))}</div></div>`).join('') || '<div class="muted">ファイルがありません</div>';
+    document.querySelectorAll('#files .file').forEach(bindFile);
+  } catch (e) { alert(e.message); }
+};
+function judgeBtns(id, video) {
+  const d = R.display[id] || {};
+  const items = video ? [['preview', 'プレビュー再生'], ['open', 'Drive で開く']] : [['thumb', 'サムネ表示'], ['orig', '原本表示']];
+  return items.map(([k, l]) => `${l} <button data-k="${k}" data-v="成" class="${d[k] === '成' ? 'on' : ''}">成</button><button data-k="${k}" data-v="否" class="${d[k] === '否' ? 'on' : ''}">否</button>`).join(' ');
+}
+function bindFile(el) {
+  const id = el.dataset.id;
+  const out = el.querySelector('.out'), media = el.querySelector('.media');
+  const rec = () => (R.display[id] = R.display[id] || { name: el.querySelector('b').textContent, type: el.querySelector('.muted').textContent });
+  const b = (cls, fn) => { const x = el.querySelector(cls); if (x) x.onclick = fn; };
+  b('.bThumb', async () => {
+    out.textContent = '取得中…';
+    try {
+      const r = await api('fileInfo', { id, size: 1200 });
+      const i = r.info || {};
+      out.textContent = `共有：${r.sharing}／${i.imageMediaMetadata ? '画像 ' + i.imageMediaMetadata.width + '×' + i.imageMediaMetadata.height : ''}${i.videoMediaMetadata ? '動画 ' + i.videoMediaMetadata.width + '×' + i.videoMediaMetadata.height + '・' + Math.round(i.videoMediaMetadata.durationMillis / 1000) + '秒' : (/^video/.test(i.mimeType || '') ? '動画メタデータなし（Drive の処理待ち？）' : '')} ${r.thumbNote || ''}`;
+      Object.assign(rec(), { thumbAuto: r.thumb ? '取得できた' : '取得できない：' + r.thumbNote, videoMeta: !!i.videoMediaMetadata });
+      if (r.thumb) { const img = new Image(); img.onload = () => { rec().thumbRender = '表示できた'; saveR(); }; img.onerror = () => { rec().thumbRender = '表示できない'; saveR(); }; img.src = r.thumb; media.innerHTML = ''; media.appendChild(img); }
+      saveR();
+    } catch (e) { out.textContent = e.message; }
+  });
+  b('.bOrig', async () => {
+    out.textContent = '原本を取得中…';
+    try {
+      const r = await api('original', { id });
+      const img = new Image();
+      img.onload = () => { rec().origAuto = `表示できた（${r.mimeType}）`; out.textContent = rec().origAuto; saveR(); };
+      img.onerror = () => { rec().origAuto = `表示できない（${r.mimeType}）`; out.textContent = rec().origAuto; saveR(); };
+      img.src = r.dataUrl; media.innerHTML = ''; media.appendChild(img);
+    } catch (e) { out.textContent = e.message; }
+  });
+  b('.bPrev', () => { media.innerHTML = `<iframe src="https://drive.google.com/file/d/${id}/preview" allow="autoplay; fullscreen" allowfullscreen></iframe>`; rec().previewTried = true; saveR(); });
+  b('.bShare', async () => { try { const cur = (rec().sharing || '') === 'ANYONE_WITH_LINK'; const r = await api('setShare', { id, on: !cur }); rec().sharing = r.sharing; out.textContent = '共有：' + r.sharing; saveR(); } catch (e) { out.textContent = e.message; } });
+  b('.bTrash', async () => { if (!confirm('ゴミ箱へ移しますか？')) return; await api('trash', { id }); el.remove(); });
+  el.querySelectorAll('.judge button').forEach(btn => btn.onclick = () => {
+    const d = rec(); d[btn.dataset.k] = btn.dataset.v; d[btn.dataset.k + 'Sharing'] = d.sharing || '（未変更＝非公開）'; saveR();
+    el.querySelector('.judge').innerHTML = '判定：' + judgeBtns(id, /video/.test(d.type)); bindFile(el);
+  });
+}
+
+// ============================================================================
+// 4. GAS 経由（参考）
+// ============================================================================
+$('btnSmall').onclick = async () => {
+  const f = $('fSmall').files[0]; if (!f) return alert('写真を選んでください');
+  if (f.size > 5 * 1048576 && !confirm('5MB を超えています。続けますか？')) return;
+  const t0 = performance.now();
+  const rec = { name: f.name, type: f.type, size: f.size, method: 'GAS 経由（base64）', at: new Date().toISOString() };
+  try {
+    const b64 = await blobToB64(f);
+    const t1 = performance.now();
+    const r = await api('smallUpload', { name: f.name, mimeType: f.type || 'application/octet-stream', b64 });
+    Object.assign(rec, { result: '成', ms: Math.round(performance.now() - t0), encodeMs: Math.round(t1 - t0), gasMs: r.gasMs, createMs: r.createMs, fileId: r.id });
+  } catch (e) { Object.assign(rec, { result: '否', error: e.message, ms: Math.round(performance.now() - t0) }); }
+  R.small.push(rec); saveR();
+  $('smallOut').textContent = `${rec.result}：${(rec.ms / 1000).toFixed(1)}秒（base64 化 ${rec.encodeMs || '-'}ms・GAS 内 ${rec.gasMs || '-'}ms）${rec.error ? ' ' + rec.error : ''}`;
+  log(`[4] GAS 経由 ${rec.result} ${rec.ms}ms`);
+};
+$('btnSmallDirect').onclick = async () => {
+  const f = $('fSmall').files[0]; if (!f) return alert('写真を選んでください');
+  await runUpload(f, { method: 'direct', chunk: 8388608, originMode: 'send' });
+  const u = R.uploads[R.uploads.length - 1]; u.forCompare = true; saveR();
+  $('smallOut').textContent += ` ／ 直接 PUT：${u.result} ${(u.ms / 1000).toFixed(1)}秒`;
+};
+
+// ============================================================================
+// 結果のまとめ（実装報告に貼る形）
+// ============================================================================
+function verdictItems() {
+  const ups = R.uploads.filter(u => u.method === 'direct');
+  const okUp = ups.filter(u => u.result === '成');
+  const isPhoto = u => /^image\//.test(u.type), isVideo = u => /^video\//.test(u.type);
+  const multi = okUp.filter(u => u.chunks > 1);
+  const resumed = R.uploads.filter(u => u.result === '成' && u.interruptions.length);
+  const reload = R.uploads.filter(u => u.result === '成' && u.resumedAfterReload);
+  const yn = (b, n) => n === 0 ? '未実施' : (b ? '成' : '否');
+  return {
+    photo: yn(okUp.some(isPhoto), ups.filter(isPhoto).length),
+    video: yn(okUp.some(isVideo), ups.filter(isVideo).length),
+    chunk308: yn(multi.some(u => u.status308 > 0), ups.filter(u => u.size > u.chunk).length),
+    resume: yn(resumed.length > 0, R.uploads.filter(u => u.interruptions.length).length),
+    reload: yn(reload.length > 0, R.uploads.filter(u => u.resumedAfterReload).length)
+  };
+}
+function buildReport() {
+  const e = env(); const t = R.t1; const v = t1Verdict(t); const vi = verdictItems();
+  const L = [];
+  L.push('旅帳 PoC 実機結果（自動生成）');
+  L.push('作成：' + new Date().toLocaleString('ja-JP'));
+  L.push(`端末：iOS ${e.ios} ／ ホーム画面アプリ：${e.standalone ? 'はい' : 'いいえ'} ／ 画面の配信元：${e.servedBy}`);
+  L.push('UA：' + e.ua);
+  L.push('');
+  L.push('■ 1. セッション発行（GAS）');
+  if (!t) L.push('　未実施');
+  else {
+    ['send', 'omit'].forEach(mode => {
+      const m = t.modes[mode] || {}; const ev = m.evidence || {};
+      L.push(`　［Origin を${mode === 'send' ? '送る' : '送らない'}］発行：${m.created ? '成' : '否'}（HTTP ${ev.responseCode || '-'}）${m.error ? ' ' + m.error : ''}`);
+      if (mode === 'send') L.push(`　　UrlFetchApp の送信予定ヘッダの Origin：${ev.originInPlannedRequest ? 'あり（' + (ev.plannedRequestHeaders.Origin || ev.plannedRequestHeaders.origin) + '）' : 'なし'}`);
+      L.push(`　　Google の応答の access-control-*：${JSON.stringify(ev.responseCorsHeaders || {})}`);
+      L.push(`　　画面から直接 PUT：${m.put ? (m.put.readable ? '成（HTTP ' + m.put.status + '）' : '否（' + m.put.error + '）') : '未実施'}／Google 側の受信：${m.serverSaw === undefined ? '-' : m.serverSaw ? 'あり' : 'なし'}`);
+    });
+    L.push(`　→ Origin の転送：${v.acao ? '送れた（根拠：Google が Access-Control-Allow-Origin: ' + v.acao + ' を返した。直接 PUT ' + v.sendPut + '）' : v.plannedOrigin === false ? '送れなかった（根拠：UrlFetchApp の送信予定ヘッダから Origin が消えていた）' : '送れなかった／確認できず（根拠：Allow-Origin が返らず、直接 PUT ' + v.sendPut + '）'}`);
+    L.push(`　→ 比較：Origin を送らないセッションへの直接 PUT は ${v.omitPut}`);
+  }
+  L.push('');
+  L.push('■ 2. 直接アップロード');
+  L.push(`　写真：${vi.photo} ／ 動画：${vi.video} ／ チャンク＋308 で進捗管理：${vi.chunk308} ／ 途中再開（通信断・スリープ）：${vi.resume} ／ 再読み込み後の再開：${vi.reload}`);
+  R.uploads.forEach((u, i) => {
+    L.push(`　${i + 1}) ${u.name}（${u.type}・${fmtB(u.size)}）方式=${u.method === 'direct' ? '直接PUT' : 'GAS中継'} チャンク=${fmtB(u.chunk)} Origin=${u.originMode}：${u.result}${u.ms ? '・' + (u.ms / 1000).toFixed(1) + '秒' : ''}${u.mbps ? '・' + u.mbps + 'Mbps' : ''}`);
+    L.push(`　　チャンク ${u.chunks}回・308 ${u.status308}回・Range を画面で読めた ${u.rangeVia.header}回／GAS で確認 ${u.rangeVia.gas}回${u.rangeNotReadable ? '（308 の Range ヘッダが画面から読めなかった）' : ''}${u.firstPutBlocked ? '・最初の PUT が status 0（CORS の疑い）' : ''}`);
+    u.interruptions.forEach(x => L.push(`　　中断→再開：${x.reason}／${fmtB(x.resumedFrom)} から`));
+    if (u.returnedAfterHidden) L.push(`　　画面が隠れて戻った回数：${u.returnedAfterHidden}`);
+    if (u.error) L.push('　　エラー：' + u.error);
+  });
+  L.push('');
+  L.push('■ 3. 表示・再生');
+  const ds = Object.keys(R.display);
+  if (!ds.length) L.push('　未実施');
+  ds.forEach(id => {
+    const d = R.display[id];
+    L.push(`　${d.name}（${d.type}）共有=${d.sharing || '非公開（未変更）'}`);
+    if (d.thumbAuto) L.push(`　　サムネイル（GAS 経由）：${d.thumbAuto}${d.thumbRender ? '／' + d.thumbRender : ''}`);
+    if (d.origAuto) L.push(`　　原本をそのまま表示：${d.origAuto}`);
+    ['thumb', 'orig', 'preview', 'open'].forEach(k => { if (d[k]) L.push(`　　判定 ${({ thumb: 'サムネ表示', orig: '原本表示', preview: 'プレビュー再生', open: 'Drive で開く' })[k]}：${d[k]}（その時の共有：${d[k + 'Sharing']}）`); });
+  });
+  L.push('');
+  L.push('■ 4. 参考：GAS 経由（〜5MB）');
+  if (!R.small.length) L.push('　未実施');
+  R.small.forEach(s => L.push(`　${s.name}（${s.type}・${fmtB(s.size)}）：${s.result}・${(s.ms / 1000).toFixed(1)}秒（base64 化 ${s.encodeMs || '-'}ms・GAS 内 ${s.gasMs || '-'}ms）${s.error ? '・' + s.error : ''}`));
+  R.uploads.filter(u => u.forCompare).forEach(u => L.push(`　比較：同じファイルを直接 PUT：${u.result}・${(u.ms / 1000).toFixed(1)}秒`));
+  L.push('');
+  L.push('■ ログ（直近）');
+  logLines.slice(-80).forEach(x => L.push('　' + x));
+  return L.join('\n');
+}
+$('btnReport').onclick = () => { $('report').textContent = buildReport(); };
+$('btnCopy').onclick = async () => { const t = buildReport(); $('report').textContent = t; try { await navigator.clipboard.writeText(t); alert('コピーしました'); } catch (e) { alert('コピーできませんでした。表示された文章を長押しで選んでください'); } };
+$('btnSaveLog').onclick = async () => { const t = buildReport(); $('report').textContent = t; try { const r = await api('saveLog', { text: t }); alert('Drive に保存しました：' + r.name); } catch (e) { alert(e.message); } };
+$('btnClear').onclick = () => { if (!confirm('この端末に残っている結果とログを消しますか？')) return; localStorage.removeItem('poc_results'); localStorage.removeItem('poc_log'); location.reload(); };
+
+renderT1(); renderPending(); $('log').textContent = logLines.slice(-120).join('\n');
+</script>
+</body>
+</html>
