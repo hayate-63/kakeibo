@@ -4,11 +4,12 @@ const dir = path.join(__dirname, '..', 'src', 'js');
 const ctx = {
   console, setTimeout, clearTimeout, setInterval: () => 0, Date, Math, JSON,
   localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
-  window: { addEventListener() {} }, navigator: { onLine: true }, document: { getElementById: () => null },
+  window: { addEventListener() {} }, navigator: { onLine: true }, document: { getElementById: () => null, addEventListener() {}, querySelectorAll: () => [] },
+  location: { origin: 'null' }, ACT: undefined,
   render() {}, toast() {}, confirmDialog: async () => true
 };
 vm.createContext(ctx);
-['01_util.js', '02_api.js', '03_store.js', '04_schedule.js', '05_money.js'].forEach(f => vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
+['01_util.js', '02_api.js', '03_store.js', '04_schedule.js', '05_money.js', '06_ui_common.js', '14_media.js', '15_visual.js', '16_collection.js'].forEach(f => vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const run = (code) => { const v = vm.runInContext(code, ctx); return v === undefined ? v : JSON.parse(JSON.stringify(v)); };
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('✓', name); };
 
@@ -127,5 +128,60 @@ t('ステータス自動判定', () => {
     return [a, b, c, tripStatus(tr, '2026-11-30'), tripStatus(tr, '2026-12-02')];
   })()`);
   assert.deepStrictEqual(r, ['検討中', '計画中', '確定', '旅行中', '精算・記録中']);
+});
+
+t('v2.0 英語タイトル：入力 → 自動英語化 → かなのローマ字', () => {
+  const r = run(`(() => {
+    const a = newTrip({ title: 'ほっかいどう' }); const b = newTrip({ title: 'トーキョー' });
+    const c = newTrip({ title: '北海道旅行' }); c.titleEnAuto = 'Hokkaido trip'; c.titleEnAutoSrc = '北海道旅行';
+    const d = newTrip({ title: '北海道旅行' }); d.titleEn = 'Snow Days';
+    const e = newTrip({ title: '北海道旅行' }); e.titleEnAuto = 'Hokkaido trip'; e.titleEnAutoSrc = '別のタイトル';
+    return [displayTitleEn(a), displayTitleEn(b), displayTitleEn(c), displayTitleEn(d), kanaToRomaji('きょうと'), kanaToRomaji('ほっかいどう')];
+  })()`);
+  assert.deepStrictEqual(r, ['HOKKAIDOU', 'TOOKYOO', 'HOKKAIDO TRIP', 'SNOW DAYS', 'kyouto', 'hokkaidou']);
+});
+t('v2.0 国内／海外の自動判定', () => {
+  const r = run(`[detectRegion({ area: '淡路島' }), detectRegion({ area: '台北・九份' }), detectRegion({ area: '', title: 'ハワイ旅行' }), detectRegion({ area: '沖縄', currency: 'USD' })]`);
+  assert.deepStrictEqual(r, ['domestic', 'overseas', 'overseas', 'overseas']);
+});
+t('v2.0 日別セクション：日程外・日付なしは「日付未設定」、代表写真の優先', () => {
+  const r = run(`(() => {
+    const tr = newTrip({ startDate: '2026-11-24', endDate: '2026-11-25' });
+    const m = (o) => Object.assign({ id: uid('md'), fileId: uid('f'), kind: 'photo', favorite: false, cover: false, createdAt: '2026-11-24T00:00:00Z' }, o);
+    tr.media = [m({ id: 'a', date: '2026-11-24', takenAt: '2026-11-24T10:00:00' }), m({ id: 'b', date: '2026-11-24', takenAt: '2026-11-24T09:00:00', favorite: true }),
+      m({ id: 'c', date: '2026-12-01' }), m({ id: 'd', date: '' }), m({ id: 'v', kind: 'video', date: '2026-11-25' })];
+    const g = mediaByDay(tr);
+    const cov1 = coverMedia(tr).id;
+    tr.media.find(x => x.id === 'a').cover = true;
+    return { d1: g.by['2026-11-24'].map(x => x.id), d2: g.by['2026-11-25'].map(x => x.id), unset: g.unset.map(x => x.id), cov1, cov2: coverMedia(tr).id };
+  })()`);
+  assert.deepStrictEqual(r, { d1: ['b', 'a'], d2: ['v'], unset: ['c', 'd'], cov1: 'b', cov2: 'a' });
+});
+t('v2.0 日別ページの写真：手動 → お気に入り → 代表 → 時系列（V3）', () => {
+  const r = run(`(() => {
+    const tr = newTrip({ startDate: '2026-11-24', endDate: '2026-11-24' });
+    const m = (id, o) => Object.assign({ id, fileId: 'f' + id, kind: 'photo', date: '2026-11-24', favorite: false, cover: false, takenAt: '2026-11-24T0' + id.length + ':00:00' }, o);
+    tr.media = [m('x1', { takenAt: '2026-11-24T08:00:00' }), m('x2', { takenAt: '2026-11-24T09:00:00', cover: true }), m('x3', { takenAt: '2026-11-24T10:00:00', favorite: true }), m('x4', { takenAt: '2026-11-24T07:00:00' })];
+    const auto = visualDayPicks(tr, '2026-11-24').map(x => x.id);
+    tr.visual.dayPicks['2026-11-24'] = ['x4'];
+    const manual = visualDayPicks(tr, '2026-11-24').map(x => x.id);
+    return { auto, manual, cover: visualCover(tr).id };
+  })()`);
+  assert.deepStrictEqual(r, { auto: ['x3', 'x2', 'x4'], manual: ['x4', 'x3', 'x2'], cover: 'x2' });
+});
+t('v2.0 コレクションの対象（C1）：旅行中・精算・記録中・完了だけ', () => {
+  const r = run(`(() => {
+    const mk = (o) => { const t = newTrip(o); S.trips[t.id] = t; return t; };
+    S.trips = {};
+    mk({ title: '検討' }); mk({ title: '計画', startDate: addDays(todayStr(), 10), endDate: addDays(todayStr(), 11) });
+    const go = mk({ title: '旅行中', startDate: todayStr(), endDate: addDays(todayStr(), 1) });
+    const done = mk({ title: '完了', startDate: '2025-05-01', endDate: '2025-05-02' }); done.manualStatus = '完了';
+    const past = mk({ title: '精算中', startDate: '2026-01-10', endDate: '2026-01-12' });
+    past.items.push(newItem({ spotId: 'SP1', visited: { date: '2026-01-10', rating: 4 } }));
+    go.items.push(newItem({ spotId: 'SP1', visited: { date: todayStr(), rating: 5 } }));
+    return { titles: collectionTrips().map(t => t.title).sort(), st: statsOf(collectionTrips()) };
+  })()`);
+  assert.deepStrictEqual(r.titles, ['完了', '旅行中', '精算中']);
+  assert.strictEqual(r.st.trips, 3); assert.strictEqual(r.st.days, 7); assert.strictEqual(r.st.spots, 1, '同じスポットは1件と数える');
 });
 console.log(`\n${n} tests passed`);

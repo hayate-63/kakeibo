@@ -9,6 +9,8 @@
 <meta name="apple-mobile-web-app-title" content="旅帳">
 <title>旅帳</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Noto+Serif+JP:wght@400;700&family=Noto+Sans+JP:wght@400;600;700&display=swap">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root {
@@ -279,6 +281,86 @@ a { color: var(--accent); }
 .face.on { border-color: var(--accent); background: var(--accent-l); }
 .face-big { font-size: 22px; }
 
+/* ===== v2.0 メディア ===== */
+.unsent-bar { background: #fff7ed; border: 1px solid #fed7aa; color: #7c2d12; border-radius: 12px; padding: 9px 12px; margin-bottom: 10px; font-size: 13.5px; cursor: pointer; }
+.unsent-bar.ok { background: #f0fdf4; border-color: #bbf7d0; color: #166534; cursor: default; }
+.collection-btn { margin-bottom: 12px; }
+.tthumb { display: block; width: 40px; height: 40px; border-radius: 10px; overflow: hidden; background: var(--muted-bg); }
+.tthumb img, .tthumb .mt-load, .tthumb .mt-fb { width: 100%; height: 100%; object-fit: cover; font-size: 16px; }
+.albums { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.albums a.chip-btn { text-decoration: none; color: var(--text); }
+.mq .mq-row { border-top: 1px solid var(--muted-bg); padding: 8px 0; }
+.mq-row .mq-st { font-size: 12px; font-weight: 800; white-space: nowrap; }
+.mq-row.st-failed .mq-st { color: var(--ng); } .mq-row.st-sending .mq-st { color: var(--accent); } .mq-row.st-done .mq-st { color: var(--ok); } .mq-row.st-held .mq-st { color: var(--sub); }
+.day-sec .day-head { cursor: pointer; }
+.day-sec textarea { margin: 8px 0; }
+.mgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 6px; }
+@media (min-width: 560px) { .mgrid { grid-template-columns: repeat(4, 1fr); } }
+.mtile { position: relative; aspect-ratio: 1; border: none; padding: 0; border-radius: 8px; overflow: hidden; background: var(--muted-bg); cursor: pointer; }
+.mtile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mt-load, .mt-fb { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 26px; color: var(--sub); text-align: center; padding: 4px; }
+.mt-fb small { font-size: 10px; line-height: 1.2; word-break: break-all; max-height: 2.4em; overflow: hidden; }
+.mt-badge { position: absolute; left: 4px; bottom: 4px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 6px; }
+.mt-cover { position: absolute; left: 4px; top: 4px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 6px; }
+.mt-fav { position: absolute; right: 5px; top: 3px; color: #fbbf24; font-size: 18px; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.mv-img img { width: 100%; border-radius: 10px; display: block; }
+.mv-video { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 10px; background: #000; }
+.mv-none { background: var(--muted-bg); border-radius: 10px; padding: 24px; text-align: center; font-size: 40px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.mv-none div { font-size: 14px; }
+
+/* ===== v2.0 ビジュアルモード（トラベルマガジン風） ===== */
+.vis { display: none; position: fixed; inset: 0; z-index: 800; background: #1c1917; color: #fff; flex-direction: column; }
+.vis.open { display: flex; }
+.vis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: calc(8px + var(--safe-t)) 10px 8px; }
+.vis-seg { flex: 1; max-width: 320px; margin: 0; }
+.vis-stage { position: relative; flex: 1; margin: 0 auto; width: min(100vw, calc((100vh - 170px) * 9 / 16)); perspective: 2000px; touch-action: pan-y; }
+.vpage { position: absolute; inset: 0; transform-origin: left center; transition: transform .6s cubic-bezier(.3,.7,.3,1), opacity .6s; backface-visibility: hidden; border-radius: 6px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.45); background: #f5efe4; color: #1c1917; }
+.vpage.next { z-index: 1; }
+.vpage.cur { z-index: 2; transform: rotateY(0); }
+.vpage.gone { z-index: 3; transform: rotateY(-100deg); opacity: 0; pointer-events: none; }
+.vpage.turning { z-index: 4; }
+.vis-nav { display: flex; justify-content: center; align-items: center; gap: 18px; padding: 10px; color: #e7e5e4; }
+.vis-nav .btn { background: transparent; color: #fff; border-color: #57534e; font-size: 20px; }
+.vis-hint { text-align: center; font-size: 11px; color: #a8a29e; padding-bottom: calc(10px + var(--safe-b)); }
+.vimg { background: #d6d3d1 center / cover no-repeat; position: relative; cursor: pointer; }
+.vimg.empty { display: flex; align-items: center; justify-content: center; color: #78716c; font-size: 13px; background: #e7e0d3; }
+.vvid { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.6); color: #fff; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+.vcover { position: absolute; inset: 0; }
+.vcover .vimg.full { position: absolute; inset: 0; }
+.vcover-text { position: absolute; left: 0; right: 0; bottom: 0; padding: 24px 22px 26px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.72)); pointer-events: none; }
+.vkicker { font: 600 10px "Noto Sans JP", sans-serif; letter-spacing: .3em; opacity: .9; }
+.vtitle { font: 700 clamp(30px, 9vw, 54px)/1.02 "Playfair Display", "Noto Serif JP", Georgia, serif; margin: 6px 0 8px; word-break: break-word; }
+.vmeta { font: 500 12px "Noto Sans JP", sans-serif; opacity: .95; }
+.vline { font: 400 13px "Noto Serif JP", Georgia, serif; margin-top: 6px; }
+.vday { position: absolute; inset: 0; padding: 22px 20px; display: flex; flex-direction: column; }
+.vday-head { display: flex; flex-direction: column; }
+.vdaynum { font: 700 12px "Noto Sans JP", sans-serif; letter-spacing: .25em; color: #b45309; }
+.vdate { font: 700 30px "Playfair Display", Georgia, serif; }
+.vgrid { flex: 1; display: grid; gap: 8px; margin: 12px 0; min-height: 0; }
+.vgrid.n1 { grid-template-rows: 1fr; } .vgrid.n2 { grid-template-rows: 1fr 1fr; }
+.vgrid.n3 { grid-template-columns: 1fr 1fr; grid-template-rows: 3fr 2fr; } .vgrid.n3 .s0 { grid-column: 1 / 3; }
+.vplace { font: 700 13px "Noto Sans JP", sans-serif; } .vday .vline { color: #57534e; }
+.insta { overflow-y: auto; padding: 10px 14px calc(20px + var(--safe-b)); color: var(--text); background: var(--bg); flex: 1; }
+.insta-previews { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.ipv { width: 100%; height: auto; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,.2); background: #eee; }
+img.iout { width: 31%; margin: 1%; border-radius: 6px; }
+
+/* ===== v2.0 コレクション ===== */
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@media (max-width: 420px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+.col-map { height: 300px; margin: 0 0 6px; }
+#colMap { width: 100%; height: 100%; }
+.mk-photo { display: block; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.4); background: #ddd; }
+.mk-photo img { width: 100%; height: 100%; object-fit: cover; }
+.pref-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.pref { font-size: 11px; text-align: center; padding: 5px 2px; border-radius: 6px; background: var(--muted-bg); color: var(--sub); position: relative; }
+.pref.on { background: var(--accent); color: #fff; font-weight: 800; }
+.pref small { display: block; font-size: 9px; opacity: .9; }
+.ygrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+.ytrip { border: none; padding: 0; background: none; text-align: left; cursor: pointer; }
+.ytrip > img, .ytrip > .mt-load, .ytrip > .mt-fb { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 8px; display: flex; background: var(--muted-bg); }
+.ytrip span { display: block; font-size: 11.5px; font-weight: 700; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 </style>
 </head>
 <body>
@@ -297,6 +379,7 @@ a { color: var(--accent); }
   <section id="page-drive" class="page"></section>
   <section id="page-money" class="page"></section>
   <section id="page-record" class="page"></section>
+  <section id="page-collection" class="page"></section>
 </main>
 
 <nav class="bottom-nav" id="nav"></nav>
@@ -308,7 +391,7 @@ a { color: var(--accent); }
 // ============================================================================
 // 01 ユーティリティ・定数
 // ============================================================================
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '2.0.0';
 
 const VEHICLES = {
   car:   { label: '車',       icon: '🚗' },
@@ -546,6 +629,27 @@ function api(name, args) {
 // ---------------------------------------------------------------------------
 // モックサーバ：GASに置く前の動作確認・デモ用。データはこのブラウザにだけ残る
 // ---------------------------------------------------------------------------
+// 模擬メディア（デモモード）：端末の localStorage に小さいサムネイルだけ持つ
+const MockMedia = (() => {
+  const KEY = 'tabicho_mock_media_v1';
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } };
+  const save = (db) => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} };
+  return {
+    pendingThumbs: {}, folders: {},
+    add(f) { const db = load(); const id = 'MF' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); db[id] = f; save(db); return id; },
+    get(id) { return load()[id] || null; },
+    remove(id) { const db = load(); delete db[id]; save(db); },
+    finish(q, file) {
+      const kind = mediaKind(file);
+      const lm = file.lastModified ? new Date(file.lastModified) : null;
+      const takenAt = kind === 'photo' && lm ? ymd(lm) + 'T' + pad2(lm.getHours()) + ':' + pad2(lm.getMinutes()) + ':00' : '';  // EXIF の代わり
+      const id = this.add({ name: file.name, mimeType: file.type, size: file.size, thumb: this.pendingThumbs[q.qid] || '', takenAt });
+      delete this.pendingThumbs[q.qid];
+      return { id, name: file.name, mimeType: file.type, size: String(file.size) };
+    }
+  };
+})();
+
 const MockServer = (() => {
   const KEY = 'tabicho_mock_db_v1';
   function load() {
@@ -701,8 +805,47 @@ const MockServer = (() => {
       const db = load(); logs.forEach(l => db.kakeibo.push(l)); save(db);
       return { ok: true, sent: logs.length, keys: logs.map(l => l.sourceKey) };
     },
+    // ---- v2.0 メディア（模擬）。window.__TABICHO_TEST_UPLOAD があればテスト用の resumable 模擬サーバに本当に PUT する ----
+    async mediaSession({ folder, name, mimeType, size, origin }) {
+      const hook = window.__TABICHO_TEST_UPLOAD;
+      const folderId = folder.folderId || 'mockfolder_' + folder.tripId;
+      const folderName = folder.folderId ? '' : folder.title;
+      if (hook) {
+        const r = await (await fetch(hook, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'createSession', pin: '1234', name, mimeType, size, origin, originMode: 'send' }) })).json();
+        MockMedia.folders[folderId] = `旅帳/${folder.year || '日程未定'}/${folder.region === 'overseas' ? '海外' : '国内'}/${folder.title}`;
+        return { ok: true, sessionUri: r.sessionUri, folderId, folderName: folderName || MockMedia.folders[folderId] };
+      }
+      MockMedia.folders[folderId] = `旅帳/${folder.year || '日程未定'}/${folder.region === 'overseas' ? '海外' : '国内'}/${folder.title}`;
+      return { ok: true, sessionUri: 'mock-upload://' + uid('s'), folderId, folderName: MockMedia.folders[folderId] };
+    },
+    async mediaStatus({ sessionUri, size }) {
+      const hook = window.__TABICHO_TEST_UPLOAD;
+      if (hook) return (await fetch(hook, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'status', pin: '1234', sessionUri, size }) })).json();
+      return { ok: true, code: 308, range: '' };
+    },
+    async mediaSmallUpload({ folder, name, mimeType, b64 }) {
+      const id = MockMedia.add({ name, mimeType, size: Math.round(b64.length * 0.75) });
+      return { ok: true, file: { id, name, mimeType, size: String(Math.round(b64.length * 0.75)) }, folderId: folder.folderId || 'mockfolder_' + folder.tripId };
+    },
+    async mediaMeta({ ids }) {
+      const meta = {};
+      ids.forEach(id => { const f = MockMedia.get(id); meta[id] = f ? { id, name: f.name, mimeType: f.mimeType, size: f.size, takenAt: f.takenAt || '', hasThumbnail: !!f.thumb, videoReady: /^video/.test(f.mimeType), durationMs: /^video/.test(f.mimeType) ? 30000 : null } : { id, hasThumbnail: false }; });
+      return { ok: true, meta };
+    },
+    async mediaThumbs({ ids }) {
+      const thumbs = {};
+      ids.forEach(id => { const f = MockMedia.get(id); thumbs[id] = { meta: f ? { id, hasThumbnail: !!f.thumb, videoReady: /^video/.test(f.mimeType || ''), durationMs: /^video/.test(f.mimeType || '') ? 30000 : null } : { id }, thumb: f && f.thumb ? f.thumb : '' }; });
+      return { ok: true, thumbs };
+    },
+    async mediaTrash({ fileId }) { MockMedia.remove(fileId); return { ok: true }; },
+    async translateTitle({ text }) {
+      const dict = { '北海道': 'Hokkaido', '旅行': 'trip', '旅': 'trip', '東京': 'Tokyo', '京都': 'Kyoto', '大阪': 'Osaka', '沖縄': 'Okinawa', '淡路島': 'Awaji Island', 'ドライブ': 'drive', '伊勢志摩': 'Ise-Shima', '台湾': 'Taiwan', '奈良': 'Nara', '温泉': 'hot spring' };
+      let out = text;
+      Object.keys(dict).sort((a, b) => b.length - a.length).forEach(k => { out = out.split(k).join(' ' + dict[k] + ' '); });
+      return { ok: true, text: kanaToRomaji(out).replace(/\s+/g, ' ').trim() };
+    },
     async testConnections() {
-      return { ok: true, spotcho: { ok: true, note: 'モック' }, kakeibo: { ok: true, note: 'モック' }, calendar: { ok: true, note: 'モック' }, maps: { ok: true, note: 'モック（直線距離からの概算）' } };
+      return { ok: true, spotcho: { ok: true, note: 'モック' }, kakeibo: { ok: true, note: 'モック' }, calendar: { ok: true, note: 'モック' }, maps: { ok: true, note: 'モック（直線距離からの概算）' }, media: { ok: true, note: 'モック（端末内）' } };
     }
   };
   return {
@@ -749,7 +892,9 @@ const DEFAULT_SETTINGS = () => ({
   fuelPrice: 170,       // 円/L
   mealPerPerson: 1500,  // 1食あたり（提案の概算用）
   lodgingPerPerson: 10000,
-  packCustom: []        // 自分用の持ち物テンプレ追加 [{cat,name,when}]
+  packCustom: [],       // 自分用の持ち物テンプレ追加 [{cat,name,when}]
+  // v2.0 メディア：既定は保留（手動送信）。写真と動画で別々に自動送信へ切替できる
+  media: { autoPhoto: false, autoVideo: false, confirmMB: 100, chunkMB: 4 }
 });
 
 const S = {
@@ -814,8 +959,19 @@ function newTrip(o) {
     fxClose: {},              // currency -> 'open'|'returned'|'carry'
     settlement: { signature: '', transfers: {}, notice: '' },
     record: { days: {}, rating: 0, comment: '', photoUrl: '', done: false },
-    driveTargetId: null
+    driveTargetId: null,
+    // v2.0
+    titleEn: '',              // 英語タイトル（ビジュアルの表紙文字。V2）
+    titleEnAuto: '', titleEnAutoSrc: '',  // 未入力時の自動英語化の控え（元のタイトルが変わったら作り直す）
+    region: '',               // 'domestic' | 'overseas'（作成時に行き先から自動判定、手動変更可）
+    regionManual: false,
+    driveFolderId: '', driveFolderName: '', driveFolderRegion: '',  // 最初のメディア追加時に作成。以後は固定（M7）
+    media: [],                // 写真・動画 [{id,fileId,kind,name,size,mimeType,takenAt,date,dateSource,spotId,itemId,favorite,cover,comment,createdAt,...}]
+    albums: [],               // 外部アルバム URL（複数・タイトル付き。M6）
+    coverLink: '',            // 代表写真のリンク指定（任意）
+    visual: { dayPicks: {}, coverMediaId: '' }
   };
+  t.region = t.region || detectRegion(t);
   if (!t.members.some(m => m.isMe) && t.members.length) t.members[0].isMe = true;
   return t;
 }
@@ -827,6 +983,14 @@ function newItem(o) {
     locked: false, hiddenTime: null, priority: 'maybe', stayEst: null, priceEst: null, needsBooking: false,
     bookingId: null, memo: '', parkingMemo: '', visited: null, order: Date.now(), transport: null, wantSpotRegister: false
   }, o || {});
+}
+
+// 国内／海外の自動判定（行き先エリア・精算通貨から）
+const OVERSEAS_RE = /台湾|台北|台中|台南|高雄|韓国|ソウル|釜山|済州|中国|上海|北京|香港|マカオ|タイ|バンコク|プーケット|ベトナム|ハノイ|ホーチミン|ダナン|シンガポール|マレーシア|クアラルンプール|インドネシア|バリ|フィリピン|セブ|マニラ|インド|ハワイ|ホノルル|グアム|サイパン|アメリカ|米国|ニューヨーク|ロサンゼルス|ラスベガス|サンフランシスコ|カナダ|バンクーバー|メキシコ|イギリス|英国|ロンドン|フランス|パリ|イタリア|ローマ|ミラノ|ベネチア|スペイン|バルセロナ|ドイツ|スイス|オーストリア|ウィーン|オランダ|ベルギー|チェコ|プラハ|ギリシャ|トルコ|イスタンブール|ドバイ|エジプト|オーストラリア|シドニー|メルボルン|ケアンズ|ニュージーランド|海外/;
+function detectRegion(t) {
+  if (t.currency && t.currency !== 'JPY') return 'overseas';
+  if (OVERSEAS_RE.test(String(t.area || '') + ' ' + String(t.title || ''))) return 'overseas';
+  return 'domestic';
 }
 
 function meMember(trip) { return trip.members.find(m => m.isMe) || trip.members[0]; }
@@ -1011,6 +1175,14 @@ function migrateTrip(t) {
   Object.keys(d).forEach(k => { if (t[k] === undefined) t[k] = clone(d[k]); });
   t.items = (t.items || []).map(i => Object.assign(newItem(), i));
   if (!t.record.days) t.record.days = {};
+  // v1 の「代表写真のリンク」はアルバム URL へ移す（Q9 の置き換え）
+  if (t.record.photoUrl && !t.albums.some(a => a.url === t.record.photoUrl)) {
+    t.albums.push({ id: uid('al'), title: 'アルバム', url: t.record.photoUrl });
+    t.record.photoUrl = '';
+  }
+  if (!t.region) t.region = detectRegion(t);
+  if (!t.visual) t.visual = { dayPicks: {}, coverMediaId: '' };
+  if (!t.visual.dayPicks) t.visual.dayPicks = {};
   return t;
 }
 
@@ -2307,9 +2479,10 @@ async function autoMoveTimes(trip, date, force) {
 function renderHome() {
   const trips = Object.values(S.trips).filter(t => !t._deleted);
   const trip = curTrip();
-  let h = `<div class="home-actions">
+  let h = unsentBarHTML() + `<div class="home-actions">
     <button class="btn primary grow" data-act="tripNew">＋ 新しい旅</button>
-    <button class="btn accent grow" data-act="openSuggest">🧭 行き先を探す</button></div>`;
+    <button class="btn accent grow" data-act="openSuggest">🧭 行き先を探す</button></div>
+    <button class="btn block collection-btn" data-act="openCollection">🗂 コレクション（統計・マップ・年別レポート）</button>`;
   if (S.serverMock) h += `<div class="info-box small">🧪 デモモード：GASに置く前のローカル動作です。データはこのブラウザにだけ保存されます。</div>`;
   if (trip) h += currentTripCard(trip);
   else h += emptyHTML('🧳', 'まだ旅がありません。<br>「新しい旅」か「行き先を探す」から始めましょう');
@@ -2331,10 +2504,17 @@ function renderHome() {
   return h;
 }
 function tripSort(a, b) { return (a.startDate || '9999') < (b.startDate || '9999') ? -1 : (a.startDate || '9999') > (b.startDate || '9999') ? 1 : 0; }
+// 旅行一覧の代表写真（無ければ絵文字）
+function tripThumbHTML(t) {
+  const c = coverOrFirst(t);
+  if (c) return `<span class="tthumb">${mediaTileInner(c, 200)}</span>`;
+  if (isImageUrl(t.coverLink)) return `<span class="tthumb"><img src="${esc(t.coverLink)}" alt=""></span>`;
+  return esc(tripEmoji(t));
+}
 function tripRow(t) {
   const st = tripStatus(t);
   return `<div class="trip-row ${t.id === S.curTripId ? 'cur' : ''}" data-act="tripSelect" data-id="${t.id}">
-    <div class="trip-emoji">${esc(tripEmoji(t))}</div>
+    <div class="trip-emoji">${tripThumbHTML(t)}</div>
     <div class="grow"><div class="b">${esc(t.title)}</div>
     <div class="muted small">${t.startDate ? fmtDate(t.startDate) + (t.endDate && t.endDate !== t.startDate ? '〜' + fmtDate(t.endDate) : '（日帰り）') : '日程未定'} ・ ${t.members.map(m => esc(m.name)).join('・')}</div></div>
     ${statusBadge(st)}</div>`;
@@ -2425,6 +2605,9 @@ function openTripEditor(trip, preset) {
     <label>モード<span class="req">必須</span></label>${segHTML('teMode', [{ v: 'shiori', l: '📒 しおり（工程を決める）' }, { v: 'list', l: '📝 リスト（行きたい所だけ）' }], t.mode, 'segPick')}
     <label>メンバー<span class="req">必須</span></label>${membersEditorHTML(t.members)}
     <label>行き先エリア</label><input id="teArea" value="${esc(t.area)}" placeholder="例：淡路島">
+    <label>国内／海外</label><div><select id="teRegion"><option value="auto" ${!t.regionManual ? 'selected' : ''}>自動（今は${detectRegion(t) === 'overseas' ? '海外' : '国内'}）</option><option value="domestic" ${t.regionManual && t.region === 'domestic' ? 'selected' : ''}>国内</option><option value="overseas" ${t.regionManual && t.region === 'overseas' ? 'selected' : ''}>海外</option></select>
+      ${t.driveFolderId ? `<div class="muted small">写真の保存フォルダは作成済みのため移動しません（${esc(t.driveFolderName || '')}）</div>` : ''}</div>
+    <label>英語タイトル</label><input id="teTitleEn" value="${esc(t.titleEn || '')}" placeholder="任意（ビジュアルの表紙文字。空欄なら自動で英語表示）">
     <label>出発地</label><div class="row gap"><input id="teOrigin" class="grow" value="${esc(t.origin && t.origin.name || '')}" placeholder="自宅"><button class="btn sm" data-act="teOriginHome">自宅</button><button class="btn sm" data-act="teOriginHere">現在地</button></div>
     <input type="hidden" id="teOriginLat" value="${t.origin && t.origin.lat != null ? t.origin.lat : ''}"><input type="hidden" id="teOriginLng" value="${t.origin && t.origin.lng != null ? t.origin.lng : ''}">
     <label>予算（総額）</label>${amountFieldHTML('id="teBudget"', t.budget, '円')}
@@ -2471,6 +2654,10 @@ ACT.teSave = () => {
   if (!trip.vehicles.includes(trip.listTransport.mode)) trip.listTransport.mode = trip.vehicles[0];
   trip.currency = $('#teCur', b).value;
   trip.emoji = Array.from($('#teEmoji', b).value.trim())[0] || '';
+  trip.titleEn = $('#teTitleEn', b).value.trim();
+  const rg = $('#teRegion', b).value;
+  trip.regionManual = rg !== 'auto';
+  trip.region = rg === 'auto' ? detectRegion(trip) : rg;
   trip.memo = $('#teMemo', b).value;
   if (trip.mode !== mode && !isNew) switchMode(trip, mode); else trip.mode = mode;
   delete trip._preset;
@@ -3659,7 +3846,8 @@ ACT.fxDel = async () => { const { trip, x } = topModal().data; if (await confirm
 
 // ---- 11_record.js ----
 // ============================================================================
-// 11 記録タブ：日ごとのメモ／旅全体の評価／代表写真リンク／まとめ／行ったスポット／記録完了
+// 11 記録タブ：まとめ／旅全体の評価／メディア（アルバム・アップロード・日別セクション）／行ったスポット／記録完了
+//   v2.0：Q9 の「代表写真はリンクのみ」をメディア機能で置き換え。日ごとのメモと同じ場所にその日の写真・動画を置く
 // ============================================================================
 function renderRecord(trip) {
   const rec = trip.record;
@@ -3667,41 +3855,60 @@ function renderRecord(trip) {
   const visited = trip.items.filter(i => i.visited);
   const days = tripDays(trip);
   const km = totalDistance(trip);
-  let h = `<div class="card summary"><b>📊 旅のまとめ（自動集計）</b>
+  const nPhoto = trip.media.filter(m => m.kind === 'photo').length, nVideo = trip.media.length - nPhoto;
+  let h = `<div class="card summary"><div class="row between"><b>📊 旅のまとめ（自動集計）</b><button class="btn sm accent" data-act="openVisual">📖 ビジュアル</button></div>
     <div class="sum-grid">
       <div><div class="muted small">総額</div><div class="h3">${fmtMoney(bs.total, trip.currency)}</div></div>
       <div><div class="muted small">1人あたり</div><div class="h3">${fmtMoney(bs.total / Math.max(1, trip.members.length), trip.currency)}</div></div>
       <div><div class="muted small">総走行距離</div><div class="h3">${km ? km.toLocaleString() + 'km' : '—'}</div></div>
       <div><div class="muted small">行ったスポット</div><div class="h3">${visited.length}件</div></div>
       <div><div class="muted small">日数</div><div class="h3">${days.length ? days.length + '日' + (nights(trip) ? '（' + nights(trip) + '泊）' : '（日帰り）') : '—'}</div></div>
+      <div><div class="muted small">写真・動画</div><div class="h3">${nPhoto}・${nVideo}</div></div>
     </div></div>`;
   h += `<div class="card"><b>⭐ 旅全体の評価</b><div>${stars(rec.rating || 0, 'recStar')}</div>
-    <textarea rows="2" data-change="recComment" placeholder="ひとこと感想">${esc(rec.comment || '')}</textarea>
-    <div class="mt"><b>📷 代表写真のリンク</b><span class="muted small">（任意。写真そのものは持ちません）</span>
-    <input data-change="recPhoto" value="${esc(rec.photoUrl || '')}" placeholder="Googleフォトのアルバムなどのリンク" inputmode="url">
-    ${rec.photoUrl ? `<a class="btn sm mt" href="${esc(rec.photoUrl)}" target="_blank" rel="noopener">🔗 写真を開く</a>` : ''}</div></div>`;
-  if (days.length) {
-    h += `<div class="section-title">📝 日ごとのメモ</div>`;
-    days.forEach((d, i) => {
-      h += `<div class="card"><b>${i + 1}日目 ${fmtDateFull(d)}</b>
-        <textarea rows="3" data-change="recDay" data-d="${d}" placeholder="この日の出来事・感想">${esc(rec.days[d] || '')}</textarea></div>`;
-    });
+    <textarea rows="2" data-change="recComment" placeholder="ひとこと感想">${esc(rec.comment || '')}</textarea></div>`;
+
+  // ---- メディア ----
+  h += `<div class="section-title row between"><span>📷 写真・動画</span><button class="btn sm primary" data-act="mediaAdd">＋ 追加</button></div>
+    <input type="file" id="mediaPick" accept="image/*,video/*" multiple style="display:none">
+    ${albumsHTML(trip)}
+    ${trip.driveFolderName ? `<div class="muted small">保存先：Drive「${esc(trip.driveFolderName)}」</div>` : ''}
+    ${queueHTML(trip)}`;
+  const { by, unset } = mediaByDay(trip);
+  days.forEach((d, i) => {
+    const list = by[d];
+    const key = trip.id + d;
+    const closed = S.ui.dayClosed && S.ui.dayClosed[key];
+    const np = list.filter(m => m.kind === 'photo').length, nv = list.length - np;
+    h += `<div class="card day-sec"><div class="row between day-head" data-act="dayToggle" data-k="${key}">
+        <b>${closed ? '▶' : '▼'} ${i + 1}日目 ${fmtDateFull(d)}</b><span class="muted small">${np ? '📷' + np : ''} ${nv ? '🎬' + nv : ''}</span></div>
+      ${closed ? '' : `<textarea rows="3" data-change="recDay" data-d="${d}" placeholder="この日の出来事・感想">${esc(rec.days[d] || '')}</textarea>
+        ${mediaGridHTML(trip, list)}
+        <button class="btn sm mt" data-act="mediaAdd" data-date="${d}">＋ この日に写真・動画</button>`}</div>`;
+  });
+  if (unset.length || !days.length) {
+    h += `<div class="card day-sec"><div class="row between"><b>📂 日付未設定</b><span class="muted small">${unset.length}件</span></div>
+      <div class="muted small">撮影日時が取れない・日程の外のものはここに入ります。タップして日付を変えると日別に移ります</div>
+      ${mediaGridHTML(trip, unset)}</div>`;
   }
+
   h += `<div class="section-title">✅ この旅で「行った」にしたスポット（${visited.length}）</div>`;
   if (visited.length) h += visited.map(it => {
     const info = itemInfo(trip, it); const v = it.visited;
+    const nMedia = trip.media.filter(m => (it.spotId && m.spotId === it.spotId) || m.itemId === it.id).length;
     return `<div class="card visit-card" data-act="visitEdit" data-id="${it.id}"><div class="row between"><b>${esc(info.name)}</b><span class="face-big">${faceHTML(v.rating)}</span></div>
-      <div class="muted small">${fmtDateFull(v.date)} ・ ${esc((v.companions || []).join('・'))}${it.spotId ? '' : ' ・ スポット帳未登録'}</div>${v.comment ? `<div>${esc(v.comment)}</div>` : ''}</div>`;
+      <div class="muted small">${fmtDateFull(v.date)} ・ ${esc((v.companions || []).join('・'))}${it.spotId ? '' : ' ・ スポット帳未登録'}${nMedia ? ' ・ 📷' + nMedia : ''}</div>${v.comment ? `<div>${esc(v.comment)}</div>` : ''}</div>`;
   }).join('');
   else h += `<div class="muted small pad">しおり・リスト・ドライブの「行った」ボタンで記録されます</div>`;
   const settled = settlementComplete(trip);
   h += `<div class="card ${rec.done ? 'ok-card' : ''}"><label class="check big"><input type="checkbox" data-change="recDone" ${rec.done ? 'checked' : ''}> 記録完了</label>
     <div class="muted small">精算の全件完了（${settled ? '✅ 済' : '未'}）と記録完了が揃うと、ホームに「完了にできます」が出ます</div></div>`;
+  setTimeout(() => loadThumbs(document.getElementById('page-record')), 0);
   return h;
 }
+ACT.dayToggle = (el) => { S.ui.dayClosed = S.ui.dayClosed || {}; S.ui.dayClosed[el.dataset.k] = !S.ui.dayClosed[el.dataset.k]; render(); };
 ACT.recStar = (el) => { const t = curTrip(); t.record.rating = Number(el.dataset.v); commitTrip(t); };
 ON_CHANGE.recComment = (el) => { const t = curTrip(); t.record.comment = el.value; commitTrip(t, { noRender: true }); };
-ON_CHANGE.recPhoto = (el) => { const t = curTrip(); t.record.photoUrl = el.value.trim(); commitTrip(t); };
 ON_CHANGE.recDay = (el) => { const t = curTrip(); t.record.days[el.dataset.d] = el.value; commitTrip(t, { noRender: true }); };
 ON_CHANGE.recDone = (el) => {
   const t = curTrip(); t.record.done = el.checked; commitTrip(t);
@@ -3738,6 +3945,12 @@ ACT.openSettings = () => {
       <label>食費（1食1人）</label><div class="row gap"><input id="stMeal" inputmode="numeric" value="${esc(st.mealPerPerson)}"><span>円</span></div>
       <label>宿（1泊1人）</label><div class="row gap"><input id="stLodge" inputmode="numeric" value="${esc(st.lodgingPerPerson)}"><span>円</span></div>
     </div></div>
+    <div class="set-sec"><div class="b">📷 写真・動画の送信</div><div class="form-grid">
+      <label>写真</label><select id="stAutoPhoto"><option value="0">保留（手動で送る）</option><option value="1" ${(st.media || {}).autoPhoto ? 'selected' : ''}>自動で送る</option></select>
+      <label>動画</label><select id="stAutoVideo"><option value="0">保留（手動で送る）</option><option value="1" ${(st.media || {}).autoVideo ? 'selected' : ''}>自動で送る</option></select>
+      <label>確認する大きさ</label><div class="row gap"><input id="stConfirmMB" inputmode="numeric" value="${esc((st.media || {}).confirmMB || 100)}"><span>MB 以上は送る前に確認</span></div>
+      <label>チャンク</label><select id="stChunk">${[1, 4, 8].map(n => `<option value="${n}" ${Number((st.media || {}).chunkMB || 4) === n ? 'selected' : ''}>${n}MB</option>`).join('')}</select>
+    </div><div class="muted small">Wi-Fi かどうかは iPhone の Safari では判定できないため、既定は保留です</div></div>
     <div class="set-sec"><div class="b">🎒 持ち物テンプレートに追加</div><div id="stPack">${(st.packCustom || []).map(packTmplRowHTML).join('')}</div><button class="btn sm" data-act="stPackAdd">＋ 追加</button></div>
     <button class="btn primary block" data-act="stSave">設定を保存</button>
     <div class="set-sec mt"><div class="b">🔌 接続</div><div id="stConn" class="small muted">${S.serverMock ? 'デモモード（GAS未接続）' : 'GAS接続中'}</div><button class="btn sm" data-act="stTest">接続テスト</button>
@@ -3770,6 +3983,7 @@ ACT.stSave = () => {
   st.kakeiboSettleCategory = $('#stKkSettle', b).value.trim() || 'その他（支出）';
   st.fuelEfficiency = num($('#stFe', b).value, 15); st.fuelPrice = num($('#stFp', b).value, 170);
   st.mealPerPerson = num($('#stMeal', b).value, 1500); st.lodgingPerPerson = num($('#stLodge', b).value, 10000);
+  st.media = { autoPhoto: $('#stAutoPhoto', b).value === '1', autoVideo: $('#stAutoVideo', b).value === '1', confirmMB: num($('#stConfirmMB', b).value, 100) || 100, chunkMB: num($('#stChunk', b).value, 4) || 4 };
   st.packCustom = $$('#stPack .set-row', b).map(r => ({ cat: $('.pt-cat', r).value, name: $('.pt-name', r).value.trim(), when: $('.pt-when', r).value })).filter(p => p.name);
   if (oldMe !== st.myName) toast('自分の名前を変えました。既存の旅は「旅の編集」で自分の印を確認してください');
   closeModal(); commitSettings(); toast('設定を保存しました');
@@ -3779,7 +3993,7 @@ ACT.stTest = async () => {
   try {
     const r = await api('testConnections');
     const line = (k, l) => `<div>${r[k] && r[k].ok ? '✅' : '❌'} ${l}：${esc((r[k] && (r[k].note || r[k].error)) || '')}</div>`;
-    el.innerHTML = line('spotcho', 'スポット帳') + line('kakeibo', '家計簿') + line('calendar', 'カレンダー') + line('maps', '経路（Maps）');
+    el.innerHTML = line('spotcho', 'スポット帳') + line('kakeibo', '家計簿') + line('calendar', 'カレンダー') + line('maps', '経路（Maps）') + line('media', '写真・動画（Drive）');
   } catch (e) { el.textContent = '失敗：' + e.message; }
 };
 ACT.stExport = () => {
@@ -3993,6 +4207,993 @@ ACT.sgCreate = (el) => {
   toast('「' + trip.title + '」を検討中として作りました。日程を入れると計画中になります');
 };
 
+// ---- 14_media.js ----
+// ============================================================================
+// 14 メディア（v2.0）：写真・動画を Drive に保存し、旅帳は fileId とメタ情報だけを持つ
+//   アップロードは旅帳PoC v0.1 の方式（実機検証済み）：GAS が Origin 付きでセッション発行 → 画面から直接 PUT
+//   ・既定は「保留」（キューに入れて手動で送る）。設定で写真・動画それぞれ自動送信にできる
+//   ・自動送信でも 100MB 以上は送る前に確認（M1）
+//   ・ファイル本体は端末に抱えない（M2）。再読み込み後はファイルを選び直して途中から再開
+// ============================================================================
+const MQ_KEY = 'tabicho_media_queue_v1';
+const MQ = { items: [], files: new Map(), running: false, wake: null };
+const MQ_LABEL = { held: '保留中', waiting: '送信待ち', sending: '送信中', failed: '失敗', done: '完了' };
+
+function mqLoad() {
+  try { MQ.items = JSON.parse(localStorage.getItem(MQ_KEY) || '[]'); } catch (e) { MQ.items = []; }
+  // 前回「送信中」のまま閉じたもの＝エラーによる中断（意図的な保留とは分ける）
+  MQ.items.forEach(q => {
+    if (q.state === 'sending' || q.state === 'waiting') { q.state = 'failed'; q.error = '中断されました（画面を閉じた・スリープなど）。ファイルを選び直すと途中から再開します'; }
+  });
+  const dayAgo = Date.now() - 24 * 3600e3;
+  MQ.items = MQ.items.filter(q => !(q.state === 'done' && q.doneAt < dayAgo));
+  mqSave();
+}
+function mqSave() { try { localStorage.setItem(MQ_KEY, JSON.stringify(MQ.items)); } catch (e) {} }
+function mqCounts(tripId) {
+  const c = { held: 0, waiting: 0, sending: 0, failed: 0, done: 0 };
+  MQ.items.filter(q => !tripId || q.tripId === tripId).forEach(q => { c[q.state] = (c[q.state] || 0) + 1; });
+  c.unsent = c.held + c.waiting;
+  return c;
+}
+function mediaKind(f) {
+  const t = String(f.type || ''), n = String(f.name || '').toLowerCase();
+  if (/^video\//.test(t) || /\.(mov|mp4|m4v|hevc|avi|mkv|3gp)$/.test(n)) return 'video';
+  return 'photo';
+}
+function fmtBytes(n) { n = Number(n) || 0; return n >= 1073741824 ? (n / 1073741824).toFixed(2) + 'GB' : n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB' : n >= 1024 ? Math.round(n / 1024) + 'KB' : n + 'B'; }
+function fmtDurMs(ms) { if (!ms) return ''; const s = Math.round(ms / 1000); return Math.floor(s / 60) + ':' + pad2(s % 60); }
+
+// ---------------------------------------------------------------------------
+// キューに追加（保留 or 自動送信）
+// ---------------------------------------------------------------------------
+async function addFilesToQueue(trip, files, opt) {
+  opt = opt || {};
+  const ms = S.settings.media || {};
+  const limit = (Number(ms.confirmMB) || 100) * 1048576;
+  let n = 0;
+  for (const f of files) {
+    const kind = mediaKind(f);
+    const q = {
+      qid: uid('q'), tripId: trip.id, name: f.name, size: f.size, lastModified: f.lastModified, type: f.type || '', kind,
+      state: 'held', error: '', sessionUri: '', offset: 0, spotId: opt.spotId || '', itemId: opt.itemId || '', date: opt.date || '',
+      addedAt: Date.now(), progress: 0
+    };
+    const auto = opt.sendNow != null ? opt.sendNow : (kind === 'video' ? ms.autoVideo : ms.autoPhoto);
+    if (auto) {
+      if (f.size >= limit && !(await confirmDialog(`「${f.name}」は ${fmtBytes(f.size)} あります。今すぐ送りますか？\n（キャンセル＝保留に入れて後で送る）`))) q.state = 'held';
+      else q.state = 'waiting';
+    }
+    MQ.files.set(q.qid, f);
+    MQ.items.push(q);
+    if (mockThumbMaker) mockThumbMaker(q.qid, f);
+    n++;
+  }
+  mqSave();
+  render();
+  processQueue();
+  return n;
+}
+function mqSend(qids) {
+  let needFile = 0;
+  MQ.items.filter(q => qids.includes(q.qid) && (q.state === 'held' || q.state === 'failed')).forEach(q => {
+    if (!MQ.files.has(q.qid)) { needFile++; return; }
+    q.state = 'waiting'; q.error = '';
+  });
+  mqSave(); render(); processQueue();
+  if (needFile) toast(needFile + '件はファイルを選び直してください（端末にファイル本体を残さない方式のため）');
+}
+function mqRemove(qid) { MQ.items = MQ.items.filter(q => q.qid !== qid); MQ.files.delete(qid); mqSave(); render(); }
+
+async function processQueue() {
+  if (MQ.running) return;
+  MQ.running = true;
+  try {
+    for (;;) {
+      const q = MQ.items.find(x => x.state === 'waiting' && MQ.files.has(x.qid));
+      if (!q) break;
+      await uploadOne(q, MQ.files.get(q.qid));
+    }
+  } finally { MQ.running = false; }
+}
+function mqUpdate(q) { mqSave(); updateQueueRow(q); updateUnsentBar(); }
+
+// ---------------------------------------------------------------------------
+// 1件のアップロード（PoC の直接 PUT を移植）
+// ---------------------------------------------------------------------------
+function tripFolderInfo(trip) {
+  return { tripId: trip.id, folderId: trip.driveFolderId || '', year: trip.startDate ? trip.startDate.slice(0, 4) : '', region: trip.driveFolderRegion || trip.region || 'domestic', title: trip.title };
+}
+function rememberFolder(trip, r) {
+  if (r.folderId && trip.driveFolderId !== r.folderId) {
+    trip.driveFolderId = r.folderId; trip.driveFolderName = r.folderName || ''; trip.driveFolderRegion = trip.driveFolderRegion || trip.region;
+    commitTrip(trip, { noRender: true });
+  }
+}
+function xhrPutMedia(uri, body, contentRange, onProgress) {
+  return new Promise((resolve) => {
+    const x = new XMLHttpRequest();
+    x.open('PUT', uri);
+    x.setRequestHeader('Content-Range', contentRange);
+    if (onProgress) x.upload.onprogress = (e) => onProgress(e.loaded);
+    x.timeout = 10 * 60 * 1000;
+    const done = (err) => {
+      let range = ''; try { range = x.getResponseHeader('Range') || ''; } catch (e) {}
+      resolve({ status: x.status, range, body: x.status && x.status !== 308 ? x.responseText : '', error: err || '' });
+    };
+    x.onload = () => done();
+    x.onerror = () => done('network');
+    x.ontimeout = () => done('timeout');
+    x.onabort = () => done('abort');
+    x.send(body);
+  });
+}
+function rangeEnd(r) { const m = String(r || '').match(/bytes=0-(\d+)/); return m ? Number(m[1]) + 1 : 0; }
+async function blobB64(blob) {
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let s = ''; for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function sleepWake(ms) { return new Promise(r => { const t = setTimeout(r, ms); MQ.wake = () => { clearTimeout(t); r(); }; }); }
+
+async function queryUploaded(q, file) {
+  if (isMockUri(q.sessionUri)) return mockStatus(q, file);
+  const r = await xhrPutMedia(q.sessionUri, null, 'bytes */' + file.size);
+  if (r.status === 308 && r.range) return { offset: rangeEnd(r.range) };
+  if (r.status === 200 || r.status === 201) { try { return { offset: file.size, file: JSON.parse(r.body) }; } catch (e) {} }
+  // 画面で読めない時は GAS から確認（PoC の保険経路）
+  const st = await api('mediaStatus', { sessionUri: q.sessionUri, size: file.size });
+  if (st.code === 404 || st.code === 410) throw new Error('アップロードの期限が切れました。もう一度最初から送ってください');
+  if (st.code === 200 || st.code === 201) return { offset: file.size, file: st.file };
+  return { offset: rangeEnd(st.range) };
+}
+
+async function uploadOne(q, file) {
+  const trip = S.trips[q.tripId];
+  if (!trip || trip._deleted) { q.state = 'failed'; q.error = '旅が見つかりません'; mqUpdate(q); return; }
+  q.state = 'sending'; q.error = ''; mqUpdate(q);
+  const chunk = Math.max(1, Number((S.settings.media || {}).chunkMB) || 4) * 262144 * 4; // 256KB の倍数
+  let fileObj = null, retries = 0;
+  try {
+    if (!q.sessionUri) {
+      const r = await api('mediaSession', { folder: tripFolderInfo(trip), name: file.name, mimeType: file.type || 'application/octet-stream', size: file.size, origin: location.origin });
+      q.sessionUri = r.sessionUri; q.offset = 0; rememberFolder(trip, r); mqSave();
+    } else {
+      const st = await queryUploaded(q, file);
+      q.offset = st.offset; if (st.file) fileObj = st.file;
+    }
+    while (!fileObj) {
+      const start = q.offset, end = Math.min(start + chunk, file.size) - 1;
+      const r = isMockUri(q.sessionUri) ? await mockPut(q, file, start, end)
+        : await xhrPutMedia(q.sessionUri, file.slice(start, end + 1), `bytes ${start}-${end}/${file.size}`, (n) => { q.progress = (start + n) / file.size; updateQueueRow(q); });
+      if (r.status === 308) {
+        q.offset = r.range ? rangeEnd(r.range) : (await queryUploaded(q, file)).offset;
+        q.progress = q.offset / file.size; retries = 0; mqUpdate(q);
+      } else if (r.status === 200 || r.status === 201) {
+        try { fileObj = JSON.parse(r.body); } catch (e) { fileObj = (await queryUploaded(q, file)).file; }
+      } else if (r.status === 0 && start === 0 && !retries && q.kind === 'photo' && file.size <= 5 * 1048576) {
+        // 直接 PUT ができない時、小さい写真は GAS 経由で送る（PoC の代替路）
+        const res = await api('mediaSmallUpload', { folder: tripFolderInfo(trip), name: file.name, mimeType: file.type || 'image/jpeg', b64: await blobB64(file) });
+        rememberFolder(trip, res); fileObj = res.file; q.viaGas = true;
+      } else {
+        if (++retries > 6) throw new Error('送信できませんでした（' + (r.error || 'HTTP ' + r.status) + '）');
+        q.error = `通信が切れました。再開を待っています（${retries}回目）`; mqUpdate(q);
+        await sleepWake(Math.min(30000, 1500 * Math.pow(2, retries)));
+        q.offset = (await queryUploaded(q, file)).offset;
+        q.error = '';
+      }
+    }
+    await registerMedia(trip, q, fileObj);
+    q.state = 'done'; q.doneAt = Date.now(); q.sessionUri = ''; q.progress = 1; q.fileId = fileObj.id;
+    MQ.files.delete(q.qid);
+    mqUpdate(q);
+    render();
+  } catch (e) {
+    q.state = 'failed'; q.error = e.message || String(e); mqUpdate(q);
+  }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && MQ.wake) { const w = MQ.wake; MQ.wake = null; w(); } });
+window.addEventListener('online', () => { if (MQ.wake) { const w = MQ.wake; MQ.wake = null; w(); } processQueue(); });
+
+// 撮影日時は Drive のメタデータ（EXIF）を優先、無ければアップロード日（M3）。日程外・不明は「日付未設定」へ
+async function registerMedia(trip, q, fileObj) {
+  let meta = {};
+  try { const r = await api('mediaMeta', { ids: [fileObj.id] }); meta = (r.meta || {})[fileObj.id] || {}; } catch (e) {}
+  const taken = meta.takenAt || '';
+  const date = q.date || (taken ? taken.slice(0, 10) : todayStr());
+  const m = {
+    id: uid('md'), fileId: fileObj.id, kind: q.kind, name: fileObj.name || q.name, size: Number(fileObj.size) || q.size,
+    mimeType: fileObj.mimeType || q.type, takenAt: taken, date, dateSource: q.date ? 'manual' : taken ? 'exif' : 'upload',
+    spotId: q.spotId || '', itemId: q.itemId || '', favorite: false, cover: false, comment: '', createdAt: new Date().toISOString(),
+    width: meta.width || null, height: meta.height || null, durationMs: meta.durationMs || null, hasThumbnail: !!meta.hasThumbnail, videoReady: !!meta.videoReady
+  };
+  const t = S.trips[trip.id] || trip;
+  t.media.push(m);
+  commitTrip(t, { noRender: true });
+}
+
+// ---------------------------------------------------------------------------
+// メディアの並び・代表写真
+// ---------------------------------------------------------------------------
+function mediaSorted(list) { return list.slice().sort((a, b) => ((a.takenAt || a.createdAt) < (b.takenAt || b.createdAt) ? -1 : 1)); }
+function mediaByDay(trip) {
+  const days = tripDays(trip);
+  const by = {}; days.forEach(d => { by[d] = []; });
+  const unset = [];
+  trip.media.forEach(m => { if (m.date && by[m.date]) by[m.date].push(m); else unset.push(m); });
+  Object.keys(by).forEach(d => { by[d] = mediaSorted(by[d]); });
+  return { by, unset: mediaSorted(unset) };
+}
+// 代表写真：代表に設定した写真 → お気に入りの先頭 → 写真の先頭
+function coverMedia(trip) {
+  const photos = trip.media.filter(m => m.kind === 'photo');
+  return photos.find(m => m.cover) || photos.find(m => m.favorite) || null;
+}
+function coverOrFirst(trip) { return coverMedia(trip) || mediaSorted(trip.media.filter(m => m.kind === 'photo'))[0] || null; }
+function isImageUrl(u) { return /^https?:\/\/\S+\.(jpe?g|png|webp|gif|heic)(\?|$)/i.test(u || '') || /googleusercontent\.com\//.test(u || ''); }
+function driveUrl(m) { return 'https://drive.google.com/file/d/' + encodeURIComponent(m.fileId) + '/view'; }
+function previewState(m) {
+  if (m.kind !== 'video') return 'ok';
+  if (m.videoReady) return 'ok';
+  const age = Date.now() - new Date(m.createdAt || 0).getTime();
+  return age > 30 * 60 * 1000 ? 'none' : 'processing';   // ProRes 等は Drive の変換対象外で、いつまでも準備されない
+}
+
+// ---------------------------------------------------------------------------
+// サムネイル（GAS が自権限で取得した base64。端末にもキャッシュしてオフラインでも見られる）
+// ---------------------------------------------------------------------------
+const TH = new Map();
+const thumbIdb = (() => {
+  let dbp = null;
+  const open = () => dbp || (dbp = new Promise((res) => {
+    try { const r = indexedDB.open('tabicho_thumbs', 1); r.onupgradeneeded = () => r.result.createObjectStore('t'); r.onsuccess = () => res(r.result); r.onerror = () => res(null); }
+    catch (e) { res(null); }
+  }));
+  return {
+    async get(k) { const db = await open(); if (!db) return undefined; return new Promise(res => { try { const g = db.transaction('t').objectStore('t').get(k); g.onsuccess = () => res(g.result); g.onerror = () => res(undefined); } catch (e) { res(undefined); } }); },
+    async put(k, v) { const db = await open(); if (!db) return; try { db.transaction('t', 'readwrite').objectStore('t').put(v, k); } catch (e) {} }
+  };
+})();
+function thumbKey(fileId, size) { return fileId + '@' + size; }
+function mediaTileInner(m, size) {
+  const k = thumbKey(m.fileId, size);
+  const src = TH.get(k);
+  if (src) return `<img src="${src}" alt="">`;
+  if (src === '') return mediaFallback(m);
+  return `<div class="mt-load" data-thumb="${esc(m.fileId)}" data-size="${size}">${m.kind === 'video' ? '🎬' : '📷'}</div>`;
+}
+// サムネイルが取れない時の代替表示（メディア自体は残す）
+function mediaFallback(m) {
+  const p = previewState(m);
+  if (m.kind === 'video') return `<div class="mt-fb">🎬<small>${p === 'none' ? 'プレビュー不可' : p === 'processing' ? 'Drive で処理中' : ''}${m.durationMs ? ' ' + fmtDurMs(m.durationMs) : ''}</small><small>${esc(m.name)}</small></div>`;
+  return `<div class="mt-fb">📷<small>${esc(m.name)}</small></div>`;
+}
+let thumbLoading = false;
+async function loadThumbs(root) {
+  root = root || document;
+  const els = Array.from(root.querySelectorAll('[data-thumb]'));
+  if (!els.length) return;
+  const want = {};
+  els.forEach(el => { const k = thumbKey(el.dataset.thumb, el.dataset.size); if (!TH.has(k)) (want[el.dataset.size] = want[el.dataset.size] || new Set()).add(el.dataset.thumb); });
+  // まず端末のキャッシュ
+  for (const size of Object.keys(want)) {
+    for (const id of Array.from(want[size])) {
+      const v = await thumbIdb.get(thumbKey(id, size));
+      if (v) { TH.set(thumbKey(id, size), v); want[size].delete(id); }
+    }
+  }
+  applyThumbs(root);
+  if (thumbLoading) return;
+  thumbLoading = true;
+  try {
+    for (const size of Object.keys(want)) {
+      const ids = Array.from(want[size]);
+      for (let i = 0; i < ids.length; i += 12) {
+        const r = await api('mediaThumbs', { ids: ids.slice(i, i + 12), size: Number(size) });
+        Object.keys(r.thumbs || {}).forEach(id => {
+          const t = r.thumbs[id];
+          TH.set(thumbKey(id, size), t.thumb || '');
+          if (t.thumb) thumbIdb.put(thumbKey(id, size), t.thumb);
+          updateMediaMeta(id, t.meta);
+        });
+        applyThumbs(document);
+      }
+    }
+  } catch (e) { /* 取れなければ代替表示のまま */ }
+  thumbLoading = false;
+}
+function applyThumbs(root) {
+  (root || document).querySelectorAll('[data-thumb]').forEach(el => {
+    const k = thumbKey(el.dataset.thumb, el.dataset.size);
+    if (!TH.has(k)) return;
+    const m = findMediaByFile(el.dataset.thumb);
+    el.outerHTML = TH.get(k) ? `<img src="${TH.get(k)}" alt="">` : (m ? mediaFallback(m) : '<div class="mt-fb">？</div>');
+  });
+}
+function findMediaByFile(fileId) {
+  for (const t of Object.values(S.trips)) { const m = (t.media || []).find(x => x.fileId === fileId); if (m) return m; }
+  return null;
+}
+function updateMediaMeta(fileId, meta) {
+  if (!meta) return;
+  for (const t of Object.values(S.trips)) {
+    const m = (t.media || []).find(x => x.fileId === fileId);
+    if (!m) continue;
+    let ch = false;
+    [['durationMs', meta.durationMs], ['videoReady', meta.videoReady], ['hasThumbnail', meta.hasThumbnail], ['width', meta.width], ['height', meta.height]].forEach(([k, v]) => {
+      if (v != null && m[k] !== v) { m[k] = v; ch = true; }
+    });
+    if (meta.missing && !m.missing) { m.missing = true; ch = true; }
+    if (ch) commitTrip(t, { silent: true });
+  }
+}
+async function fetchBigImage(m, size) {
+  size = size || 1600;
+  const k = thumbKey(m.fileId, size);
+  if (TH.has(k)) return TH.get(k);
+  const c = await thumbIdb.get(k);
+  if (c) { TH.set(k, c); return c; }
+  const r = await api('mediaThumbs', { ids: [m.fileId], size });
+  const t = (r.thumbs || {})[m.fileId] || {};
+  TH.set(k, t.thumb || '');
+  if (t.thumb) thumbIdb.put(k, t.thumb);
+  updateMediaMeta(m.fileId, t.meta);
+  return t.thumb || '';
+}
+
+// ---------------------------------------------------------------------------
+// ホーム上部の未送信バー（通知役。操作は記録タブで）
+// ---------------------------------------------------------------------------
+function unsentBarHTML() {
+  const c = mqCounts();
+  if (!c.unsent && !c.sending && !c.failed) return `<div class="unsent-bar ok" id="unsentBar">📤 メディアの未送信はありません</div>`;
+  return `<div class="unsent-bar" id="unsentBar" data-act="goUnsent">📤 未送信 <b>${c.unsent}</b>件 ／ 送信中 <b>${c.sending}</b>件 ／ 失敗 <b class="${c.failed ? 'ng' : ''}">${c.failed}</b>件<span class="muted small">（記録タブで操作）</span></div>`;
+}
+function updateUnsentBar() { const el = document.getElementById('unsentBar'); if (el) el.outerHTML = unsentBarHTML(); }
+ACT.goUnsent = () => {
+  const q = MQ.items.find(x => x.state === 'failed') || MQ.items.find(x => x.state !== 'done');
+  if (q && S.trips[q.tripId]) S.curTripId = q.tripId;
+  S.ui.recordSub = 'media';
+  switchTab('record');
+};
+
+// ---------------------------------------------------------------------------
+// 記録タブ：アルバム／キュー／日別セクション＋グリッド
+// ---------------------------------------------------------------------------
+function albumsHTML(trip) {
+  return `<div class="albums">${trip.albums.map(a => `<a class="chip-btn" href="${esc(a.url)}" target="_blank" rel="noopener">📚 ${esc(a.title || 'アルバム')}</a>`).join('')}
+    <button class="chip-btn" data-act="albumEdit">${trip.albums.length ? '✏️' : '＋ 外部アルバム URL'}</button></div>`;
+}
+ACT.albumEdit = () => {
+  const t = curTrip();
+  const row = (a) => `<div class="row gap set-row al-row"><input class="al-title" value="${esc(a.title)}" placeholder="タイトル"><input class="al-url grow" value="${esc(a.url)}" placeholder="https://..." inputmode="url"><button class="op" data-act="stRowDel">✕</button></div>`;
+  openModal(`<div id="alRows">${t.albums.map(row).join('')}</div><button class="btn sm" data-act="albumAddRow">＋ 追加</button>
+    <label class="b mt" style="display:block">代表写真のリンク（任意）</label><input id="alCover" value="${esc(t.coverLink || '')}" placeholder="写真の URL（代表に設定した写真が無い時に使う）" inputmode="url">
+    <button class="btn primary block mt" data-act="albumSave">保存</button>`, { title: '📚 外部アルバム', data: { row } });
+};
+ACT.albumAddRow = () => { const { row } = topModal().data; $('#alRows', topModalBody()).insertAdjacentHTML('beforeend', row({ title: '', url: '' })); };
+ACT.albumSave = () => {
+  const t = curTrip(); const b = topModalBody();
+  t.albums = $$('.al-row', b).map(r => ({ id: uid('al'), title: $('.al-title', r).value.trim() || 'アルバム', url: $('.al-url', r).value.trim() })).filter(a => /^https?:\/\//.test(a.url));
+  t.coverLink = $('#alCover', b).value.trim();
+  closeModal(); commitTrip(t);
+};
+
+function queueHTML(trip) {
+  const list = MQ.items.filter(q => q.tripId === trip.id);
+  if (!list.length) return '';
+  const c = mqCounts(trip.id);
+  const sendable = list.filter(q => q.state === 'held' || q.state === 'failed');
+  return `<div class="card mq"><b>📤 アップロード</b><div class="muted small">保留 ${c.held}・送信待ち ${c.waiting}・送信中 ${c.sending}・失敗 ${c.failed}・完了 ${c.done}</div>
+    ${list.map(queueRowHTML).join('')}
+    <div class="row gap wrap mt">${sendable.length ? `<button class="btn sm primary" data-act="mqSendAll">保留・失敗をすべて送る（${sendable.length}）</button>` : ''}
+    ${c.done ? '<button class="btn sm ghost" data-act="mqClearDone">完了を消す</button>' : ''}</div>
+    <input type="file" id="mqRepick" style="display:none"></div>`;
+}
+function queueRowHTML(q) {
+  const need = (q.state === 'held' || q.state === 'failed') && !MQ.files.has(q.qid);
+  const pct = Math.round((q.progress || 0) * 100);
+  return `<div class="mq-row st-${q.state}" id="mq-${q.qid}">
+    <div class="row between"><span class="grow">${q.kind === 'video' ? '🎬' : '📷'} ${esc(q.name)} <span class="muted small">${fmtBytes(q.size)}</span></span><span class="mq-st">${MQ_LABEL[q.state]}</span></div>
+    ${q.state === 'sending' || (q.state === 'failed' && q.offset) ? `<div class="progress"><div style="width:${pct}%"></div></div>` : ''}
+    ${q.error ? `<div class="small ${q.state === 'failed' ? 'ng' : 'warn'}">${esc(q.error)}</div>` : ''}
+    ${q.state === 'held' ? '<div class="muted small">意図的に保留しています（送るボタンで送信）</div>' : ''}
+    <div class="row gap">${need ? `<button class="btn sm" data-act="mqRepick" data-id="${q.qid}">ファイルを選び直す${q.offset ? '（' + fmtBytes(q.offset) + 'から再開）' : ''}</button>` : ''}
+    ${(q.state === 'held' || q.state === 'failed') && !need ? `<button class="btn sm primary" data-act="mqSendOne" data-id="${q.qid}">${q.state === 'failed' ? '再試行' : '送る'}</button>` : ''}
+    ${q.state === 'waiting' ? `<button class="btn sm" data-act="mqHold" data-id="${q.qid}">保留に戻す</button>` : ''}
+    ${q.state !== 'sending' && q.state !== 'done' ? `<button class="btn sm ghost" data-act="mqDel" data-id="${q.qid}">取り消す</button>` : ''}</div></div>`;
+}
+function updateQueueRow(q) {
+  const el = document.getElementById('mq-' + q.qid);
+  if (!el) return;
+  const pct = Math.round((q.progress || 0) * 100);
+  const bar = el.querySelector('.progress > div');
+  if (bar && q.state === 'sending') { bar.style.width = pct + '%'; const st = el.querySelector('.mq-st'); if (st) st.textContent = MQ_LABEL[q.state] + ' ' + pct + '%'; return; }
+  el.outerHTML = queueRowHTML(q);
+}
+ACT.mqSendAll = () => { const t = curTrip(); mqSend(MQ.items.filter(q => q.tripId === t.id).map(q => q.qid)); };
+ACT.mqSendOne = (el) => mqSend([el.dataset.id]);
+ACT.mqHold = (el) => { const q = MQ.items.find(x => x.qid === el.dataset.id); if (q && q.state === 'waiting') { q.state = 'held'; mqSave(); render(); } };
+ACT.mqDel = async (el) => { if (await confirmDialog('この送信を取り消しますか？（Drive にはまだ保存されていません）')) mqRemove(el.dataset.id); };
+ACT.mqClearDone = () => { MQ.items = MQ.items.filter(q => q.state !== 'done'); mqSave(); render(); };
+ACT.mqRepick = (el) => { const inp = $('#mqRepick'); inp.dataset.qid = el.dataset.id; inp.value = ''; inp.click(); };
+document.addEventListener('change', (e) => {
+  if (e.target.id !== 'mqRepick') return;
+  const f = e.target.files[0]; const q = MQ.items.find(x => x.qid === e.target.dataset.qid);
+  if (!f || !q) return;
+  if (f.name !== q.name || f.size !== q.size) { toast('前と同じファイルを選んでください（' + q.name + '・' + fmtBytes(q.size) + '）'); return; }
+  MQ.files.set(q.qid, f);
+  q.state = 'waiting'; q.error = ''; mqSave(); render(); processQueue();
+});
+
+// 追加：ファイルを選ぶ → スポット（任意）と「今すぐ送る／保留」を選ぶ
+ACT.mediaAdd = (el) => { const inp = $('#mediaPick'); inp.dataset.date = el.dataset.date || ''; inp.value = ''; inp.click(); };
+document.addEventListener('change', (e) => {
+  if (e.target.id !== 'mediaPick') return;
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  const trip = curTrip();
+  const date = e.target.dataset.date || '';
+  const ms = S.settings.media || {};
+  const kinds = new Set(files.map(mediaKind));
+  const autoDefault = Array.from(kinds).every(k => k === 'video' ? ms.autoVideo : ms.autoPhoto);
+  openModal(`<div>${files.length}件（写真 ${files.filter(f => mediaKind(f) === 'photo').length}・動画 ${files.filter(f => mediaKind(f) === 'video').length}・合計 ${fmtBytes(files.reduce((s, f) => s + f.size, 0))}）</div>
+    <div class="form-grid mt"><label>スポット</label><select id="maSpot">${spotOptionsHTML(trip, '')}</select>
+    <label>日付</label><select id="maDate"><option value="">撮影日時から自動</option>${tripDays(trip).map((d, i) => `<option value="${d}" ${d === date ? 'selected' : ''}>${i + 1}日目 ${fmtDate(d)}</option>`).join('')}</select></div>
+    <div class="muted small mt">既定は「保留」です（設定で写真・動画ごとに自動送信にできます）。${(ms.confirmMB || 100)}MB 以上は送る前に確認します</div>
+    <div class="row gap mt"><button class="btn ${autoDefault ? 'primary' : ''} grow" data-act="maGo" data-send="1">今すぐ送る</button><button class="btn ${autoDefault ? '' : 'primary'} grow" data-act="maGo" data-send="0">保留に入れる</button></div>`,
+    { title: '📷 写真・動画を追加', data: { trip, files } });
+});
+ACT.maGo = async (el) => {
+  const { trip, files } = topModal().data; const b = topModalBody();
+  const sp = $('#maSpot', b).value; const date = $('#maDate', b).value;
+  const [kind, id] = sp ? sp.split(':') : ['', ''];
+  closeModal();
+  const n = await addFilesToQueue(trip, files, { sendNow: el.dataset.send === '1', spotId: kind === 's' ? id : '', itemId: kind === 'i' ? id : '', date });
+  toast(n + '件を' + (el.dataset.send === '1' ? '送信キューに入れました' : '保留に入れました'));
+};
+function spotOptionsHTML(trip, cur) {
+  const opts = trip.items.filter(i => i.kind !== 'move').map(i => {
+    const v = i.spotId ? 's:' + i.spotId : 'i:' + i.id;
+    return `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>📍 ${esc(itemInfo(trip, i).name)}</option>`;
+  });
+  return `<option value="">紐付けない</option>` + opts.join('');
+}
+function mediaSpotValue(m) { return m.spotId ? 's:' + m.spotId : m.itemId ? 'i:' + m.itemId : ''; }
+function mediaSpotName(trip, m) {
+  if (m.spotId) { const it = trip.items.find(i => i.spotId === m.spotId); if (it) return itemInfo(trip, it).name; const sp = S.spots[m.spotId]; return sp ? sp.name : ''; }
+  if (m.itemId) { const it = trip.items.find(i => i.id === m.itemId); return it ? itemInfo(trip, it).name : ''; }
+  return '';
+}
+
+function mediaGridHTML(trip, list) {
+  if (!list.length) return '';
+  return `<div class="mgrid">${list.map(m => `<button class="mtile ${m.kind}" data-act="mediaOpen" data-id="${m.id}">
+    ${mediaTileInner(m, 400)}
+    ${m.kind === 'video' ? `<span class="mt-badge">▶ ${fmtDurMs(m.durationMs)}</span>` : ''}
+    ${m.cover ? '<span class="mt-cover">代表</span>' : ''}${m.favorite ? '<span class="mt-fav">★</span>' : ''}</button>`).join('')}</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// 拡大表示・編集（タップで拡大、動画はその場でプレビュー再生）
+// ---------------------------------------------------------------------------
+ACT.mediaOpen = (el) => openMediaViewer(curTrip(), el.dataset.id);
+function openMediaViewer(trip, id) {
+  const m = trip.media.find(x => x.id === id);
+  if (!m) return;
+  const p = previewState(m);
+  const stage = m.kind === 'video'
+    ? (p === 'ok' ? `<iframe class="mv-video" src="https://drive.google.com/file/d/${encodeURIComponent(m.fileId)}/preview" allow="autoplay; fullscreen" allowfullscreen></iframe>`
+      : `<div class="mv-none">🎬<div>${p === 'none' ? 'この形式は Drive でプレビューできません（ProRes など）' : 'Drive で動画を処理中です。しばらくすると再生できます'}</div><a class="btn" href="${driveUrl(m)}" target="_blank" rel="noopener">Drive で開く</a></div>`)
+    : `<div class="mv-img" id="mvImg"><div class="muted">読み込み中…</div></div>`;
+  openModal(`${stage}
+    <div class="row gap wrap mt">
+      <button class="btn sm ${m.favorite ? 'primary' : ''}" data-act="mvFav">${m.favorite ? '★ お気に入り' : '☆ お気に入り'}</button>
+      ${m.kind === 'photo' ? `<button class="btn sm ${m.cover ? 'primary' : ''}" data-act="mvCover">${m.cover ? '代表写真です' : '代表に設定'}</button>` : ''}
+      <a class="btn sm" href="${driveUrl(m)}" target="_blank" rel="noopener">Drive で開く</a>
+      <button class="btn sm danger" data-act="mvDel">削除</button></div>
+    <div class="form-grid mt">
+      <label>日付</label><div class="row gap"><input type="date" id="mvDate" value="${esc(m.date || '')}"><span class="muted small">${m.dateSource === 'exif' ? '撮影日時（EXIF）' : m.dateSource === 'manual' ? '手動' : 'アップロード日'}${m.takenAt ? ' ' + esc(m.takenAt.replace('T', ' ').slice(0, 16)) : ''}</span></div>
+      <label>スポット</label><select id="mvSpot">${spotOptionsHTML(trip, mediaSpotValue(m))}</select>
+      <label>コメント</label><textarea id="mvComment" rows="2">${esc(m.comment || '')}</textarea>
+    </div>
+    <div class="muted small">${esc(m.name)}・${fmtBytes(m.size)}${m.width ? '・' + m.width + '×' + m.height : ''}${m.durationMs ? '・' + fmtDurMs(m.durationMs) : ''}</div>
+    <button class="btn primary block mt" data-act="mvSave">保存</button>`,
+    { title: (m.kind === 'video' ? '🎬 ' : '📷 ') + esc(m.name), full: true, data: { trip, m },
+      onMount: async (body) => {
+        if (m.kind !== 'photo') return;
+        try {
+          const src = await fetchBigImage(m, 1600);
+          const box = $('#mvImg', body); if (!box) return;
+          box.innerHTML = src ? `<img src="${src}" alt="">` : `<div class="mv-none">📷<div>${esc(m.name)}</div><div class="muted small">サムネイルを作れませんでした</div><a class="btn" href="${driveUrl(m)}" target="_blank" rel="noopener">Drive で開く</a></div>`;
+        } catch (e) { const box = $('#mvImg', body); if (box) box.textContent = e.message; }
+      } });
+}
+ACT.mvFav = () => { const { trip, m } = topModal().data; m.favorite = !m.favorite; commitTrip(trip); closeModal(); openMediaViewer(trip, m.id); };
+ACT.mvCover = () => {
+  const { trip, m } = topModal().data;
+  const on = !m.cover;
+  trip.media.forEach(x => { x.cover = false; });
+  m.cover = on;
+  commitTrip(trip); closeModal(); openMediaViewer(trip, m.id);
+  if (on) toast('代表写真にしました（旅行一覧・年別レポートでも使います）');
+};
+ACT.mvSave = () => {
+  const { trip, m } = topModal().data; const b = topModalBody();
+  const d = $('#mvDate', b).value;
+  if (d !== (m.date || '')) { m.date = d; m.dateSource = 'manual'; }
+  const sp = $('#mvSpot', b).value; const [k, id] = sp ? sp.split(':') : ['', ''];
+  m.spotId = k === 's' ? id : ''; m.itemId = k === 'i' ? id : '';
+  m.comment = $('#mvComment', b).value;
+  closeModal(); commitTrip(trip);
+};
+ACT.mvDel = async () => {
+  const { trip, m } = topModal().data;
+  if (!(await confirmDialog('このメディアを削除しますか？\nDrive のファイルもゴミ箱へ移します（30日以内なら Drive のゴミ箱から戻せます）'))) return;
+  try { await api('mediaTrash', { fileId: m.fileId }); }
+  catch (e) { if (!(await confirmDialog('Drive のゴミ箱へ移せませんでした（' + e.message + '）。旅帳からだけ外しますか？'))) return; }
+  trip.media = trip.media.filter(x => x !== m);
+  Object.values(trip.visual.dayPicks || {}).forEach(arr => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i] === m.id) arr.splice(i, 1); });
+  if (trip.visual.coverMediaId === m.id) trip.visual.coverMediaId = '';
+  closeModal(); commitTrip(trip); toast('削除しました');
+};
+
+// ---------------------------------------------------------------------------
+// デモモード（GAS に置く前）の模擬アップロード。サムネイルは端末で作る
+// ---------------------------------------------------------------------------
+function isMockUri(u) { return /^mock-upload:/.test(u || ''); }
+let mockThumbMaker = null;
+if (!IS_GAS) {
+  mockThumbMaker = async (qid, f) => {
+    if (mediaKind(f) !== 'photo' || typeof createImageBitmap !== 'function') return;
+    try {
+      const bmp = await createImageBitmap(f);
+      const k = Math.min(1, 800 / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      MockMedia.pendingThumbs[qid] = c.toDataURL('image/jpeg', 0.8);
+    } catch (e) {}
+  };
+}
+async function mockPut(q, file, start, end) {
+  await new Promise(r => setTimeout(r, 60));
+  if (end + 1 >= file.size) {
+    const fo = MockMedia.finish(q, file);
+    return { status: 200, body: JSON.stringify(fo) };
+  }
+  return { status: 308, range: 'bytes=0-' + end };
+}
+async function mockStatus(q, file) { return { offset: q.offset || 0 }; }
+
+// ---- 15_visual.js ----
+// ============================================================================
+// 15 ビジュアルモード（v2.0）：見せるための画面。テーマはトラベルマガジン風の1つ（V1。THEMES に足せる作り）
+//   ・旅帳モード：表紙 → 日別ページを横にめくって読む（紙をめくるアニメーション）
+//   ・Instagram モード：ストーリー比率 9:16（1080×1920）の画像に書き出す（表紙＋日別の複数枚）
+// ============================================================================
+const THEMES = {
+  magazine: {
+    name: 'トラベルマガジン', paper: '#f5efe4', ink: '#1c1917', accent: '#b45309', sub: '#57534e',
+    serif: '"Playfair Display", "Noto Serif JP", "Hiragino Mincho ProN", Georgia, serif',
+    sans: '"Noto Sans JP", -apple-system, "Hiragino Sans", sans-serif'
+  }
+};
+const VTHEME = THEMES.magazine;
+
+// ---- 英語タイトル（V2）：入力があればそれ、無ければ自動英語化（GAS の翻訳）、使えなければかなをローマ字に ----
+const KANA = { 'きゃ':'kya','きゅ':'kyu','きょ':'kyo','しゃ':'sha','しゅ':'shu','しょ':'sho','ちゃ':'cha','ちゅ':'chu','ちょ':'cho','にゃ':'nya','にゅ':'nyu','にょ':'nyo','ひゃ':'hya','ひゅ':'hyu','ひょ':'hyo','みゃ':'mya','みゅ':'myu','みょ':'myo','りゃ':'rya','りゅ':'ryu','りょ':'ryo','ぎゃ':'gya','ぎゅ':'gyu','ぎょ':'gyo','じゃ':'ja','じゅ':'ju','じょ':'jo','びゃ':'bya','びゅ':'byu','びょ':'byo','ぴゃ':'pya','ぴゅ':'pyu','ぴょ':'pyo','ふぁ':'fa','ふぃ':'fi','ふぇ':'fe','ふぉ':'fo','てぃ':'ti','でぃ':'di','うぃ':'wi','うぇ':'we','ゔぁ':'va',
+  'あ':'a','い':'i','う':'u','え':'e','お':'o','か':'ka','き':'ki','く':'ku','け':'ke','こ':'ko','さ':'sa','し':'shi','す':'su','せ':'se','そ':'so','た':'ta','ち':'chi','つ':'tsu','て':'te','と':'to','な':'na','に':'ni','ぬ':'nu','ね':'ne','の':'no','は':'ha','ひ':'hi','ふ':'fu','へ':'he','ほ':'ho','ま':'ma','み':'mi','む':'mu','め':'me','も':'mo','や':'ya','ゆ':'yu','よ':'yo','ら':'ra','り':'ri','る':'ru','れ':'re','ろ':'ro','わ':'wa','を':'o','ん':'n',
+  'が':'ga','ぎ':'gi','ぐ':'gu','げ':'ge','ご':'go','ざ':'za','じ':'ji','ず':'zu','ぜ':'ze','ぞ':'zo','だ':'da','ぢ':'ji','づ':'zu','で':'de','ど':'do','ば':'ba','び':'bi','ぶ':'bu','べ':'be','ぼ':'bo','ぱ':'pa','ぴ':'pi','ぷ':'pu','ぺ':'pe','ぽ':'po','ぁ':'a','ぃ':'i','ぅ':'u','ぇ':'e','ぉ':'o','ゃ':'ya','ゅ':'yu','ょ':'yo','ゔ':'vu' };
+function kanaToRomaji(src) {
+  // カタカナはひらがなにそろえる
+  const s = String(src || '').replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const two = s.substr(i, 2);
+    if (KANA[two]) { out += KANA[two]; i++; continue; }
+    const c = s[i];
+    if (c === 'っ' || c === 'ッ') { const nx = KANA[s.substr(i + 1, 2)] || KANA[s[i + 1]] || ''; out += nx ? nx[0] : ''; continue; }
+    if (c === 'ー') { const m = out.match(/[aeiou]$/); out += m ? m[0] : ''; continue; }
+    out += KANA[c] != null ? KANA[c] : c;
+  }
+  return out;
+}
+function displayTitleEn(trip) {
+  if (trip.titleEn && trip.titleEn.trim()) return trip.titleEn.trim().toUpperCase();
+  if (trip.titleEnAuto && trip.titleEnAutoSrc === trip.title) return trip.titleEnAuto.toUpperCase();
+  return kanaToRomaji(trip.title).toUpperCase();
+}
+async function ensureTitleEn(trip) {
+  if ((trip.titleEn && trip.titleEn.trim()) || trip.titleEnAutoSrc === trip.title) return;
+  try {
+    const r = await api('translateTitle', { text: trip.title });
+    if (r.text) { trip.titleEnAuto = r.text.toUpperCase(); trip.titleEnAutoSrc = trip.title; commitTrip(trip, { silent: true }); }
+  } catch (e) { /* 使えなければローマ字表示のまま */ }
+}
+
+// ---- ページの組み立て ----
+function vPhotoPool(list) { return list.filter(m => m.kind === 'photo' && !m.missing).concat(list.filter(m => m.kind === 'video' && !m.missing)); }
+function visualCover(trip) {
+  const id = trip.visual.coverMediaId;
+  return (id && trip.media.find(m => m.id === id)) || coverMedia(trip) || null;   // 代表 → お気に入り → 未設定なら書き出し時に選ぶ（V4）
+}
+// 日別ページの写真：お気に入り → 代表 → 時系列 の優先で自動選出（V3）。手動の差し替えを優先
+function visualDayPicks(trip, date) {
+  const dayList = mediaByDay(trip).by[date] || [];
+  const manual = (trip.visual.dayPicks[date] || []).map(id => trip.media.find(m => m.id === id)).filter(Boolean);
+  const auto = vPhotoPool(dayList.filter(m => m.favorite)).concat(vPhotoPool(dayList.filter(m => m.cover && !m.favorite)), vPhotoPool(mediaSorted(dayList.filter(m => !m.favorite && !m.cover))));
+  const out = manual.slice(0, 3);
+  auto.forEach(m => { if (out.length < 3 && !out.includes(m)) out.push(m); });
+  return out;
+}
+function dayPlace(trip, date) {
+  const names = [];
+  dayItems(trip, date).forEach(it => { if (it.kind !== 'move') names.push(itemInfo(trip, it).name); });
+  trip.items.filter(it => it.visited && it.visited.date === date && !names.includes(itemInfo(trip, it).name)).forEach(it => names.push(itemInfo(trip, it).name));
+  return names.slice(0, 3).join(' ・ ') || trip.area || '';
+}
+function dayLine(trip, date) {
+  const memo = String(trip.record.days[date] || '').split('\n').map(s => s.trim()).find(Boolean);
+  if (memo) return memo.slice(0, 60);
+  const v = trip.items.find(it => it.visited && it.visited.date === date && it.visited.comment);
+  return v ? v.visited.comment.slice(0, 60) : '';
+}
+const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+function enDate(d) { const x = parseYmd(d); return MON[x.getMonth()] + ' ' + x.getDate(); }
+function enRange(trip) {
+  if (!trip.startDate) return '';
+  const a = parseYmd(trip.startDate), b = parseYmd(trip.endDate || trip.startDate);
+  if (trip.startDate === (trip.endDate || trip.startDate)) return enDate(trip.startDate) + ', ' + a.getFullYear();
+  return enDate(trip.startDate) + ' – ' + (a.getMonth() === b.getMonth() ? b.getDate() : enDate(trip.endDate)) + ', ' + b.getFullYear();
+}
+function visualPages(trip) {
+  const pages = [{ type: 'cover' }];
+  tripDays(trip).forEach((d, i) => {
+    const has = (mediaByDay(trip).by[d] || []).length || trip.record.days[d];
+    if (has) pages.push({ type: 'day', date: d, index: i + 1 });
+  });
+  return pages;
+}
+
+// ---- 旅帳モード（アプリ内で横にめくって読む） ----
+const VIS = { trip: null, pages: [], i: 0, mode: 'book', busy: false };
+ACT.openVisual = async () => {
+  const trip = curTrip(); if (!trip) return;
+  VIS.trip = trip; VIS.pages = visualPages(trip); VIS.i = 0; VIS.mode = 'book';
+  let el = document.getElementById('visual');
+  if (!el) { el = document.createElement('div'); el.id = 'visual'; document.body.appendChild(el); }
+  el.className = 'vis open';
+  document.body.classList.add('modal-open');
+  renderVisual();
+  ensureTitleEn(trip).then(() => { if (VIS.trip === trip) renderVisual(); });
+};
+ACT.closeVisual = () => { const el = document.getElementById('visual'); if (el) el.className = 'vis'; document.body.classList.remove('modal-open'); VIS.trip = null; };
+ACT.visMode = (el) => { VIS.mode = el.dataset.v; renderVisual(); };
+function renderVisual() {
+  const el = document.getElementById('visual'); if (!el || !VIS.trip) return;
+  const t = VIS.trip;
+  el.innerHTML = `<div class="vis-head"><button class="icon-btn light" data-act="closeVisual">✕</button>
+    <div class="seg vis-seg"><button class="seg-btn ${VIS.mode === 'book' ? 'on' : ''}" data-act="visMode" data-v="book">📖 旅帳</button><button class="seg-btn ${VIS.mode === 'insta' ? 'on' : ''}" data-act="visMode" data-v="insta">📱 Instagram</button></div>
+    <button class="icon-btn light" data-act="visTitleEdit" title="英語タイトル">Aa</button></div>
+    ${VIS.mode === 'book' ? `<div class="vis-stage" id="visStage">${VIS.pages.map((p, i) => `<div class="vpage ${i === VIS.i ? 'cur' : i < VIS.i ? 'gone' : 'next'}" data-i="${i}">${pageHTML(t, p)}</div>`).join('')}</div>
+      <div class="vis-nav"><button class="btn" data-act="visPrev" ${VIS.i === 0 ? 'disabled' : ''}>‹</button><span>${VIS.i + 1} / ${VIS.pages.length}</span><button class="btn" data-act="visNext" ${VIS.i >= VIS.pages.length - 1 ? 'disabled' : ''}>›</button></div>
+      <div class="vis-hint">写真をタップで差し替え ／ 横にスワイプでページをめくる</div>`
+      : instaPanelHTML(t)}`;
+  if (VIS.mode === 'book') { bindSwipe(document.getElementById('visStage')); loadVisImages(el); }
+  else drawInstaPreviews();
+}
+function vImg(m, cls, slot) {
+  if (!m) return `<div class="vimg empty ${cls}" ${slot}><span>＋ 写真を選ぶ</span></div>`;
+  return `<div class="vimg ${cls}" data-vimg="${esc(m.id)}" ${slot}>${m.kind === 'video' ? '<span class="vvid">▶</span>' : ''}</div>`;
+}
+function pageHTML(t, p) {
+  if (p.type === 'cover') {
+    const c = visualCover(t);
+    return `<div class="vcover">${vImg(c, 'full', 'data-act="visPickCover"')}
+      <div class="vcover-text"><div class="vkicker">TRAVEL JOURNAL</div><div class="vtitle">${esc(displayTitleEn(t))}</div>
+      <div class="vmeta">${esc(enRange(t))}${t.area ? ' ・ ' + esc(t.area) : ''}</div>${t.record.comment ? `<div class="vline">${esc(String(t.record.comment).split('\n')[0].slice(0, 60))}</div>` : ''}</div></div>`;
+  }
+  const picks = visualDayPicks(t, p.date);
+  const n = Math.max(1, Math.min(3, picks.length || 1));
+  return `<div class="vday"><div class="vday-head"><span class="vdaynum">DAY ${p.index}</span><span class="vdate">${esc(enDate(p.date))}</span></div>
+    <div class="vgrid n${n}">${Array.from({ length: n }, (_, k) => vImg(picks[k], 's' + k, `data-act="visPickDay" data-d="${p.date}" data-k="${k}"`)).join('')}</div>
+    <div class="vplace">${esc(dayPlace(t, p.date))}</div><div class="vline">${esc(dayLine(t, p.date))}</div></div>`;
+}
+async function loadVisImages(root) {
+  for (const el of Array.from(root.querySelectorAll('[data-vimg]'))) {
+    const m = VIS.trip.media.find(x => x.id === el.dataset.vimg); if (!m) continue;
+    try { const src = await fetchBigImage(m, 1600); if (src) el.style.backgroundImage = `url("${src}")`; else el.innerHTML = '<span class="muted">画像なし</span>'; } catch (e) {}
+  }
+}
+ACT.visNext = () => flip(1);
+ACT.visPrev = () => flip(-1);
+function flip(dir) {
+  const ni = VIS.i + dir;
+  if (VIS.busy || ni < 0 || ni >= VIS.pages.length) return;
+  VIS.busy = true;
+  const pages = document.querySelectorAll('#visStage .vpage');
+  if (dir > 0) { pages[VIS.i].classList.add('turning'); pages[VIS.i].classList.replace('cur', 'gone'); pages[ni].classList.replace('next', 'cur'); }
+  else { pages[ni].classList.add('turning'); pages[ni].classList.replace('gone', 'cur'); pages[VIS.i].classList.replace('cur', 'next'); }
+  VIS.i = ni;
+  setTimeout(() => { VIS.busy = false; document.querySelectorAll('#visStage .turning').forEach(x => x.classList.remove('turning')); const nav = document.querySelector('.vis-nav span'); if (nav) nav.textContent = (VIS.i + 1) + ' / ' + VIS.pages.length;
+    const [pv, nx] = document.querySelectorAll('.vis-nav .btn'); if (pv) pv.disabled = VIS.i === 0; if (nx) nx.disabled = VIS.i >= VIS.pages.length - 1; }, 650);
+}
+function bindSwipe(el) {
+  if (!el) return;
+  let x0 = null, y0 = null;
+  el.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; });
+  el.addEventListener('pointerup', e => {
+    if (x0 == null) return;
+    const dx = e.clientX - x0, dy = e.clientY - y0; x0 = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { e.preventDefault(); flip(dx < 0 ? 1 : -1); }
+  });
+}
+// 手動の差し替え（V3）・表紙の選択（V4）
+function openPhotoPicker(title, list, onPick) {
+  openModal(list.length ? `<div class="mgrid">${list.map(m => `<button class="mtile" data-act="visPicked" data-id="${m.id}">${mediaTileInner(m, 400)}${m.favorite ? '<span class="mt-fav">★</span>' : ''}</button>`).join('')}</div>`
+    : '<div class="muted pad">選べる写真がありません。記録タブで写真を追加してください</div>', { title, data: { onPick }, onMount: (b) => loadThumbs(b) });
+}
+ACT.visPicked = (el) => { const { onPick } = topModal().data; closeModal(); onPick(el.dataset.id); };
+ACT.visPickCover = () => {
+  const t = VIS.trip;
+  openPhotoPicker('表紙の写真を選ぶ', vPhotoPool(mediaSorted(t.media)), id => { t.visual.coverMediaId = id; commitTrip(t, { silent: true }); renderVisual(); });
+};
+ACT.visPickDay = (el) => {
+  const t = VIS.trip, d = el.dataset.d, k = Number(el.dataset.k);
+  openPhotoPicker(fmtDate(d) + 'の写真を選ぶ', vPhotoPool(mediaByDay(t).by[d] || []), id => {
+    const cur = visualDayPicks(t, d).map(m => m.id);
+    cur[k] = id;
+    t.visual.dayPicks[d] = cur.filter((x, i) => x && cur.indexOf(x) === i);
+    commitTrip(t, { silent: true }); renderVisual();
+  });
+};
+ACT.visTitleEdit = () => {
+  const t = VIS.trip;
+  openModal(`<div class="form-grid"><label>英語タイトル</label><input id="vtEn" value="${esc(t.titleEn || '')}" placeholder="${esc(displayTitleEn(t))}"></div>
+    <div class="muted small">空欄なら旅のタイトルから自動で英語表示します（今は「${esc(displayTitleEn(t))}」）</div>
+    <button class="btn primary block mt" data-act="vtSave">保存</button>`, { title: '表紙の文字' });
+};
+ACT.vtSave = () => { const t = VIS.trip; t.titleEn = $('#vtEn', topModalBody()).value.trim(); closeModal(); commitTrip(t, { silent: true }); renderVisual(); };
+
+// ---- Instagram モード（9:16・1080×1920 の画像に書き出し） ----
+function instaPanelHTML(t) {
+  const needCover = !visualCover(t);
+  return `<div class="insta">${needCover ? `<div class="alert warn">表紙の写真が決まっていません（代表・お気に入りなし）。<button class="btn sm" data-act="visPickCover">表紙を選ぶ</button></div>` : ''}
+    <div class="insta-previews">${VIS.pages.map((p, i) => `<canvas class="ipv" width="270" height="480" data-i="${i}"></canvas>`).join('')}</div>
+    <button class="btn primary block mt" data-act="instaExport" ${needCover ? 'disabled' : ''}>📤 ${VIS.pages.length}枚を書き出す（1080×1920）</button>
+    <div class="muted small">iPhone では共有シートから「画像を保存」で写真アプリに入ります</div><div id="instaOut"></div></div>`;
+}
+async function drawInstaPreviews() {
+  await ensureFonts();
+  for (const c of Array.from(document.querySelectorAll('.ipv'))) {
+    const big = await renderPageCanvas(VIS.trip, VIS.pages[Number(c.dataset.i)]);
+    c.getContext('2d').drawImage(big, 0, 0, c.width, c.height);
+  }
+}
+let fontsReady = null;
+function ensureFonts() {
+  if (!fontsReady) fontsReady = Promise.all(['700 120px "Playfair Display"', '400 40px "Noto Serif JP"', '700 40px "Noto Sans JP"'].map(f => document.fonts && document.fonts.load ? document.fonts.load(f).catch(() => {}) : null)).catch(() => {});
+  return fontsReady;
+}
+function loadImg(src) { return new Promise((res) => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
+function drawCoverFit(ctx, img, x, y, w, h) {
+  if (!img) { ctx.fillStyle = '#d6d3d1'; ctx.fillRect(x, y, w, h); return; }
+  const k = Math.max(w / img.width, h / img.height);
+  const sw = w / k, sh = h / k;
+  ctx.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, x, y, w, h);
+}
+function wrapText(ctx, text, maxW) {
+  const words = String(text).split(/(\s+)/); const lines = []; let cur = '';
+  words.forEach(w => { const t2 = cur + w; if (ctx.measureText(t2).width > maxW && cur.trim()) { lines.push(cur.trim()); cur = w.trim(); } else cur = t2; });
+  if (cur.trim()) lines.push(cur.trim());
+  // 1語が長すぎる時は文字で折る
+  return lines.flatMap(l => { if (ctx.measureText(l).width <= maxW) return [l]; const out = []; let c = ''; for (const ch of l) { if (ctx.measureText(c + ch).width > maxW) { out.push(c); c = ch; } else c += ch; } if (c) out.push(c); return out; });
+}
+async function mediaImage(m) { return m ? loadImg(await fetchBigImage(m, 1600).catch(() => '')) : null; }
+async function renderPageCanvas(t, p) {
+  const W = 1080, H = 1920, th = VTHEME;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  if (p.type === 'cover') {
+    drawCoverFit(ctx, await mediaImage(visualCover(t)), 0, 0, W, H);
+    const g = ctx.createLinearGradient(0, H * 0.45, 0, H); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.72)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#fff'; ctx.textBaseline = 'alphabetic';
+    ctx.font = `600 34px ${th.sans}`; ctx.letterSpacing = '8px'; ctx.fillText('TRAVEL JOURNAL', 80, 140); ctx.letterSpacing = '0px';
+    let size = 150; ctx.font = `700 ${size}px ${th.serif}`;
+    let lines = wrapText(ctx, displayTitleEn(t), W - 160);
+    while (lines.length > 3 && size > 70) { size -= 10; ctx.font = `700 ${size}px ${th.serif}`; lines = wrapText(ctx, displayTitleEn(t), W - 160); }
+    let y = H - 300 - (lines.length - 1) * size * 1.05;
+    lines.forEach(l => { ctx.fillText(l, 80, y); y += size * 1.05; });
+    ctx.font = `500 40px ${th.sans}`; ctx.fillText([enRange(t), t.area].filter(Boolean).join('  ・  '), 80, H - 190);
+    if (t.record.comment) { ctx.font = `400 40px ${th.serif}`; wrapText(ctx, String(t.record.comment).split('\n')[0].slice(0, 60), W - 160).slice(0, 2).forEach((l, i) => ctx.fillText(l, 80, H - 120 + i * 52)); }
+    return c;
+  }
+  ctx.fillStyle = th.paper; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = th.accent; ctx.font = `700 46px ${th.sans}`; ctx.letterSpacing = '6px'; ctx.fillText('DAY ' + p.index, 80, 150); ctx.letterSpacing = '0px';
+  ctx.fillStyle = th.ink; ctx.font = `700 96px ${th.serif}`; ctx.fillText(enDate(p.date), 80, 260);
+  const picks = visualDayPicks(t, p.date);
+  const imgs = await Promise.all(picks.map(mediaImage));
+  const X = 80, Y = 320, Wd = W - 160, Hd = 1180;
+  ctx.save();
+  if (imgs.length <= 1) drawCoverFit(ctx, imgs[0], X, Y, Wd, Hd);
+  else if (imgs.length === 2) { drawCoverFit(ctx, imgs[0], X, Y, Wd, Hd / 2 - 12); drawCoverFit(ctx, imgs[1], X, Y + Hd / 2 + 12, Wd, Hd / 2 - 12); }
+  else { drawCoverFit(ctx, imgs[0], X, Y, Wd, Hd * 0.6); const w2 = Wd / 2 - 12; drawCoverFit(ctx, imgs[1], X, Y + Hd * 0.6 + 24, w2, Hd * 0.4 - 24); drawCoverFit(ctx, imgs[2], X + w2 + 24, Y + Hd * 0.6 + 24, w2, Hd * 0.4 - 24); }
+  ctx.restore();
+  ctx.fillStyle = th.ink; ctx.font = `700 44px ${th.sans}`;
+  wrapText(ctx, dayPlace(t, p.date), W - 160).slice(0, 2).forEach((l, i) => ctx.fillText(l, 80, 1600 + i * 58));
+  ctx.fillStyle = th.sub; ctx.font = `400 42px ${th.serif}`;
+  wrapText(ctx, dayLine(t, p.date), W - 160).slice(0, 2).forEach((l, i) => ctx.fillText(l, 80, 1740 + i * 58));
+  ctx.fillStyle = th.accent; ctx.font = `600 30px ${th.sans}`; ctx.fillText(displayTitleEn(t), 80, 1870);
+  return c;
+}
+function canvasBlob(c) { return new Promise(r => c.toBlob(b => r(b), 'image/jpeg', 0.92)); }
+async function exportCanvases(canvases, baseName) {
+  const files = [];
+  for (let i = 0; i < canvases.length; i++) { const b = await canvasBlob(canvases[i]); files.push(new File([b], `${baseName}_${pad2(i + 1)}.jpg`, { type: 'image/jpeg' })); }
+  if (navigator.canShare && navigator.canShare({ files })) {
+    try { await navigator.share({ files, title: baseName }); return files; } catch (e) { if (e && e.name === 'AbortError') return files; }
+  }
+  const out = document.getElementById('instaOut') || topModalBody();
+  if (out) out.innerHTML = '<div class="muted small mt">長押しで保存、またはリンクからダウンロードできます</div>' + files.map(f => { const u = URL.createObjectURL(f); return `<a href="${u}" download="${esc(f.name)}"><img class="iout" src="${u}" alt=""></a>`; }).join('');
+  return files;
+}
+ACT.instaExport = async (el) => {
+  const t = VIS.trip;
+  if (!visualCover(t)) return toast('表紙の写真を選んでください');
+  el.disabled = true; el.textContent = '書き出し中…';
+  try {
+    await ensureFonts();
+    const cs = [];
+    for (const p of VIS.pages) cs.push(await renderPageCanvas(t, p));
+    const files = await exportCanvases(cs, (displayTitleEn(t) || 'TRIP').replace(/\s+/g, '_'));
+    toast(files.length + '枚を書き出しました');
+  } catch (e) { toast('書き出しに失敗：' + e.message); }
+  el.disabled = false; el.textContent = `📤 ${VIS.pages.length}枚を書き出す（1080×1920）`;
+};
+
+// ---- 16_collection.js ----
+// ============================================================================
+// 16 コレクション（v2.0）：全旅横断の1画面（統計・マップ・都道府県・年別レポート）
+//   対象：旅行中・精算・記録中・完了の旅（検討中・計画中は除く。C1）
+// ============================================================================
+const PREFS = ['北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県', '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県', '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県', '静岡県', '愛知県', '三重県', '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県', '鳥取県', '島根県', '岡山県', '広島県', '山口県', '徳島県', '香川県', '愛媛県', '高知県', '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'];
+const COLLECT_STATUS = ['旅行中', '精算・記録中', '完了'];
+
+function collectionTrips() { return Object.values(S.trips).filter(t => !t._deleted && COLLECT_STATUS.includes(tripStatus(t))); }
+function tripJpy(t) { const r = settleToJpy(t) || 1; return budgetSummary(t).total * r; }
+function statsOf(trips) {
+  const spots = new Set();
+  let days = 0, km = 0, spend = 0, photos = 0, videos = 0;
+  trips.forEach(t => {
+    days += tripDays(t).length; km += totalDistance(t); spend += tripJpy(t);
+    t.items.filter(i => i.visited).forEach(i => spots.add(i.spotId ? 's:' + i.spotId : t.id + ':' + i.id));
+    t.media.forEach(m => { if (m.kind === 'video') videos++; else photos++; });
+  });
+  return { trips: trips.length, days, km, spend, spots: spots.size, photos, videos };
+}
+// 都道府県：スポット帳で「行った」になったスポットの所在地で数える（通過や旅の作成では増えない）
+function visitedPlaces() {
+  const pref = {}, abroad = {};
+  Object.values(S.spots).filter(s => s.status === 'visited').forEach(s => {
+    const p = PREFS.find(x => x === s.prefecture) || PREFS.find(x => s.prefecture && x.startsWith(s.prefecture)) || PREFS.find(x => String(s.address || '').startsWith(x));
+    if (p) (pref[p] = pref[p] || []).push(s);
+    else if (s.prefecture || s.address) { const k = s.prefecture || '（海外・その他）'; (abroad[k] = abroad[k] || []).push(s); }
+  });
+  return { pref, abroad };
+}
+// スポットに紐付いた写真（全旅から）。ピンのサムネイルに使う（C2）
+function spotPhoto(spotId) {
+  for (const t of Object.values(S.trips)) {
+    const m = mediaSorted((t.media || []).filter(x => x.spotId === spotId && x.kind === 'photo')).find(x => x.favorite) || (t.media || []).find(x => x.spotId === spotId && x.kind === 'photo');
+    if (m) return m;
+  }
+  return null;
+}
+
+function renderCollection() {
+  const trips = collectionTrips();
+  const st = statsOf(trips);
+  const vp = visitedPlaces();
+  const nPref = Object.keys(vp.pref).length;
+  let h = `<div class="row between"><button class="btn sm" data-act="tab" data-tab="home">‹ ホーム</button><b class="h2">🗂 コレクション</b><span></span></div>
+    <div class="muted small mt">旅行中・精算・記録中・完了の旅が対象（検討中・計画中は含めない）</div>
+    <div class="card"><div class="stat-grid">
+      ${[['総旅数', st.trips + '回'], ['総日数', st.days + '日'], ['総走行距離', st.km ? st.km.toLocaleString() + 'km' : '—'], ['総支出', fmtMoney(Math.round(st.spend), 'JPY')],
+        ['行ったスポット', st.spots + '件'], ['都道府県', nPref + ' / 47'], ['写真', st.photos + '枚'], ['動画', st.videos + '本']].map(([k, v]) => `<div><div class="muted small">${k}</div><div class="h3">${v}</div></div>`).join('')}
+    </div></div>`;
+  h += `<div class="section-title">🗺 行ったスポット</div><div class="map-wrap col-map"><div id="colMap"></div></div>
+    <div class="muted small">スポット帳で「行った」になったスポット。写真を紐付けたスポットはピンに写真が出ます</div>`;
+  h += `<div class="section-title">🗾 都道府県の訪問状況（${nPref}/47）</div><div class="pref-grid">${PREFS.map(p => `<span class="pref ${vp.pref[p] ? 'on' : ''}" title="${vp.pref[p] ? vp.pref[p].length + '件' : ''}">${p.replace(/[都府県]$/, '')}${vp.pref[p] ? `<small>${vp.pref[p].length}</small>` : ''}</span>`).join('')}</div>`;
+  const ab = Object.keys(vp.abroad);
+  if (ab.length) h += `<div class="muted small mt">海外・その他：${ab.map(k => esc(k) + '（' + vp.abroad[k].length + '）').join('、')}</div>`;
+  if (S.spotsState !== 'ok') h += `<div class="muted small">スポット帳を読み込むと表示されます</div>`;
+  // 年別レポート
+  const years = Array.from(new Set(trips.map(t => (t.startDate || '').slice(0, 4)).filter(Boolean))).sort().reverse();
+  h += `<div class="section-title">📅 年別レポート</div>`;
+  if (!years.length) h += emptyHTML('📅', '対象の旅がまだありません');
+  years.forEach(y => {
+    const ts = trips.filter(t => (t.startDate || '').startsWith(y)).sort(tripSort);
+    const s = statsOf(ts);
+    h += `<div class="card year"><div class="row between"><div class="h2">${y}</div><button class="btn sm" data-act="yearExport" data-y="${y}">📱 Instagram で書き出し</button></div>
+      <div class="muted small">${s.trips}回 ・ ${s.days}日 ・ ${fmtMoney(Math.round(s.spend), 'JPY')} ・ ${s.km ? s.km.toLocaleString() + 'km ・ ' : ''}スポット${s.spots}件</div>
+      <div class="ygrid">${ts.map(t => { const c = coverOrFirst(t); return `<button class="ytrip" data-act="tripSelect" data-id="${t.id}">${c ? mediaTileInner(c, 400) : (isImageUrl(t.coverLink) ? `<img src="${esc(t.coverLink)}" alt="">` : `<div class="mt-fb">${esc(tripEmoji(t))}</div>`)}<span>${esc(t.title)}</span></button>`; }).join('')}</div></div>`;
+  });
+  setTimeout(() => { drawCollectionMap(); loadThumbs(document.getElementById('page-collection')); }, 0);
+  return h;
+}
+ACT.openCollection = () => { if (S.spotsState !== 'ok') loadSpots(true); switchTab('collection'); };
+
+let COLMAP = null, colLayer = null;
+async function drawCollectionMap() {
+  const el = document.getElementById('colMap');
+  if (!el) return;
+  if (typeof L === 'undefined') { el.innerHTML = '<div class="map-fallback">地図を読み込めません（オフライン？）</div>'; return; }
+  if (COLMAP && COLMAP.getContainer() !== el) { COLMAP.remove(); COLMAP = null; }
+  if (!COLMAP) {
+    COLMAP = L.map(el, { zoomControl: false }).setView([36.2, 138.2], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(COLMAP);
+    colLayer = L.layerGroup().addTo(COLMAP);
+  }
+  colLayer.clearLayers();
+  const pts = [];
+  const pins = Object.values(S.spots).filter(s => s.status === 'visited' && s.lat != null).map(s => ({ id: s.id, name: s.name, lat: s.lat, lng: s.lng, photo: spotPhoto(s.id) }));
+  // スポット帳に無い（旅帳だけの）行った場所
+  collectionTrips().forEach(t => t.items.filter(i => i.visited && !i.spotId && i.lat != null).forEach(i => pins.push({ id: 'i' + i.id, name: i.name, lat: i.lat, lng: i.lng, photo: null })));
+  const need = pins.filter(p => p.photo && !TH.has(thumbKey(p.photo.fileId, 200))).map(p => p.photo.fileId);
+  for (let i = 0; i < need.length; i += 12) {
+    try { const r = await api('mediaThumbs', { ids: need.slice(i, i + 12), size: 200 }); Object.keys(r.thumbs || {}).forEach(id => TH.set(thumbKey(id, 200), r.thumbs[id].thumb || '')); } catch (e) { break; }
+  }
+  pins.forEach(p => {
+    const th = p.photo ? TH.get(thumbKey(p.photo.fileId, 200)) : '';
+    const icon = th ? L.divIcon({ className: 'mk', html: `<span class="mk-photo"><img src="${th}" alt=""></span>`, iconSize: [44, 44], iconAnchor: [22, 22] })
+      : L.divIcon({ className: 'mk', html: '<span class="mk-pin done">✓</span>', iconSize: [20, 20], iconAnchor: [10, 10] });
+    L.marker([p.lat, p.lng], { icon }).bindPopup(`<b>${esc(p.name)}</b>`).addTo(colLayer);
+    pts.push([p.lat, p.lng]);
+  });
+  setTimeout(() => COLMAP.invalidateSize(), 50);
+  if (pts.length) COLMAP.fitBounds(pts, { padding: [24, 24], maxZoom: 12 });
+}
+
+// 年別レポートの書き出し（9:16・1080×1920）
+async function renderYearCanvas(y) {
+  const W = 1080, H = 1920, th = VTHEME;
+  const ts = collectionTrips().filter(t => (t.startDate || '').startsWith(y)).sort(tripSort);
+  const s = statsOf(ts);
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = th.paper; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = th.accent; ctx.font = `600 36px ${th.sans}`; ctx.letterSpacing = '8px'; ctx.fillText('MY TRAVEL YEAR', 80, 150); ctx.letterSpacing = '0px';
+  ctx.fillStyle = th.ink; ctx.font = `700 220px ${th.serif}`; ctx.fillText(y, 70, 380);
+  const stats = [[s.trips, 'TRIPS'], [s.days, 'DAYS'], [s.spots, 'SPOTS'], [s.km ? s.km.toLocaleString() : '—', 'KM']];
+  stats.forEach(([v, k], i) => { const x = 80 + i * 240; ctx.fillStyle = th.ink; ctx.font = `700 64px ${th.serif}`; ctx.fillText(String(v), x, 520); ctx.fillStyle = th.sub; ctx.font = `600 26px ${th.sans}`; ctx.fillText(k, x, 560); });
+  const list = ts.slice(0, 9);
+  const cols = 3, gap = 24, cw = (W - 160 - gap * (cols - 1)) / cols, ch = cw * 1.25;
+  for (let i = 0; i < list.length; i++) {
+    const t = list[i]; const x = 80 + (i % cols) * (cw + gap), yy = 640 + Math.floor(i / cols) * (ch + 90);
+    const cm = coverOrFirst(t);
+    const img = cm ? await mediaImage(cm) : (isImageUrl(t.coverLink) ? await loadImg(t.coverLink) : null);
+    if (img) drawCoverFit(ctx, img, x, yy, cw, ch);
+    else { ctx.fillStyle = '#e7e0d3'; ctx.fillRect(x, yy, cw, ch); ctx.font = `80px ${th.sans}`; ctx.fillText(tripEmoji(t), x + cw / 2 - 40, yy + ch / 2 + 28); }
+    ctx.fillStyle = th.ink; ctx.font = `700 28px ${th.sans}`;
+    ctx.fillText(wrapText(ctx, t.title, cw)[0] || '', x, yy + ch + 40);
+    ctx.fillStyle = th.sub; ctx.font = `400 24px ${th.sans}`; ctx.fillText(fmtDate(t.startDate), x, yy + ch + 72);
+  }
+  if (ts.length > 9) { ctx.fillStyle = th.sub; ctx.font = `500 30px ${th.sans}`; ctx.fillText(`ほか ${ts.length - 9} 件`, 80, H - 120); }
+  ctx.fillStyle = th.accent; ctx.font = `600 28px ${th.sans}`; ctx.fillText('旅帳', W - 140, H - 70);
+  return c;
+}
+ACT.yearExport = async (el) => {
+  el.disabled = true;
+  try {
+    await ensureFonts();
+    const c = await renderYearCanvas(el.dataset.y);
+    openModal(`<div id="instaOut"></div>`, { title: el.dataset.y + ' 年別レポート' });
+    await exportCanvases([c], 'TABICHO_' + el.dataset.y);
+  } catch (e) { toast('書き出しに失敗：' + e.message); }
+  el.disabled = false;
+};
+
 // ---- 99_main.js ----
 // ============================================================================
 // 99 描画・タブ切替・イベント委譲・起動
@@ -4024,11 +5225,12 @@ function render() {
     const ddrive = trip ? (hasVehicle(trip, 'car') ? '🚗' : (VEHICLES[trip.vehicles[0]] || VEHICLES.car).icon) : '🚗';
     nav.innerHTML = TABS.map(t => `<button class="nav-item ${S.tab === t.id ? 'active' : ''}" data-act="tab" data-tab="${t.id}"><span class="icon">${t.id === 'drive' ? ddrive : t.icon}</span><span>${t.id === 'drive' && trip && !hasVehicle(trip, 'car') ? '移動' : t.label}</span></button>`).join('');
   }
-  TABS.forEach(t => { const p = $('#page-' + t.id); if (p) p.classList.toggle('active', S.tab === t.id); });
+  TABS.concat([{ id: 'collection' }]).forEach(t => { const p = $('#page-' + t.id); if (p) p.classList.toggle('active', S.tab === t.id); });
   const page = $('#page-' + S.tab);
   if (!page) return;
   try {
-    if (S.tab === 'home') { page.innerHTML = renderHome(); return; }
+    if (S.tab === 'home') { page.innerHTML = renderHome(); setTimeout(() => loadThumbs(page), 0); return; }
+    if (S.tab === 'collection') { page.innerHTML = renderCollection(); return; }
     if (!trip) {
       if (S.tab === 'shiori') { $('#shioriTop').innerHTML = ''; $('#shioriMapWrap').style.display = 'none'; $('#shioriBody').innerHTML = noTripHTML(); }
       else page.innerHTML = noTripHTML();
@@ -4073,6 +5275,7 @@ document.addEventListener('visibilitychange', () => {
 
 async function init() {
   loadCache();
+  mqLoad();
   Object.values(S.trips).forEach(t => syncBookingItems(t));
   pickDefaultTrip();
   render();

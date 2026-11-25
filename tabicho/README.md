@@ -1,4 +1,6 @@
-# 旅帳 v1.0
+# 旅帳 v2.0
+
+> v2.0（2026-11-25）：写真・動画の Drive 保存（メディア）、ビジュアルモード（旅帳／Instagram）、コレクション（統計・マップ・年別レポート）。詳細は docs/実装報告-v2.0.txt、更新手順は docs/はじめに読んでください.txt
 
 設計メモ v0.1（Q1〜Q10 確定版）に沿って作った旅行アプリです。Google Apps Script のウェブアプリとして動きます。
 
@@ -98,6 +100,7 @@ node tabicho/build.js              # src → gas/index.html
 node tabicho/test/logic.test.js    # 営業時間・割り勘・精算・実効レート・家計簿・工程・ステータス
 node tabicho/test/gas.test.js      # Code.gs の保存処理と、家計簿連携（偽の家計簿GAS v7.0）・スポット帳連携（偽のスポット帳GAS v3.1）
 node tabicho/test/smoke.e2e.js     # 画面の通しテスト（Playwright、デモモード）
+node tabicho/test/v2.e2e.js        # v2.0 の画面の通し（アップロードは tabicho-poc/test/mock-server.js へ本当に PUT）
 ```
 
 `gas/index.html` をブラウザで直接開くと**デモモード**（サンプルのスポット帳つき、データはそのブラウザだけ）で動きます。

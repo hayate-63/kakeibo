@@ -1,5 +1,6 @@
 /**
- * 旅帳 サーバ（Google Apps Script）
+ * 旅帳 サーバ（Google Apps Script） v2.0
+ * v2.0：写真・動画の Drive 保存（メディア）、ビジュアルモード、コレクション
  *
  * ウェブアプリとしてデプロイ：実行ユーザー＝自分／アクセス＝自分のみ（推奨）
  * スクリプトプロパティ（プロジェクトの設定 → スクリプト プロパティ）：
@@ -76,6 +77,10 @@ function setupTabicho() {
   try { CalendarApp.getDefaultCalendar().getName(); } catch (e) {}
   try { Maps.newGeocoder().geocode('亀山駅'); } catch (e) {}
   try { UrlFetchApp.fetch('https://open.er-api.com/v6/latest/JPY', { muteHttpExceptions: true }); } catch (e) {}
+  // v2.0：写真・動画の保存先（Drive）と英語タイトル（翻訳）。Drive の権限承認はここで1回
+  var mf = childFolder_(DriveApp.getRootFolder(), MEDIA_ROOT);
+  Logger.log('写真・動画の保存先: ' + mf.getUrl());
+  try { LanguageApp.translate('旅', 'ja', 'en'); } catch (e) {}
 }
 
 function readTrips_() {
@@ -680,7 +685,174 @@ API.testConnections = function () {
     r.calendar = { ok: true, note: (prop_('TRAVEL_CALENDAR_ID') ? CalendarApp.getCalendarById(prop_('TRAVEL_CALENDAR_ID')) : CalendarApp.getDefaultCalendar()).getName() + (m0 ? ' ／ 勤務マスタ ' + Object.keys(m0).length + '件' : (prop_('WORK_CALENDAR_ID') ? ' ／ 勤務カレンダー：設定済' : ' ／ 勤務：未設定（土日祝で判定）')) };
   }
   catch (e) { r.calendar = { ok: false, error: String(e.message || e) }; }
+  try { var mf = childFolder_(DriveApp.getRootFolder(), MEDIA_ROOT); r.media = { ok: true, note: 'Drive「' + mf.getName() + '」フォルダOK' }; } catch (e) { r.media = { ok: false, error: String(e.message || e) }; }
   try { var m = route_({ from: { lat: 34.8556, lng: 136.4517 }, to: { lat: 34.6851, lng: 135.843 }, mode: 'car' }); r.maps = { ok: !m.estimated, note: m.km + 'km・' + m.min + '分' }; }
   catch (e) { r.maps = { ok: false, error: String(e.message || e) }; }
   return r;
+};
+
+// ===========================================================================
+// v2.0 メディア（写真・動画を Drive に保存。旅帳は fileId とメタ情報だけを持つ）
+//   方式は旅帳PoC v0.1（実機検証済み：iOS 18.7 Safari）：
+//   GAS が Origin 付きで Drive の resumable セッションを発行 → 画面が直接 PUT。
+//   画面に渡すのはセッション URI だけで、Google のアクセストークンは渡さない
+//   フォルダ：旅帳 ／ 年 ／ 国内・海外 ／ 旅行名（写真・動画を混在。サブフォルダなし）
+// ===========================================================================
+var MEDIA_ROOT = '旅帳';
+var DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files';
+var DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files/';
+var MEDIA_FIELDS = 'id,name,mimeType,size,createdTime,hasThumbnail,trashed,imageMediaMetadata(time,width,height,rotation),videoMediaMetadata(width,height,durationMillis)';
+
+function childFolder_(parent, name) {
+  var it = parent.getFoldersByName(name);
+  return it.hasNext() ? it.next() : parent.createFolder(name);
+}
+function folderName_(s) { return String(s || '').replace(/[\/\\:*?"<>|]/g, '・').trim().slice(0, 80) || '旅'; }
+
+// 旅のフォルダ（最初のメディア追加時に作成）。説明欄に旅IDを書き、フォルダIDを失っても同じフォルダを見つけられるようにする。
+// 作成後は旅のタイトル・国内海外を変えてもフォルダは動かさない（M7）
+function tripFolder_(f) {
+  if (!f || !f.tripId) throw new Error('旅IDがありません');
+  if (f.folderId) {
+    try { var cur = DriveApp.getFolderById(f.folderId); if (!cur.isTrashed()) return cur; } catch (e) { /* 消えていたら作り直す */ }
+  }
+  var lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    var root = childFolder_(DriveApp.getRootFolder(), MEDIA_ROOT);
+    var year = childFolder_(root, f.year ? String(f.year) : '日程未定');
+    var reg = childFolder_(year, f.region === 'overseas' ? '海外' : '国内');
+    var tag = 'tabicho:' + f.tripId;
+    var it = reg.getFolders();
+    while (it.hasNext()) { var x = it.next(); if (x.getDescription() === tag && !x.isTrashed()) return x; }
+    var base = folderName_(f.title), name = base, n = 2;
+    while (reg.getFoldersByName(name).hasNext()) name = base + '（' + (n++) + '）';
+    var made = reg.createFolder(name);
+    made.setDescription(tag);
+    return made;
+  } finally { lock.releaseLock(); }
+}
+
+API.mediaSession = function (a) {
+  if (!a.origin) throw new Error('画面の Origin がありません（Origin を送らないセッションは CORS で失敗するため発行しない）');
+  var size = Number(a.size);
+  if (!(size > 0)) throw new Error('ファイルサイズが不正です');
+  var folder = tripFolder_(a.folder);
+  var params = {
+    method: 'post', contentType: 'application/json; charset=UTF-8', muteHttpExceptions: true, followRedirects: false,
+    headers: {
+      Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+      'X-Upload-Content-Type': String(a.mimeType || 'application/octet-stream'),
+      'X-Upload-Content-Length': String(size),
+      Origin: String(a.origin)
+    },
+    payload: JSON.stringify({ name: String(a.name || 'media'), parents: [folder.getId()] })
+  };
+  var res = UrlFetchApp.fetch(DRIVE_UPLOAD_URL + '?uploadType=resumable&fields=' + encodeURIComponent(MEDIA_FIELDS), params);
+  var h = res.getAllHeaders();
+  var loc = h.Location || h.location || '';
+  if (res.getResponseCode() !== 200 || !loc) throw new Error('アップロードの準備に失敗しました（HTTP ' + res.getResponseCode() + '）' + res.getContentText().slice(0, 200));
+  return { ok: true, sessionUri: loc, folderId: folder.getId(), folderName: folder.getName() };
+};
+
+// 受信済み位置の確認（画面で 308 の Range が読めない時の保険）
+API.mediaStatus = function (a) {
+  var res = UrlFetchApp.fetch(String(a.sessionUri), {
+    method: 'put', headers: { 'Content-Range': 'bytes */' + Number(a.size) }, payload: '', muteHttpExceptions: true, followRedirects: false
+  });
+  var h = res.getAllHeaders(), code = res.getResponseCode();
+  var file = null;
+  if (code === 200 || code === 201) { try { file = JSON.parse(res.getContentText()); } catch (e) {} }
+  return { ok: true, code: code, range: h.Range || h.range || '', file: file };
+};
+
+// 小さい写真（〜5MB）の代替路：base64 で GAS に送り、GAS が保存
+API.mediaSmallUpload = function (a) {
+  var folder = tripFolder_(a.folder);
+  var bytes = Utilities.base64Decode(String(a.b64 || ''));
+  if (bytes.length > 6 * 1024 * 1024) throw new Error('GAS 経由で送れるのは 5MB までです');
+  var f = folder.createFile(Utilities.newBlob(bytes, String(a.mimeType || 'application/octet-stream'), String(a.name || 'photo')));
+  return { ok: true, file: { id: f.getId(), name: f.getName(), mimeType: f.getMimeType(), size: String(f.getSize()) }, folderId: folder.getId(), folderName: folder.getName() };
+};
+
+function exifTime_(t) { // "2026:11:24 10:23:11" → "2026-11-24T10:23:11"
+  var m = String(t || '').match(/^(\d{4})[:\-](\d{2})[:\-](\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  return m ? m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':' + (m[6] || '00') : '';
+}
+function mediaMetaOut_(j) {
+  var im = j.imageMediaMetadata || {}, vm = j.videoMediaMetadata || {};
+  return {
+    id: j.id, name: j.name, mimeType: j.mimeType, size: Number(j.size) || 0, createdTime: j.createdTime || '',
+    takenAt: exifTime_(im.time), width: im.width || vm.width || null, height: im.height || vm.height || null,
+    durationMs: vm.durationMillis ? Number(vm.durationMillis) : null, hasThumbnail: !!j.hasThumbnail,
+    videoReady: !!j.videoMediaMetadata, trashed: !!j.trashed
+  };
+}
+// メタ情報（撮影日時＝EXIF、動画の長さ、サムネイルの有無）
+API.mediaMeta = function (a) {
+  var token = ScriptApp.getOAuthToken();
+  var ids = (a.ids || []).slice(0, 30);
+  var reqs = ids.map(function (id) { return { url: DRIVE_FILES_URL + encodeURIComponent(id) + '?fields=' + encodeURIComponent(MEDIA_FIELDS), headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true }; });
+  var out = {};
+  UrlFetchApp.fetchAll(reqs).forEach(function (r, i) {
+    if (r.getResponseCode() === 200) out[ids[i]] = mediaMetaOut_(JSON.parse(r.getContentText()));
+    else out[ids[i]] = { id: ids[i], missing: r.getResponseCode() === 404 };
+  });
+  return { ok: true, meta: out };
+};
+
+// サムネイル：GAS が自分の権限で取り、base64 で渡す（共有＝非公開のまま表示できる。PoC で確認済み）
+API.mediaThumbs = function (a) {
+  var token = ScriptApp.getOAuthToken();
+  var size = Math.max(64, Math.min(2000, Number(a.size) || 400));
+  var cache = CacheService.getScriptCache();
+  var ids = (a.ids || []).slice(0, 16);
+  var out = {}, need = [];
+  ids.forEach(function (id) {
+    var c = cache.get('th:' + id + ':' + size);
+    if (c) out[id] = JSON.parse(c); else need.push(id);
+  });
+  if (!need.length) return { ok: true, thumbs: out };
+  var metas = UrlFetchApp.fetchAll(need.map(function (id) {
+    return { url: DRIVE_FILES_URL + encodeURIComponent(id) + '?fields=' + encodeURIComponent('thumbnailLink,' + MEDIA_FIELDS), headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true };
+  }));
+  var withLink = [];
+  metas.forEach(function (r, i) {
+    var id = need[i];
+    if (r.getResponseCode() !== 200) { out[id] = { meta: { id: id, missing: r.getResponseCode() === 404 }, thumb: '' }; return; }
+    var j = JSON.parse(r.getContentText());
+    out[id] = { meta: mediaMetaOut_(j), thumb: '' };
+    if (j.thumbnailLink) withLink.push({ id: id, url: String(j.thumbnailLink).replace(/=s\d+$/, '=s' + size) });
+  });
+  if (withLink.length) {
+    UrlFetchApp.fetchAll(withLink.map(function (w) { return { url: w.url, headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true }; })).forEach(function (r, i) {
+      if (r.getResponseCode() !== 200) return;
+      var b = r.getBlob();
+      out[withLink[i].id].thumb = 'data:' + (b.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(b.getBytes());
+    });
+  }
+  need.forEach(function (id) {
+    // サムネイルができているものだけキャッシュ（動画は Drive の処理待ちで後からできる）
+    if (out[id] && out[id].thumb) { try { cache.put('th:' + id + ':' + size, JSON.stringify(out[id]), 6 * 3600); } catch (e) { /* 100KB 超は入れない */ } }
+  });
+  return { ok: true, thumbs: out };
+};
+
+// 旅帳でメディアを消したら Drive のファイルもゴミ箱へ（M4）
+API.mediaTrash = function (a) {
+  try { DriveApp.getFileById(String(a.fileId)).setTrashed(true); }
+  catch (e) { if (!/not found|見つかりません|No item/i.test(String(e.message))) throw e; }
+  return { ok: true };
+};
+
+// 英語タイトルの自動表示（V2）：未入力の時に旅のタイトルを英語化する（例：北海道旅行 → HOKKAIDO TRIP）
+API.translateTitle = function (a) {
+  var t = String(a.text || '').trim();
+  if (!t) return { ok: true, text: '' };
+  var cache = CacheService.getScriptCache();
+  var key = 'tr:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, t));
+  var c = cache.get(key);
+  if (c) return { ok: true, text: c };
+  var en = LanguageApp.translate(t, 'ja', 'en');
+  cache.put(key, en, 21600);
+  return { ok: true, text: en };
 };

@@ -22,6 +22,27 @@ function api(name, args) {
 // ---------------------------------------------------------------------------
 // モックサーバ：GASに置く前の動作確認・デモ用。データはこのブラウザにだけ残る
 // ---------------------------------------------------------------------------
+// 模擬メディア（デモモード）：端末の localStorage に小さいサムネイルだけ持つ
+const MockMedia = (() => {
+  const KEY = 'tabicho_mock_media_v1';
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } };
+  const save = (db) => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} };
+  return {
+    pendingThumbs: {}, folders: {},
+    add(f) { const db = load(); const id = 'MF' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); db[id] = f; save(db); return id; },
+    get(id) { return load()[id] || null; },
+    remove(id) { const db = load(); delete db[id]; save(db); },
+    finish(q, file) {
+      const kind = mediaKind(file);
+      const lm = file.lastModified ? new Date(file.lastModified) : null;
+      const takenAt = kind === 'photo' && lm ? ymd(lm) + 'T' + pad2(lm.getHours()) + ':' + pad2(lm.getMinutes()) + ':00' : '';  // EXIF の代わり
+      const id = this.add({ name: file.name, mimeType: file.type, size: file.size, thumb: this.pendingThumbs[q.qid] || '', takenAt });
+      delete this.pendingThumbs[q.qid];
+      return { id, name: file.name, mimeType: file.type, size: String(file.size) };
+    }
+  };
+})();
+
 const MockServer = (() => {
   const KEY = 'tabicho_mock_db_v1';
   function load() {
@@ -177,8 +198,47 @@ const MockServer = (() => {
       const db = load(); logs.forEach(l => db.kakeibo.push(l)); save(db);
       return { ok: true, sent: logs.length, keys: logs.map(l => l.sourceKey) };
     },
+    // ---- v2.0 メディア（模擬）。window.__TABICHO_TEST_UPLOAD があればテスト用の resumable 模擬サーバに本当に PUT する ----
+    async mediaSession({ folder, name, mimeType, size, origin }) {
+      const hook = window.__TABICHO_TEST_UPLOAD;
+      const folderId = folder.folderId || 'mockfolder_' + folder.tripId;
+      const folderName = folder.folderId ? '' : folder.title;
+      if (hook) {
+        const r = await (await fetch(hook, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'createSession', pin: '1234', name, mimeType, size, origin, originMode: 'send' }) })).json();
+        MockMedia.folders[folderId] = `旅帳/${folder.year || '日程未定'}/${folder.region === 'overseas' ? '海外' : '国内'}/${folder.title}`;
+        return { ok: true, sessionUri: r.sessionUri, folderId, folderName: folderName || MockMedia.folders[folderId] };
+      }
+      MockMedia.folders[folderId] = `旅帳/${folder.year || '日程未定'}/${folder.region === 'overseas' ? '海外' : '国内'}/${folder.title}`;
+      return { ok: true, sessionUri: 'mock-upload://' + uid('s'), folderId, folderName: MockMedia.folders[folderId] };
+    },
+    async mediaStatus({ sessionUri, size }) {
+      const hook = window.__TABICHO_TEST_UPLOAD;
+      if (hook) return (await fetch(hook, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'status', pin: '1234', sessionUri, size }) })).json();
+      return { ok: true, code: 308, range: '' };
+    },
+    async mediaSmallUpload({ folder, name, mimeType, b64 }) {
+      const id = MockMedia.add({ name, mimeType, size: Math.round(b64.length * 0.75) });
+      return { ok: true, file: { id, name, mimeType, size: String(Math.round(b64.length * 0.75)) }, folderId: folder.folderId || 'mockfolder_' + folder.tripId };
+    },
+    async mediaMeta({ ids }) {
+      const meta = {};
+      ids.forEach(id => { const f = MockMedia.get(id); meta[id] = f ? { id, name: f.name, mimeType: f.mimeType, size: f.size, takenAt: f.takenAt || '', hasThumbnail: !!f.thumb, videoReady: /^video/.test(f.mimeType), durationMs: /^video/.test(f.mimeType) ? 30000 : null } : { id, hasThumbnail: false }; });
+      return { ok: true, meta };
+    },
+    async mediaThumbs({ ids }) {
+      const thumbs = {};
+      ids.forEach(id => { const f = MockMedia.get(id); thumbs[id] = { meta: f ? { id, hasThumbnail: !!f.thumb, videoReady: /^video/.test(f.mimeType || ''), durationMs: /^video/.test(f.mimeType || '') ? 30000 : null } : { id }, thumb: f && f.thumb ? f.thumb : '' }; });
+      return { ok: true, thumbs };
+    },
+    async mediaTrash({ fileId }) { MockMedia.remove(fileId); return { ok: true }; },
+    async translateTitle({ text }) {
+      const dict = { '北海道': 'Hokkaido', '旅行': 'trip', '旅': 'trip', '東京': 'Tokyo', '京都': 'Kyoto', '大阪': 'Osaka', '沖縄': 'Okinawa', '淡路島': 'Awaji Island', 'ドライブ': 'drive', '伊勢志摩': 'Ise-Shima', '台湾': 'Taiwan', '奈良': 'Nara', '温泉': 'hot spring' };
+      let out = text;
+      Object.keys(dict).sort((a, b) => b.length - a.length).forEach(k => { out = out.split(k).join(' ' + dict[k] + ' '); });
+      return { ok: true, text: kanaToRomaji(out).replace(/\s+/g, ' ').trim() };
+    },
     async testConnections() {
-      return { ok: true, spotcho: { ok: true, note: 'モック' }, kakeibo: { ok: true, note: 'モック' }, calendar: { ok: true, note: 'モック' }, maps: { ok: true, note: 'モック（直線距離からの概算）' } };
+      return { ok: true, spotcho: { ok: true, note: 'モック' }, kakeibo: { ok: true, note: 'モック' }, calendar: { ok: true, note: 'モック' }, maps: { ok: true, note: 'モック（直線距離からの概算）' }, media: { ok: true, note: 'モック（端末内）' } };
     }
   };
   return {

@@ -28,7 +28,9 @@ const DEFAULT_SETTINGS = () => ({
   fuelPrice: 170,       // 円/L
   mealPerPerson: 1500,  // 1食あたり（提案の概算用）
   lodgingPerPerson: 10000,
-  packCustom: []        // 自分用の持ち物テンプレ追加 [{cat,name,when}]
+  packCustom: [],       // 自分用の持ち物テンプレ追加 [{cat,name,when}]
+  // v2.0 メディア：既定は保留（手動送信）。写真と動画で別々に自動送信へ切替できる
+  media: { autoPhoto: false, autoVideo: false, confirmMB: 100, chunkMB: 4 }
 });
 
 const S = {
@@ -93,8 +95,19 @@ function newTrip(o) {
     fxClose: {},              // currency -> 'open'|'returned'|'carry'
     settlement: { signature: '', transfers: {}, notice: '' },
     record: { days: {}, rating: 0, comment: '', photoUrl: '', done: false },
-    driveTargetId: null
+    driveTargetId: null,
+    // v2.0
+    titleEn: '',              // 英語タイトル（ビジュアルの表紙文字。V2）
+    titleEnAuto: '', titleEnAutoSrc: '',  // 未入力時の自動英語化の控え（元のタイトルが変わったら作り直す）
+    region: '',               // 'domestic' | 'overseas'（作成時に行き先から自動判定、手動変更可）
+    regionManual: false,
+    driveFolderId: '', driveFolderName: '', driveFolderRegion: '',  // 最初のメディア追加時に作成。以後は固定（M7）
+    media: [],                // 写真・動画 [{id,fileId,kind,name,size,mimeType,takenAt,date,dateSource,spotId,itemId,favorite,cover,comment,createdAt,...}]
+    albums: [],               // 外部アルバム URL（複数・タイトル付き。M6）
+    coverLink: '',            // 代表写真のリンク指定（任意）
+    visual: { dayPicks: {}, coverMediaId: '' }
   };
+  t.region = t.region || detectRegion(t);
   if (!t.members.some(m => m.isMe) && t.members.length) t.members[0].isMe = true;
   return t;
 }
@@ -106,6 +119,14 @@ function newItem(o) {
     locked: false, hiddenTime: null, priority: 'maybe', stayEst: null, priceEst: null, needsBooking: false,
     bookingId: null, memo: '', parkingMemo: '', visited: null, order: Date.now(), transport: null, wantSpotRegister: false
   }, o || {});
+}
+
+// 国内／海外の自動判定（行き先エリア・精算通貨から）
+const OVERSEAS_RE = /台湾|台北|台中|台南|高雄|韓国|ソウル|釜山|済州|中国|上海|北京|香港|マカオ|タイ|バンコク|プーケット|ベトナム|ハノイ|ホーチミン|ダナン|シンガポール|マレーシア|クアラルンプール|インドネシア|バリ|フィリピン|セブ|マニラ|インド|ハワイ|ホノルル|グアム|サイパン|アメリカ|米国|ニューヨーク|ロサンゼルス|ラスベガス|サンフランシスコ|カナダ|バンクーバー|メキシコ|イギリス|英国|ロンドン|フランス|パリ|イタリア|ローマ|ミラノ|ベネチア|スペイン|バルセロナ|ドイツ|スイス|オーストリア|ウィーン|オランダ|ベルギー|チェコ|プラハ|ギリシャ|トルコ|イスタンブール|ドバイ|エジプト|オーストラリア|シドニー|メルボルン|ケアンズ|ニュージーランド|海外/;
+function detectRegion(t) {
+  if (t.currency && t.currency !== 'JPY') return 'overseas';
+  if (OVERSEAS_RE.test(String(t.area || '') + ' ' + String(t.title || ''))) return 'overseas';
+  return 'domestic';
 }
 
 function meMember(trip) { return trip.members.find(m => m.isMe) || trip.members[0]; }
@@ -290,6 +311,14 @@ function migrateTrip(t) {
   Object.keys(d).forEach(k => { if (t[k] === undefined) t[k] = clone(d[k]); });
   t.items = (t.items || []).map(i => Object.assign(newItem(), i));
   if (!t.record.days) t.record.days = {};
+  // v1 の「代表写真のリンク」はアルバム URL へ移す（Q9 の置き換え）
+  if (t.record.photoUrl && !t.albums.some(a => a.url === t.record.photoUrl)) {
+    t.albums.push({ id: uid('al'), title: 'アルバム', url: t.record.photoUrl });
+    t.record.photoUrl = '';
+  }
+  if (!t.region) t.region = detectRegion(t);
+  if (!t.visual) t.visual = { dayPicks: {}, coverMediaId: '' };
+  if (!t.visual.dayPicks) t.visual.dayPicks = {};
   return t;
 }
 

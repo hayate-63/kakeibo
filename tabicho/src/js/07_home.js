@@ -4,9 +4,10 @@
 function renderHome() {
   const trips = Object.values(S.trips).filter(t => !t._deleted);
   const trip = curTrip();
-  let h = `<div class="home-actions">
+  let h = unsentBarHTML() + `<div class="home-actions">
     <button class="btn primary grow" data-act="tripNew">＋ 新しい旅</button>
-    <button class="btn accent grow" data-act="openSuggest">🧭 行き先を探す</button></div>`;
+    <button class="btn accent grow" data-act="openSuggest">🧭 行き先を探す</button></div>
+    <button class="btn block collection-btn" data-act="openCollection">🗂 コレクション（統計・マップ・年別レポート）</button>`;
   if (S.serverMock) h += `<div class="info-box small">🧪 デモモード：GASに置く前のローカル動作です。データはこのブラウザにだけ保存されます。</div>`;
   if (trip) h += currentTripCard(trip);
   else h += emptyHTML('🧳', 'まだ旅がありません。<br>「新しい旅」か「行き先を探す」から始めましょう');
@@ -28,10 +29,17 @@ function renderHome() {
   return h;
 }
 function tripSort(a, b) { return (a.startDate || '9999') < (b.startDate || '9999') ? -1 : (a.startDate || '9999') > (b.startDate || '9999') ? 1 : 0; }
+// 旅行一覧の代表写真（無ければ絵文字）
+function tripThumbHTML(t) {
+  const c = coverOrFirst(t);
+  if (c) return `<span class="tthumb">${mediaTileInner(c, 200)}</span>`;
+  if (isImageUrl(t.coverLink)) return `<span class="tthumb"><img src="${esc(t.coverLink)}" alt=""></span>`;
+  return esc(tripEmoji(t));
+}
 function tripRow(t) {
   const st = tripStatus(t);
   return `<div class="trip-row ${t.id === S.curTripId ? 'cur' : ''}" data-act="tripSelect" data-id="${t.id}">
-    <div class="trip-emoji">${esc(tripEmoji(t))}</div>
+    <div class="trip-emoji">${tripThumbHTML(t)}</div>
     <div class="grow"><div class="b">${esc(t.title)}</div>
     <div class="muted small">${t.startDate ? fmtDate(t.startDate) + (t.endDate && t.endDate !== t.startDate ? '〜' + fmtDate(t.endDate) : '（日帰り）') : '日程未定'} ・ ${t.members.map(m => esc(m.name)).join('・')}</div></div>
     ${statusBadge(st)}</div>`;
@@ -122,6 +130,9 @@ function openTripEditor(trip, preset) {
     <label>モード<span class="req">必須</span></label>${segHTML('teMode', [{ v: 'shiori', l: '📒 しおり（工程を決める）' }, { v: 'list', l: '📝 リスト（行きたい所だけ）' }], t.mode, 'segPick')}
     <label>メンバー<span class="req">必須</span></label>${membersEditorHTML(t.members)}
     <label>行き先エリア</label><input id="teArea" value="${esc(t.area)}" placeholder="例：淡路島">
+    <label>国内／海外</label><div><select id="teRegion"><option value="auto" ${!t.regionManual ? 'selected' : ''}>自動（今は${detectRegion(t) === 'overseas' ? '海外' : '国内'}）</option><option value="domestic" ${t.regionManual && t.region === 'domestic' ? 'selected' : ''}>国内</option><option value="overseas" ${t.regionManual && t.region === 'overseas' ? 'selected' : ''}>海外</option></select>
+      ${t.driveFolderId ? `<div class="muted small">写真の保存フォルダは作成済みのため移動しません（${esc(t.driveFolderName || '')}）</div>` : ''}</div>
+    <label>英語タイトル</label><input id="teTitleEn" value="${esc(t.titleEn || '')}" placeholder="任意（ビジュアルの表紙文字。空欄なら自動で英語表示）">
     <label>出発地</label><div class="row gap"><input id="teOrigin" class="grow" value="${esc(t.origin && t.origin.name || '')}" placeholder="自宅"><button class="btn sm" data-act="teOriginHome">自宅</button><button class="btn sm" data-act="teOriginHere">現在地</button></div>
     <input type="hidden" id="teOriginLat" value="${t.origin && t.origin.lat != null ? t.origin.lat : ''}"><input type="hidden" id="teOriginLng" value="${t.origin && t.origin.lng != null ? t.origin.lng : ''}">
     <label>予算（総額）</label>${amountFieldHTML('id="teBudget"', t.budget, '円')}
@@ -168,6 +179,10 @@ ACT.teSave = () => {
   if (!trip.vehicles.includes(trip.listTransport.mode)) trip.listTransport.mode = trip.vehicles[0];
   trip.currency = $('#teCur', b).value;
   trip.emoji = Array.from($('#teEmoji', b).value.trim())[0] || '';
+  trip.titleEn = $('#teTitleEn', b).value.trim();
+  const rg = $('#teRegion', b).value;
+  trip.regionManual = rg !== 'auto';
+  trip.region = rg === 'auto' ? detectRegion(trip) : rg;
   trip.memo = $('#teMemo', b).value;
   if (trip.mode !== mode && !isNew) switchMode(trip, mode); else trip.mode = mode;
   delete trip._preset;

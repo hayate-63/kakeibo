@@ -27,6 +27,12 @@ ACT.openSettings = () => {
       <label>食費（1食1人）</label><div class="row gap"><input id="stMeal" inputmode="numeric" value="${esc(st.mealPerPerson)}"><span>円</span></div>
       <label>宿（1泊1人）</label><div class="row gap"><input id="stLodge" inputmode="numeric" value="${esc(st.lodgingPerPerson)}"><span>円</span></div>
     </div></div>
+    <div class="set-sec"><div class="b">📷 写真・動画の送信</div><div class="form-grid">
+      <label>写真</label><select id="stAutoPhoto"><option value="0">保留（手動で送る）</option><option value="1" ${(st.media || {}).autoPhoto ? 'selected' : ''}>自動で送る</option></select>
+      <label>動画</label><select id="stAutoVideo"><option value="0">保留（手動で送る）</option><option value="1" ${(st.media || {}).autoVideo ? 'selected' : ''}>自動で送る</option></select>
+      <label>確認する大きさ</label><div class="row gap"><input id="stConfirmMB" inputmode="numeric" value="${esc((st.media || {}).confirmMB || 100)}"><span>MB 以上は送る前に確認</span></div>
+      <label>チャンク</label><select id="stChunk">${[1, 4, 8].map(n => `<option value="${n}" ${Number((st.media || {}).chunkMB || 4) === n ? 'selected' : ''}>${n}MB</option>`).join('')}</select>
+    </div><div class="muted small">Wi-Fi かどうかは iPhone の Safari では判定できないため、既定は保留です</div></div>
     <div class="set-sec"><div class="b">🎒 持ち物テンプレートに追加</div><div id="stPack">${(st.packCustom || []).map(packTmplRowHTML).join('')}</div><button class="btn sm" data-act="stPackAdd">＋ 追加</button></div>
     <button class="btn primary block" data-act="stSave">設定を保存</button>
     <div class="set-sec mt"><div class="b">🔌 接続</div><div id="stConn" class="small muted">${S.serverMock ? 'デモモード（GAS未接続）' : 'GAS接続中'}</div><button class="btn sm" data-act="stTest">接続テスト</button>
@@ -59,6 +65,7 @@ ACT.stSave = () => {
   st.kakeiboSettleCategory = $('#stKkSettle', b).value.trim() || 'その他（支出）';
   st.fuelEfficiency = num($('#stFe', b).value, 15); st.fuelPrice = num($('#stFp', b).value, 170);
   st.mealPerPerson = num($('#stMeal', b).value, 1500); st.lodgingPerPerson = num($('#stLodge', b).value, 10000);
+  st.media = { autoPhoto: $('#stAutoPhoto', b).value === '1', autoVideo: $('#stAutoVideo', b).value === '1', confirmMB: num($('#stConfirmMB', b).value, 100) || 100, chunkMB: num($('#stChunk', b).value, 4) || 4 };
   st.packCustom = $$('#stPack .set-row', b).map(r => ({ cat: $('.pt-cat', r).value, name: $('.pt-name', r).value.trim(), when: $('.pt-when', r).value })).filter(p => p.name);
   if (oldMe !== st.myName) toast('自分の名前を変えました。既存の旅は「旅の編集」で自分の印を確認してください');
   closeModal(); commitSettings(); toast('設定を保存しました');
@@ -68,7 +75,7 @@ ACT.stTest = async () => {
   try {
     const r = await api('testConnections');
     const line = (k, l) => `<div>${r[k] && r[k].ok ? '✅' : '❌'} ${l}：${esc((r[k] && (r[k].note || r[k].error)) || '')}</div>`;
-    el.innerHTML = line('spotcho', 'スポット帳') + line('kakeibo', '家計簿') + line('calendar', 'カレンダー') + line('maps', '経路（Maps）');
+    el.innerHTML = line('spotcho', 'スポット帳') + line('kakeibo', '家計簿') + line('calendar', 'カレンダー') + line('maps', '経路（Maps）') + line('media', '写真・動画（Drive）');
   } catch (e) { el.textContent = '失敗：' + e.message; }
 };
 ACT.stExport = () => {

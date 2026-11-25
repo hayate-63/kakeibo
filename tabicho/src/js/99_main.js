@@ -28,11 +28,12 @@ function render() {
     const ddrive = trip ? (hasVehicle(trip, 'car') ? '🚗' : (VEHICLES[trip.vehicles[0]] || VEHICLES.car).icon) : '🚗';
     nav.innerHTML = TABS.map(t => `<button class="nav-item ${S.tab === t.id ? 'active' : ''}" data-act="tab" data-tab="${t.id}"><span class="icon">${t.id === 'drive' ? ddrive : t.icon}</span><span>${t.id === 'drive' && trip && !hasVehicle(trip, 'car') ? '移動' : t.label}</span></button>`).join('');
   }
-  TABS.forEach(t => { const p = $('#page-' + t.id); if (p) p.classList.toggle('active', S.tab === t.id); });
+  TABS.concat([{ id: 'collection' }]).forEach(t => { const p = $('#page-' + t.id); if (p) p.classList.toggle('active', S.tab === t.id); });
   const page = $('#page-' + S.tab);
   if (!page) return;
   try {
-    if (S.tab === 'home') { page.innerHTML = renderHome(); return; }
+    if (S.tab === 'home') { page.innerHTML = renderHome(); setTimeout(() => loadThumbs(page), 0); return; }
+    if (S.tab === 'collection') { page.innerHTML = renderCollection(); return; }
     if (!trip) {
       if (S.tab === 'shiori') { $('#shioriTop').innerHTML = ''; $('#shioriMapWrap').style.display = 'none'; $('#shioriBody').innerHTML = noTripHTML(); }
       else page.innerHTML = noTripHTML();
@@ -77,6 +78,7 @@ document.addEventListener('visibilitychange', () => {
 
 async function init() {
   loadCache();
+  mqLoad();
   Object.values(S.trips).forEach(t => syncBookingItems(t));
   pickDefaultTrip();
   render();

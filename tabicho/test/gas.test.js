@@ -203,3 +203,74 @@ assert.ok(!('SP0002' in h.hours));
 props.SPOTCHO_PIN = 'bad';
 assert.ok(/PINが一致しません/.test(call('spotList', {}).error));
 console.log('spotcho integration tests passed');
+
+// ---- v2.0 メディア：偽の Drive で フォルダ作成・セッション発行・サムネイル・ゴミ箱・英題 ----
+(() => {
+  const folders = [];
+  const mkFolder = (name, parent) => {
+    const f = { id: 'D' + folders.length, name, parent, desc: '', trashed: false, children: [],
+      getId() { return this.id; }, getName() { return this.name; }, isTrashed() { return this.trashed; },
+      getDescription() { return this.desc; }, setDescription(d) { this.desc = d; },
+      getFoldersByName(n) { const l = this.children.filter(c => c.name === n && !c.trashed); let i = 0; return { hasNext: () => i < l.length, next: () => l[i++] }; },
+      getFolders() { const l = this.children.slice(); let i = 0; return { hasNext: () => i < l.length, next: () => l[i++] }; },
+      createFolder(n) { const c = mkFolder(n, this); this.children.push(c); return c; },
+      createFile(blob) { return { getId: () => 'SMALL1', getName: () => blob.name, getMimeType: () => blob.type, getSize: () => blob.bytes.length }; }
+    };
+    folders.push(f); return f;
+  };
+  const root = mkFolder('マイドライブ', null);
+  const trashed = [];
+  ctx.DriveApp = { getRootFolder: () => root, getFolderById: (id) => { const f = folders.find(x => x.id === id); if (!f) throw new Error('not found'); return f; },
+    getFileById: (id) => ({ setTrashed: () => trashed.push(id) }) };
+  ctx.ScriptApp = { getOAuthToken: () => 'TOKEN' };
+  ctx.LockService = { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) };
+  const store = {}; ctx.CacheService = { getScriptCache: () => ({ get: k => store[k] || null, put: (k, v) => { store[k] = v; } }) };
+  ctx.LanguageApp = { translate: (t) => t === '北海道旅行' ? 'Hokkaido trip' : t };
+  ctx.Utilities = Object.assign(ctx.Utilities || {}, {
+    base64Decode: (s) => Array.from(Buffer.from(s, 'base64')), base64Encode: (b) => Buffer.from(b).toString('base64'),
+    newBlob: (bytes, type, name) => ({ bytes, type, name }), base64EncodeWebSafe: (b) => Buffer.from(String(b)).toString('base64'),
+    computeDigest: (a, s) => s, DigestAlgorithm: { MD5: 'md5' }, sleep() {}
+  });
+  const sent = [];
+  ctx.UrlFetchApp = {
+    fetch: (url, opt) => { sent.push({ url, opt }); return { getResponseCode: () => 200, getAllHeaders: () => ({ Location: 'https://upload.example/session1' }), getContentText: () => '' }; },
+    fetchAll: (reqs) => reqs.map(r => {
+      if (/^https:\/\/lh3/.test(r.url)) return { getResponseCode: () => 200, getBlob: () => ({ getContentType: () => 'image/jpeg', getBytes: () => [1, 2, 3] }) };
+      const id = r.url.match(/files\/([^?]+)/)[1];
+      if (id === 'GONE') return { getResponseCode: () => 404, getContentText: () => '' };
+      return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ id, name: 'IMG.HEIC', mimeType: 'image/heic', size: '100', hasThumbnail: true, thumbnailLink: 'https://lh3/thumb=s220', imageMediaMetadata: { time: '2026:11:24 10:23:11', width: 4032, height: 3024 } }) };
+    })
+  };
+  props.SPOTCHO_PIN = props.SPOTCHO_PIN || 'x';
+  const folder = { tripId: 'T1', year: '2026', region: 'domestic', title: '淡路島/ドライブ' };
+  assert.ok(/Origin/.test(call('mediaSession', { folder, name: 'a.jpg', mimeType: 'image/jpeg', size: 10 }).error), 'Origin が無いセッションは発行しない');
+  const s1 = call('mediaSession', { folder, name: 'a.jpg', mimeType: 'image/jpeg', size: 10, origin: 'https://n-abc-script.googleusercontent.com' });
+  assert.strictEqual(s1.sessionUri, 'https://upload.example/session1');
+  const req = sent[sent.length - 1];
+  assert.strictEqual(req.opt.headers.Origin, 'https://n-abc-script.googleusercontent.com', 'Origin を Google へ送る');
+  assert.strictEqual(JSON.parse(req.opt.payload).parents[0], s1.folderId);
+  const f1 = folders.find(f => f.id === s1.folderId);
+  assert.strictEqual([f1.parent.parent.parent.name, f1.parent.parent.name, f1.parent.name, f1.name].join('/'), '旅帳/2026/国内/淡路島・ドライブ');
+  assert.strictEqual(f1.desc, 'tabicho:T1');
+  // フォルダIDを失っても説明欄の旅IDで同じフォルダを使う。タイトル・国内海外を変えてもフォルダID指定なら動かない（M7）
+  const s2 = call('mediaSession', { folder: Object.assign({}, folder, { title: '改名後' }), name: 'b.jpg', mimeType: 'image/jpeg', size: 10, origin: 'o' });
+  assert.strictEqual(s2.folderId, s1.folderId);
+  const s3 = call('mediaSession', { folder: { tripId: 'T1', folderId: s1.folderId, year: '2027', region: 'overseas', title: 'x' }, name: 'c.jpg', mimeType: 'image/jpeg', size: 10, origin: 'o' });
+  assert.strictEqual(s3.folderId, s1.folderId);
+  // 同じ名前の別の旅は（2）を付けて別フォルダ
+  const s4 = call('mediaSession', { folder: { tripId: 'T2', year: '2026', region: 'domestic', title: '淡路島/ドライブ' }, name: 'd.jpg', mimeType: 'image/jpeg', size: 10, origin: 'o' });
+  assert.notStrictEqual(s4.folderId, s1.folderId); assert.strictEqual(folders.find(f => f.id === s4.folderId).name, '淡路島・ドライブ（2）');
+  // 海外は「海外」フォルダ
+  const s5 = call('mediaSession', { folder: { tripId: 'T3', year: '2026', region: 'overseas', title: '台湾' }, name: 'e.jpg', mimeType: 'image/jpeg', size: 10, origin: 'o' });
+  assert.strictEqual(folders.find(f => f.id === s5.folderId).parent.name, '海外');
+  // メタ（EXIF の撮影日時）・サムネイル（base64）
+  const mm = call('mediaMeta', { ids: ['F1', 'GONE'] });
+  assert.strictEqual(mm.meta.F1.takenAt, '2026-11-24T10:23:11'); assert.strictEqual(mm.meta.GONE.missing, true);
+  const th = call('mediaThumbs', { ids: ['F1'], size: 400 });
+  assert.strictEqual(th.thumbs.F1.thumb, 'data:image/jpeg;base64,AQID'); assert.strictEqual(th.thumbs.F1.meta.width, 4032);
+  call('mediaTrash', { fileId: 'F1' }); assert.deepStrictEqual(trashed, ['F1']);
+  assert.strictEqual(call('translateTitle', { text: '北海道旅行' }).text, 'Hokkaido trip');
+  const sm = call('mediaSmallUpload', { folder, name: 's.jpg', mimeType: 'image/jpeg', b64: Buffer.from('abc').toString('base64') });
+  assert.strictEqual(sm.file.id, 'SMALL1'); assert.strictEqual(sm.folderId, s1.folderId);
+  console.log('media API tests passed');
+})();
