@@ -17,7 +17,25 @@ function switchTab(id) {
 }
 ACT.tab = (el) => switchTab(el.dataset.tab);
 
+// 画面上部の帯：デモモードは全画面で明示。GAS から開かれていない本番は赤で知らせる
+function renderModeBanner() {
+  const el = document.getElementById('modeBanner');
+  if (!el) return;
+  if (IS_GAS) { el.innerHTML = ''; return; }
+  el.innerHTML = IS_DEMO
+    ? '<div class="mode-banner demo">🧪 デモモード（GAS 未接続）：データはこのブラウザにだけ保存されます。本番の旅帳ではありません</div>'
+    : '<div class="mode-banner bad">⚠️ GAS の接続部品が読み込めていません。旅帳は GAS のウェブアプリ URL から開いてください（デモへの切り替えはしません）</div>';
+}
 function render() {
+  try { renderInner(); }
+  catch (e) {
+    console.error(e);
+    if (window.__TB && !window.__TB.started) window.__TB.fail('画面の描画', e);
+    else toast('表示中にエラー：' + e.message);
+  }
+}
+function renderInner() {
+  renderModeBanner();
   const trip = curTrip();
   // ヘッダー
   const ht = $('#headTrip');
@@ -76,12 +94,21 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { loadSpots(true); if (!modalStack.length && !isTyping()) render(); }
 });
 
+// 起動の各段階を個別に守る（どこかで失敗しても画面は出し、原因を起動ガードに残す）
+function bootStep(name, fn) {
+  try { return fn(); }
+  catch (e) { console.error(name, e); if (window.__TB) window.__TB.errors.push(name + '：' + (e && e.message || e)); return undefined; }
+}
 async function init() {
-  loadCache();
-  mqLoad();
-  Object.values(S.trips).forEach(t => syncBookingItems(t));
-  pickDefaultTrip();
+  bootStep('端末データの読み込み', loadCache);
+  bootStep('送信キューの読み込み', mqLoad);
+  bootStep('予約と工程の同期', () => Object.values(S.trips).forEach(t => syncBookingItems(t)));
+  bootStep('表示する旅の選択', pickDefaultTrip);
   render();
+  if (window.__TB) {
+    window.__TB.started = true;
+    if (window.__TB.errors.length) window.__TB.show('旅帳は起動しましたが、起動中に問題がありました');
+  }
   startGeo();
   ensureFx();
   await bootstrapFromServer();

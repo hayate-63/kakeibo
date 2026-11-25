@@ -5,7 +5,7 @@ const ctx = {
   console, setTimeout, clearTimeout, setInterval: () => 0, Date, Math, JSON,
   localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
   window: { addEventListener() {} }, navigator: { onLine: true }, document: { getElementById: () => null, addEventListener() {}, querySelectorAll: () => [] },
-  location: { origin: 'null' }, ACT: undefined,
+  location: { origin: 'null', protocol: 'file:', hostname: '', href: 'file:///x' }, ACT: undefined,
   render() {}, toast() {}, confirmDialog: async () => true
 };
 vm.createContext(ctx);

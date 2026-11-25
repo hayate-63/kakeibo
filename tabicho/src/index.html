@@ -17,11 +17,13 @@
 </style>
 </head>
 <body>
+<script>/*__BOOT__*/</script>
 <header class="app-head">
   <button class="head-trip" data-act="tab" data-tab="home" id="headTrip"><span class="ht-title">旅帳</span></button>
   <div class="head-right"><span class="sync-badge" id="syncBadge"></span><button class="icon-btn light" data-act="openSettings" aria-label="設定">⚙️</button></div>
 </header>
 
+<div id="modeBanner"></div>
 <main>
   <section id="page-home" class="page active"></section>
   <section id="page-shiori" class="page">
@@ -39,8 +41,6 @@
 <div id="modalRoot"></div>
 <div id="toast" class="toast"></div>
 
-<script>
-/*__JS__*/
-</script>
+<script id="appScript">/*__JS__*/</script>
 </body>
 </html>

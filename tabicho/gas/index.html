@@ -361,14 +361,99 @@ img.iout { width: 31%; margin: 1%; border-radius: 6px; }
 .ytrip > img, .ytrip > .mt-load, .ytrip > .mt-fb { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 8px; display: flex; background: var(--muted-bg); }
 .ytrip span { display: block; font-size: 11.5px; font-weight: 700; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* v2.0.1 モードの帯 */
+.mode-banner { font-size: 12.5px; font-weight: 700; padding: 7px 12px; }
+.mode-banner.demo { background: #fef3c7; color: #78350f; border-bottom: 1px solid #fde68a; }
+.mode-banner.bad { background: #fee2e2; color: #991b1b; border-bottom: 1px solid #fecaca; }
+
 </style>
 </head>
 <body>
+<script>// 旅帳 起動ガード（本体のスクリプトより先に動く小さなスクリプト）
+// 本体が起動しなかった時に、原因（エラーの文面と行番号・スクリプトが欠けていないか）を画面に出す。
+// 開発者ツールが無い iPhone でも原因が分かるようにするため
+(function () {
+  var TB = window.__TB = { started: false, errors: [], expectLen: 296495, expectHash: 'a83b84dd', version: '2.0.1', built: '2026-11-26 07:44 JST' };
+  function fnv(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+  function scriptCheck() {
+    var el = document.getElementById('appScript');
+    if (!el) return '本体のスクリプトが見つかりません（HTML の後半が欠けている可能性）';
+    var t = el.text || el.textContent || '';
+    if (t.length !== TB.expectLen) return '本体のスクリプトの長さが違います（実際 ' + t.length + ' 文字 ／ 正しくは ' + TB.expectLen + ' 文字）。貼り付けや配信の途中で欠けた・変わった可能性があります';
+    if (fnv(t) !== TB.expectHash) return '本体のスクリプトの中身が違います（長さは同じ。文字が置き換わった可能性）';
+    return '本体のスクリプトは完全です（長さ・中身とも一致）';
+  }
+  function report() {
+    var lines = [
+      '旅帳 起動エラー報告',
+      '版：' + TB.version + '（ビルド ' + TB.built + '）',
+      '状態：' + (TB.started ? '起動済み' : '起動していない'),
+      'スクリプト：' + scriptCheck(),
+      'GAS の接続部品（google.script.run）：' + (typeof google !== 'undefined' && google.script && google.script.run ? 'あり' : 'なし'),
+      '配信元：' + location.protocol + '//' + location.host,
+      '端末：' + navigator.userAgent
+    ];
+    TB.errors.forEach(function (e, i) { lines.push('エラー' + (i + 1) + '：' + e); });
+    if (!TB.errors.length) lines.push('エラー：記録なし');
+    return lines.join('\n');
+  }
+  function show(title) {
+    var p = document.getElementById('bootPanel');
+    if (!p) {
+      p = document.createElement('div'); p.id = 'bootPanel';
+      p.setAttribute('style', 'position:fixed;left:8px;right:8px;top:70px;z-index:99999;background:#fff;border:3px solid #dc2626;border-radius:14px;padding:12px;font:13px/1.5 -apple-system,sans-serif;color:#111;box-shadow:0 8px 30px rgba(0,0,0,.3);max-height:75vh;overflow:auto');
+      (document.body || document.documentElement).appendChild(p);
+    }
+    p.innerHTML = '<b style="color:#dc2626;font-size:15px">⚠️ ' + esc(title) + '</b>' +
+      '<pre id="bootText" style="white-space:pre-wrap;word-break:break-all;background:#f1f5f9;padding:8px;border-radius:8px;font-size:11px;margin:8px 0">' + esc(report()) + '</pre>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+      '<button id="bootCopy" style="padding:8px 10px;border-radius:8px;border:1px solid #ccc;background:#1e293b;color:#fff;font-weight:700">内容をコピー</button>' +
+      '<button id="bootReload" style="padding:8px 10px;border-radius:8px;border:1px solid #ccc;background:#fff;font-weight:700">再読み込み</button>' +
+      '<button id="bootReset" style="padding:8px 10px;border-radius:8px;border:1px solid #fca5a5;background:#fee2e2;color:#991b1b;font-weight:700">保存データを退避して再読み込み</button>' +
+      '<button id="bootClose" style="padding:8px 10px;border-radius:8px;border:1px solid #ccc;background:#fff">閉じる</button></div>' +
+      '<div style="color:#64748b;font-size:11px;margin-top:6px">「内容をコピー」した文章を送ってもらえれば原因が分かります。「退避」は端末の保存データを消さずに別名へ移します（サーバのデータは消えません）</div>';
+    document.getElementById('bootCopy').onclick = function () {
+      var t = report();
+      if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () { alert('コピーしました'); }, function () { alert('長押しで文章を選んでコピーしてください'); });
+      else alert('長押しで文章を選んでコピーしてください');
+    };
+    document.getElementById('bootReload').onclick = function () { location.reload(); };
+    document.getElementById('bootReset').onclick = function () {
+      if (!confirm('この端末に保存された旅帳のデータ（未送信の変更を含む）を別名に退避して、まっさらな状態で開き直します。サーバのデータは消えません。よろしいですか？')) return;
+      try {
+        var stamp = Date.now(), keep = {};
+        for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (/^tabicho_/.test(k) && !/^tabicho_backup_/.test(k)) keep[k] = localStorage.getItem(k); }
+        localStorage.setItem('tabicho_backup_' + stamp, JSON.stringify(keep));
+        Object.keys(keep).forEach(function (k) { localStorage.removeItem(k); });
+      } catch (e) { alert('退避に失敗：' + e.message); return; }
+      location.reload();
+    };
+    document.getElementById('bootClose').onclick = function () { p.remove(); };
+  }
+  TB.show = show;
+  TB.fail = function (where, e) {
+    TB.errors.push(where + '：' + (e && e.message || e) + (e && e.stack ? '\n' + String(e.stack).split('\n').slice(0, 3).join('\n') : ''));
+    show('旅帳の起動中にエラーが起きました');
+  };
+  window.addEventListener('error', function (e) {
+    var msg = (e.message || 'エラー') + (e.filename || e.lineno ? '（' + (e.lineno || '?') + '行 ' + (e.colno || '?') + '列）' : '') + (e.error && e.error.stack ? '\n' + String(e.error.stack).split('\n').slice(0, 3).join('\n') : '');
+    TB.errors.push(msg);
+    if (!TB.started) show('旅帳のスクリプトでエラーが起きました');
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason; TB.errors.push('（非同期）' + (r && r.message || r));
+    if (!TB.started) show('旅帳の起動中にエラーが起きました');
+  });
+  setTimeout(function () { if (!TB.started) show('旅帳が起動しませんでした'); }, 6000);
+})();
+</script>
 <header class="app-head">
   <button class="head-trip" data-act="tab" data-tab="home" id="headTrip"><span class="ht-title">旅帳</span></button>
   <div class="head-right"><span class="sync-badge" id="syncBadge"></span><button class="icon-btn light" data-act="openSettings" aria-label="設定">⚙️</button></div>
 </header>
 
+<div id="modeBanner"></div>
 <main>
   <section id="page-home" class="page active"></section>
   <section id="page-shiori" class="page">
@@ -386,12 +471,12 @@ img.iout { width: 31%; margin: 1%; border-radius: 6px; }
 <div id="modalRoot"></div>
 <div id="toast" class="toast"></div>
 
-<script>
+<script id="appScript">;(function () {
 // ---- 01_util.js ----
 // ============================================================================
 // 01 ユーティリティ・定数
 // ============================================================================
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.0.1';
 
 const VEHICLES = {
   car:   { label: '車',       icon: '🚗' },
@@ -609,6 +694,10 @@ function mapsSearchUrl(p) {
 // 02 サーバAPI（GAS google.script.run）＋ ローカル動作用モック
 // ============================================================================
 const IS_GAS = typeof google !== 'undefined' && google.script && google.script.run;
+// デモモードは「手元で開いた時（file:// ・localhost）」か「#demo を付けた時」だけ。
+// それ以外で GAS の接続部品が無い時はデモに切り替えず、エラーとして見せる（本番での無言フォールバックをしない）
+const IS_DEV = location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname || '');
+const IS_DEMO = !IS_GAS && (IS_DEV || /[#&?]demo\b/.test(location.href));
 
 function api(name, args) {
   if (IS_GAS) {
@@ -623,7 +712,8 @@ function api(name, args) {
         .apiCall(name, JSON.stringify(args || {}));
     });
   }
-  return MockServer.call(name, args || {});
+  if (IS_DEMO) return MockServer.call(name, args || {});
+  return Promise.reject(new Error('GAS の接続部品（google.script.run）がありません。旅帳は GAS のウェブアプリ URL から開いてください'));
 }
 
 // ---------------------------------------------------------------------------
@@ -1166,9 +1256,20 @@ function loadCache() {
     S.settingsDirty = !!c.settingsDirty;
     S.hours = c.hours || {};
     if (c.ui && c.ui.listSort) S.ui.listSort = c.ui.listSort;
-    Object.values(S.trips).forEach(migrateTrip);
+    // 1件ずつ移行し、壊れた旅は外して別名に退避（1件のせいで全体が起動しなくならないように）
+    const broken = {};
+    Object.keys(S.trips).forEach(id => {
+      try { migrateTrip(S.trips[id]); }
+      catch (e) { broken[id] = S.trips[id]; delete S.trips[id]; delete S.dirty[id]; reportStartupProblem('端末に保存された旅「' + ((broken[id] || {}).title || id) + '」を読めませんでした（退避済み）', e); }
+    });
+    if (Object.keys(broken).length) { try { localStorage.setItem('tabicho_cache_broken_' + Date.now(), JSON.stringify(broken)); } catch (e) {} }
     return true;
-  } catch (e) { return false; }
+  } catch (e) { reportStartupProblem('端末に保存されたデータを読めませんでした（サーバから読み直します）', e); return false; }
+}
+function reportStartupProblem(msg, e) {
+  console.error(msg, e);
+  if (window.__TB) window.__TB.errors.push(msg + '：' + (e && e.message || e));
+  setTimeout(() => { try { toast(msg); } catch (x) {} }, 500);
 }
 function migrateTrip(t) {
   const d = newTrip({});
@@ -2483,7 +2584,6 @@ function renderHome() {
     <button class="btn primary grow" data-act="tripNew">＋ 新しい旅</button>
     <button class="btn accent grow" data-act="openSuggest">🧭 行き先を探す</button></div>
     <button class="btn block collection-btn" data-act="openCollection">🗂 コレクション（統計・マップ・年別レポート）</button>`;
-  if (S.serverMock) h += `<div class="info-box small">🧪 デモモード：GASに置く前のローカル動作です。データはこのブラウザにだけ保存されます。</div>`;
   if (trip) h += currentTripCard(trip);
   else h += emptyHTML('🧳', 'まだ旅がありません。<br>「新しい旅」か「行き先を探す」から始めましょう');
 
@@ -3953,9 +4053,9 @@ ACT.openSettings = () => {
     </div><div class="muted small">Wi-Fi かどうかは iPhone の Safari では判定できないため、既定は保留です</div></div>
     <div class="set-sec"><div class="b">🎒 持ち物テンプレートに追加</div><div id="stPack">${(st.packCustom || []).map(packTmplRowHTML).join('')}</div><button class="btn sm" data-act="stPackAdd">＋ 追加</button></div>
     <button class="btn primary block" data-act="stSave">設定を保存</button>
-    <div class="set-sec mt"><div class="b">🔌 接続</div><div id="stConn" class="small muted">${S.serverMock ? 'デモモード（GAS未接続）' : 'GAS接続中'}</div><button class="btn sm" data-act="stTest">接続テスト</button>
+    <div class="set-sec mt"><div class="b">🔌 接続</div><div id="stConn" class="small muted">${IS_DEMO ? 'デモモード（GAS 未接続）' : IS_GAS ? 'GAS 接続中' : 'GAS の接続部品がありません'}</div><button class="btn sm" data-act="stTest">接続テスト</button>
       <div class="muted small">スポット帳・家計簿のURLとPINは画面に出さず、旅帳GASのスクリプトプロパティに保存します（README参照）。家計簿へはほしいもの帳と同じ方式（区分を固定した明細を追加）で送ります</div></div>
-    <div class="set-sec"><div class="b">💾 データ</div><div class="row gap wrap"><button class="btn sm" data-act="stExport">JSONを書き出す</button><button class="btn sm ghost" data-act="stClearCache">端末のキャッシュを消す</button>${S.serverMock ? '<button class="btn sm danger" data-act="stResetDemo">デモデータを初期化</button>' : ''}</div>
+    <div class="set-sec"><div class="b">💾 データ</div><div class="row gap wrap"><button class="btn sm" data-act="stExport">JSONを書き出す</button><button class="btn sm ghost" data-act="stClearCache">端末のキャッシュを消す</button>${IS_DEMO ? '<button class="btn sm danger" data-act="stResetDemo">デモデータを初期化</button>' : ''}</div>
       <div class="muted small">旅帳 v${APP_VERSION}</div></div>`,
     { title: '⚙️ 設定', full: true });
 };
@@ -4743,7 +4843,7 @@ ACT.mvDel = async () => {
 // ---------------------------------------------------------------------------
 function isMockUri(u) { return /^mock-upload:/.test(u || ''); }
 let mockThumbMaker = null;
-if (!IS_GAS) {
+if (IS_DEMO) {
   mockThumbMaker = async (qid, f) => {
     if (mediaKind(f) !== 'photo' || typeof createImageBitmap !== 'function') return;
     try {
@@ -5214,7 +5314,25 @@ function switchTab(id) {
 }
 ACT.tab = (el) => switchTab(el.dataset.tab);
 
+// 画面上部の帯：デモモードは全画面で明示。GAS から開かれていない本番は赤で知らせる
+function renderModeBanner() {
+  const el = document.getElementById('modeBanner');
+  if (!el) return;
+  if (IS_GAS) { el.innerHTML = ''; return; }
+  el.innerHTML = IS_DEMO
+    ? '<div class="mode-banner demo">🧪 デモモード（GAS 未接続）：データはこのブラウザにだけ保存されます。本番の旅帳ではありません</div>'
+    : '<div class="mode-banner bad">⚠️ GAS の接続部品が読み込めていません。旅帳は GAS のウェブアプリ URL から開いてください（デモへの切り替えはしません）</div>';
+}
 function render() {
+  try { renderInner(); }
+  catch (e) {
+    console.error(e);
+    if (window.__TB && !window.__TB.started) window.__TB.fail('画面の描画', e);
+    else toast('表示中にエラー：' + e.message);
+  }
+}
+function renderInner() {
+  renderModeBanner();
   const trip = curTrip();
   // ヘッダー
   const ht = $('#headTrip');
@@ -5273,12 +5391,21 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { loadSpots(true); if (!modalStack.length && !isTyping()) render(); }
 });
 
+// 起動の各段階を個別に守る（どこかで失敗しても画面は出し、原因を起動ガードに残す）
+function bootStep(name, fn) {
+  try { return fn(); }
+  catch (e) { console.error(name, e); if (window.__TB) window.__TB.errors.push(name + '：' + (e && e.message || e)); return undefined; }
+}
 async function init() {
-  loadCache();
-  mqLoad();
-  Object.values(S.trips).forEach(t => syncBookingItems(t));
-  pickDefaultTrip();
+  bootStep('端末データの読み込み', loadCache);
+  bootStep('送信キューの読み込み', mqLoad);
+  bootStep('予約と工程の同期', () => Object.values(S.trips).forEach(t => syncBookingItems(t)));
+  bootStep('表示する旅の選択', pickDefaultTrip);
   render();
+  if (window.__TB) {
+    window.__TB.started = true;
+    if (window.__TB.errors.length) window.__TB.show('旅帳は起動しましたが、起動中に問題がありました');
+  }
   startGeo();
   ensureFx();
   await bootstrapFromServer();
@@ -5290,6 +5417,7 @@ async function init() {
 }
 document.addEventListener('DOMContentLoaded', init);
 
+})();
 </script>
 </body>
 </html>

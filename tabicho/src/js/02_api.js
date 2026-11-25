@@ -2,6 +2,10 @@
 // 02 サーバAPI（GAS google.script.run）＋ ローカル動作用モック
 // ============================================================================
 const IS_GAS = typeof google !== 'undefined' && google.script && google.script.run;
+// デモモードは「手元で開いた時（file:// ・localhost）」か「#demo を付けた時」だけ。
+// それ以外で GAS の接続部品が無い時はデモに切り替えず、エラーとして見せる（本番での無言フォールバックをしない）
+const IS_DEV = location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname || '');
+const IS_DEMO = !IS_GAS && (IS_DEV || /[#&?]demo\b/.test(location.href));
 
 function api(name, args) {
   if (IS_GAS) {
@@ -16,7 +20,8 @@ function api(name, args) {
         .apiCall(name, JSON.stringify(args || {}));
     });
   }
-  return MockServer.call(name, args || {});
+  if (IS_DEMO) return MockServer.call(name, args || {});
+  return Promise.reject(new Error('GAS の接続部品（google.script.run）がありません。旅帳は GAS のウェブアプリ URL から開いてください'));
 }
 
 // ---------------------------------------------------------------------------

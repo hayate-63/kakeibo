@@ -533,7 +533,7 @@ ACT.mvDel = async () => {
 // ---------------------------------------------------------------------------
 function isMockUri(u) { return /^mock-upload:/.test(u || ''); }
 let mockThumbMaker = null;
-if (!IS_GAS) {
+if (IS_DEMO) {
   mockThumbMaker = async (qid, f) => {
     if (mediaKind(f) !== 'photo' || typeof createImageBitmap !== 'function') return;
     try {

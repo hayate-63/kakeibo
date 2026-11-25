@@ -302,9 +302,20 @@ function loadCache() {
     S.settingsDirty = !!c.settingsDirty;
     S.hours = c.hours || {};
     if (c.ui && c.ui.listSort) S.ui.listSort = c.ui.listSort;
-    Object.values(S.trips).forEach(migrateTrip);
+    // 1件ずつ移行し、壊れた旅は外して別名に退避（1件のせいで全体が起動しなくならないように）
+    const broken = {};
+    Object.keys(S.trips).forEach(id => {
+      try { migrateTrip(S.trips[id]); }
+      catch (e) { broken[id] = S.trips[id]; delete S.trips[id]; delete S.dirty[id]; reportStartupProblem('端末に保存された旅「' + ((broken[id] || {}).title || id) + '」を読めませんでした（退避済み）', e); }
+    });
+    if (Object.keys(broken).length) { try { localStorage.setItem('tabicho_cache_broken_' + Date.now(), JSON.stringify(broken)); } catch (e) {} }
     return true;
-  } catch (e) { return false; }
+  } catch (e) { reportStartupProblem('端末に保存されたデータを読めませんでした（サーバから読み直します）', e); return false; }
+}
+function reportStartupProblem(msg, e) {
+  console.error(msg, e);
+  if (window.__TB) window.__TB.errors.push(msg + '：' + (e && e.message || e));
+  setTimeout(() => { try { toast(msg); } catch (x) {} }, 500);
 }
 function migrateTrip(t) {
   const d = newTrip({});

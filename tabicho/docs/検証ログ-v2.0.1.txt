@@ -1,0 +1,34 @@
+旅帳 v2.0.1 検証ログ
+実行日時：2026-11-26 07:44:51 JST ／ Node.js v22.23.5 ／ built gas/index.html 328.8KB v2.0.1 js 296495 chars hash a83b84dd
+
+■ test/boot.e2e.js（v2.0.1 起動ガード・モード判定。GAS の配信を真似て手元以外のホスト名で開く）
+✓ GAS として起動（デモの帯なし・サーバを呼ぶ・起動ガードは出ない）
+✓ 本番で GAS 部品が無い時はデモに落ちない（赤い帯で明示）
+✓ 本体が欠けた時：起動ガードが「長さが違う」と表示
+✓ 構文エラー：エラーの文面と行番号、本体の不一致を表示
+✓ グローバル名がぶつかっても起動（本体は関数の中）
+✓ 壊れた旅だけ外して起動・退避・画面で知らせる
+✓ 「保存データを退避」で端末データを別名に移す
+✓ 手元で開いた時はデモモードを帯で明示
+
+8 checks passed
+
+■ 再現実験：旧 v2.0 のビルドで、同名のグローバル（変更不可）が先にある場合
+MQ → nav 0 ／ apiCall [] ／ Identifier 'MQ' has already been declared
+TH → nav 0 ／ apiCall [] ／ Identifier 'TH' has already been declared
+VIS → nav 0 ／ apiCall [] ／ Identifier 'VIS' has already been declared
+
+■ test/logic.test.js
+17 tests passed
+
+■ test/gas.test.js
+gas storage tests passed
+kakeibo integration tests passed
+spotcho integration tests passed
+media API tests passed
+
+■ test/smoke.e2e.js（v1 機能の回帰）
+NO ERRORS
+
+■ test/v2.e2e.js（v2.0 機能の回帰）
+10 checks passed（ページのエラーなし）

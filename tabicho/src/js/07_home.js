@@ -8,7 +8,6 @@ function renderHome() {
     <button class="btn primary grow" data-act="tripNew">＋ 新しい旅</button>
     <button class="btn accent grow" data-act="openSuggest">🧭 行き先を探す</button></div>
     <button class="btn block collection-btn" data-act="openCollection">🗂 コレクション（統計・マップ・年別レポート）</button>`;
-  if (S.serverMock) h += `<div class="info-box small">🧪 デモモード：GASに置く前のローカル動作です。データはこのブラウザにだけ保存されます。</div>`;
   if (trip) h += currentTripCard(trip);
   else h += emptyHTML('🧳', 'まだ旅がありません。<br>「新しい旅」か「行き先を探す」から始めましょう');
 
