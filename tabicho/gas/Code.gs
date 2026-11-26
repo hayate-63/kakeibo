@@ -1,5 +1,5 @@
 /**
- * 旅帳 サーバ（Google Apps Script） v2.0.2
+ * 旅帳 サーバ（Google Apps Script） v2.0.3
  * v2.0：写真・動画の Drive 保存（メディア）、ビジュアルモード、コレクション
  *
  * ウェブアプリとしてデプロイ：実行ユーザー＝自分／アクセス＝自分のみ（推奨）
@@ -110,6 +110,22 @@ function writeTripRow_(sh, row, trip) {
   rng.setValues([vals]);
 }
 
+// v2.0.3：旅の行を探すのは ID 列（A列）だけ読む。全部の旅の JSON を読んで解析しない
+function findTripRow_(sh, id) {
+  var last = sh.getLastRow();
+  if (last < 2) return 0;
+  var ids = sh.getRange(2, 1, last - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) if (String(ids[i][0]) === String(id)) return i + 2;
+  return 0;
+}
+// 1行だけ読んで旅に戻す（衝突した時だけ使う）
+function readTripRow_(sh, row) {
+  var r = sh.getRange(row, 1, 1, sh.getLastColumn()).getValues()[0];
+  var t = JSON.parse(r.slice(5).join(''));
+  t.updatedAt = String(r[1]);
+  return t;
+}
+
 var API = {};
 
 API.bootstrap = function () {
@@ -129,10 +145,13 @@ API.saveTrip = function (a) {
     var ss = db_(); var sh = ss.getSheetByName(TRIP_SHEET);
     var trip = a.trip;
     if (!trip || !trip.id) throw new Error('旅のデータがありません');
-    var cur = readTrips_().filter(function (x) { return x.trip.id === trip.id; })[0];
-    if (cur && !a.force && a.baseUpdatedAt && cur.trip.updatedAt > a.baseUpdatedAt) return { conflict: true, trip: cur.trip };
+    var row = findTripRow_(sh, trip.id);
+    if (row && !a.force && a.baseUpdatedAt) {
+      var curAt = String(sh.getRange(row, 2).getValue());   // 更新日時（B列）だけ見る
+      if (curAt > a.baseUpdatedAt) return { conflict: true, trip: readTripRow_(sh, row) };
+    }
     trip.updatedAt = new Date().toISOString();
-    var row = cur ? cur.row : sh.getLastRow() + 1;
+    if (!row) row = sh.getLastRow() + 1;
     writeTripRow_(sh, row, trip);
     return { ok: true, updatedAt: trip.updatedAt };
   } finally { lock.releaseLock(); }
@@ -142,8 +161,8 @@ API.deleteTrip = function (a) {
   var lock = LockService.getScriptLock(); lock.waitLock(20000);
   try {
     var sh = db_().getSheetByName(TRIP_SHEET);
-    var cur = readTrips_().filter(function (x) { return x.trip.id === a.id; })[0];
-    if (cur) sh.deleteRow(cur.row);
+    var row = findTripRow_(sh, a.id);
+    if (row) sh.deleteRow(row);
     return { ok: true };
   } finally { lock.releaseLock(); }
 };
@@ -694,11 +713,18 @@ API.calendarAdd = function (a) {
   var id = prop_('TRAVEL_CALENDAR_ID');
   var cal = id ? CalendarApp.getCalendarById(id) : CalendarApp.getDefaultCalendar();
   var ev;
+  // v2.0.3：時刻は旅の現地のタイムゾーン（海外の旅で「現地 10:00」と入れたら現地 10:00 の予定になる）
+  var tz = String(a.timeZone || 'Asia/Tokyo');
   if (a.start) {
-    var s = new Date(a.date + 'T' + a.start + ':00+09:00');
-    var e = a.end ? new Date(a.date + 'T' + a.end + ':00+09:00') : new Date(s.getTime() + 3600000);
-    if (e <= s) e = new Date(e.getTime() + 86400000);
-    ev = cal.createEvent(a.title, s, e, a.location ? { location: a.location } : {});
+    var s;
+    try { s = Utilities.parseDate(a.date + ' ' + a.start, tz, 'yyyy-MM-dd HH:mm'); }
+    catch (err) { tz = 'Asia/Tokyo'; s = Utilities.parseDate(a.date + ' ' + a.start, tz, 'yyyy-MM-dd HH:mm'); }
+    var dur = Number(a.durationMin) > 0 ? Number(a.durationMin) : 60;
+    var e = new Date(s.getTime() + dur * 60000);   // 日をまたいでも正しい
+    var opt = {};
+    if (a.location) opt.location = a.location;
+    if (tz !== 'Asia/Tokyo') opt.description = '現地時刻 ' + a.date + ' ' + a.start + '（' + tz + '）';
+    ev = cal.createEvent(a.title, s, e, opt);
   } else {
     ev = cal.createAllDayEvent(a.title, new Date(a.date + 'T00:00:00+09:00'), a.location ? { location: a.location } : {});
   }
@@ -865,7 +891,8 @@ API.mediaThumbs = function (a) {
   }
   need.forEach(function (id) {
     // サムネイルができているものだけキャッシュ（動画は Drive の処理待ちで後からできる）
-    if (out[id] && out[id].thumb) { try { cache.put('th:' + id + ':' + size, JSON.stringify(out[id]), 6 * 3600); } catch (e) { /* 100KB 超は入れない */ } }
+    // v2.0.3：一覧用の小さいサイズ（400 以下）だけ。大きい画像は 100KB の上限に当たって無駄になる
+    if (size <= 400 && out[id] && out[id].thumb) { try { cache.put('th:' + id + ':' + size, JSON.stringify(out[id]), 6 * 3600); } catch (e) { /* 100KB 超は入れない */ } }
   });
   return { ok: true, thumbs: out };
 };

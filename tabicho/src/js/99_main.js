@@ -27,6 +27,7 @@ function renderModeBanner() {
     : '<div class="mode-banner bad">⚠️ GAS の接続部品が読み込めていません。旅帳は GAS のウェブアプリ URL から開いてください（デモへの切り替えはしません）</div>';
 }
 function render() {
+  renderDeferred = false;
   try { renderInner(); }
   catch (e) {
     console.error(e);
@@ -34,6 +35,27 @@ function render() {
     else toast('表示中にエラー：' + e.message);
   }
 }
+// v2.0.3：天気・経路・営業時間・現在地など「後から届く」情報での描き直し。
+// 文字を入力中に画面を作り直すと、入力途中の文字やカーソルが消えるので、入力欄から離れるまで待つ
+let renderDeferred = false;
+function softRender() {
+  const a = document.activeElement;
+  if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && !(a.type === 'checkbox' || a.type === 'radio' || a.type === 'button')) {
+    renderDeferred = true;
+    return false;
+  }
+  render();
+  return true;
+}
+document.addEventListener('focusout', () => {
+  if (!renderDeferred) return;
+  setTimeout(() => {   // 次の入力欄へ移っただけなら、まだ待つ
+    if (!renderDeferred) return;
+    const a = document.activeElement;
+    if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return;
+    renderDeferred = false; render();
+  }, 300);
+});
 function renderInner() {
   renderModeBanner();
   const trip = curTrip();
@@ -94,6 +116,8 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { loadSpots(true); if (!modalStack.length && !isTyping()) render(); }
 });
 
+// 画面テスト用の入口（デモモードの時だけ。本番の GAS では出さない）
+if (IS_DEMO) window.__TABICHO_T = { softRender, saveCache, loadImg, imageExportSafe, thumbIdb, tripTz, tripToday, curTrip, S };
 // 起動の各段階を個別に守る（どこかで失敗しても画面は出し、原因を起動ガードに残す）
 function bootStep(name, fn) {
   try { return fn(); }

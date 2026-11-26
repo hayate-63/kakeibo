@@ -19,8 +19,9 @@
 ・tabicho/test/boot.e2e.js …… 起動ガード・モード判定（GAS の配信を真似て開く）
 ・tabicho/test/smoke.e2e.js …… v1 機能の画面の通し
 ・tabicho/test/v2.e2e.js ……… v2 機能の画面の通し（アップロードは tabicho-poc/test/mock-server.js へ本当に PUT）
+・tabicho/test/v203.e2e.js …… v2.0.3 の通し（旅ごとのタイムゾーン・入力中の描き直し待ち・保存容量・外部画像の書き出し・サムネイルの整理）
 ・tabicho-poc/test/mock-server.js … Drive の resumable upload の振る舞いを真似た模擬サーバ
 
 ■ 注意
-・画面のテストは 127.0.0.1 のポート 8701〜8713 を使います
+・画面のテストは 127.0.0.1 のポート 8701〜8714 を使います
 ・実機（iPhone）・実際の GAS・実データの確認の代わりにはなりません

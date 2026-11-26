@@ -48,7 +48,7 @@ ACT.tripSelect = (el) => { S.curTripId = el.dataset.id; saveCache(); render(); }
 
 function currentTripCard(trip) {
   const st = tripStatus(trip);
-  const today = todayStr();
+  const today = tripToday(trip);
   const days = tripDays(trip);
   let when = '日程未定';
   if (trip.startDate) {
@@ -83,6 +83,7 @@ function currentTripCard(trip) {
       <div>👥 ${trip.members.map(m => esc(m.name) + (m.isMe ? '👤' : '')).join('・')}</div>
       <div>${trip.vehicles.map(v => VEHICLES[v].icon + VEHICLES[v].label).join(' ')} ・ ${trip.mode === 'shiori' ? '📒 しおり' : '📝 リスト'}</div>
       ${trip.area ? `<div>📍 ${esc(trip.area)}</div>` : ''}
+      ${tripTz(trip) !== 'Asia/Tokyo' ? `<div>🕐 現地 ${fromMin(Math.floor(tripNowMin(trip)))}（${esc(tzLabel(tripTz(trip)))}・日本との時差 ${(d => (d > 0 ? '+' : '') + d)(tzDiffHours(tripTz(trip), 'Asia/Tokyo'))}時間）</div>` : ''}
       ${bs.budget != null ? `<div>💰 予算 ${fmtMoney(bs.budget, trip.currency)} ／ 実績 ${fmtMoney(bs.total, trip.currency)}</div>` : (bs.total ? `<div>💰 支出 ${fmtMoney(bs.total, trip.currency)}</div>` : '')}
       ${pk != null ? `<div>🎒 持ち物 ${pk}%</div>` : ''}
     </div>
@@ -97,9 +98,9 @@ function currentTripCard(trip) {
   </div>`;
 }
 function nextScheduled(trip) {
-  const today = todayStr();
+  const today = tripToday(trip);
   const rows = daySchedule(trip, today);
-  const now = nowMinutes();
+  const now = tripNowMin(trip);
   return rows.find(r => r.end > now && !r.it.visited) || null;
 }
 ACT.goTab = (el) => switchTab(el.dataset.tab);
@@ -131,6 +132,8 @@ function openTripEditor(trip, preset) {
     <label>行き先エリア</label><input id="teArea" value="${esc(t.area)}" placeholder="例：淡路島">
     <label>国内／海外</label><div><select id="teRegion"><option value="auto" ${!t.regionManual ? 'selected' : ''}>自動（今は${detectRegion(t) === 'overseas' ? '海外' : '国内'}）</option><option value="domestic" ${t.regionManual && t.region === 'domestic' ? 'selected' : ''}>国内</option><option value="overseas" ${t.regionManual && t.region === 'overseas' ? 'selected' : ''}>海外</option></select>
       ${t.driveFolderId ? `<div class="muted small">写真の保存フォルダは作成済みのため移動しません（${esc(t.driveFolderName || '')}）</div>` : ''}</div>
+    <label>現地の時刻</label><div><select id="teTz"><option value="">${t.region === 'overseas' ? '自動（精算通貨から：' + esc(tzLabel(tripTz(Object.assign({}, t, { timeZone: '' })))) + '）' : '日本（自動）'}</option>${TZ_LIST.map(([z, l]) => `<option value="${z}" ${t.timeZone === z ? 'selected' : ''}>${esc(l)}（${z}）</option>`).join('')}</select>
+      <div class="muted small">「今日」・現在地の進み具合・出発カウントダウン・営業中の判定・カレンダー登録を、この土地の時刻で計算します</div></div>
     <label>英語タイトル</label><input id="teTitleEn" value="${esc(t.titleEn || '')}" placeholder="任意（ビジュアルの表紙文字。空欄なら自動で英語表示）">
     <label>出発地</label><div class="row gap"><input id="teOrigin" class="grow" value="${esc(t.origin && t.origin.name || '')}" placeholder="自宅"><button class="btn sm" data-act="teOriginHome">自宅</button><button class="btn sm" data-act="teOriginHere">現在地</button></div>
     <input type="hidden" id="teOriginLat" value="${t.origin && t.origin.lat != null ? t.origin.lat : ''}"><input type="hidden" id="teOriginLng" value="${t.origin && t.origin.lng != null ? t.origin.lng : ''}">
@@ -179,6 +182,7 @@ ACT.teSave = () => {
   trip.currency = $('#teCur', b).value;
   trip.emoji = Array.from($('#teEmoji', b).value.trim())[0] || '';
   trip.titleEn = $('#teTitleEn', b).value.trim();
+  trip.timeZone = $('#teTz', b).value;
   const rg = $('#teRegion', b).value;
   trip.regionManual = rg !== 'auto';
   trip.region = rg === 'auto' ? detectRegion(trip) : rg;

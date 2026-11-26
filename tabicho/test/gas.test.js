@@ -12,8 +12,10 @@ function fakeSheet(name) {
     deleteRow: (i) => data.splice(i - 1, 1),
     setFrozenRows() {},
     getRange(r, c, nr = 1, nc = 1) {
+      const log = () => { if (global.__readLog) global.__readLog.push(nr * nc); };
       return {
-        getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => ((data[r - 1 + i] || [])[c - 1 + j]) ?? '')),
+        getValue: () => { log(); return ((data[r - 1] || [])[c - 1]) ?? ''; },
+        getValues: () => log() || Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => ((data[r - 1 + i] || [])[c - 1 + j]) ?? '')),
         setValues: (v) => v.forEach((row, i) => { data[r - 1 + i] = data[r - 1 + i] || []; row.forEach((x, j) => { data[r - 1 + i][c - 1 + j] = x; }); }),
         setValue: (x) => { data[r - 1] = data[r - 1] || []; data[r - 1][c - 1] = x; },
         setNumberFormat() {}
@@ -50,6 +52,20 @@ assert.ok(r3.ok);
 b = call('bootstrap', {});
 assert.strictEqual(b.trips[0].title, 'C');
 assert.strictEqual(b.trips[0].expenses.length, 0, '短くなった時に古い分割セルが残らない');
+// v2.0.3：保存・削除は全部の旅を読まない（ID 列と更新日時だけ）。衝突時だけその1行を読む
+call('saveTrip', { trip: { id: 't2', title: '2つ目' } });
+global.__readLog = [];
+const r4 = call('saveTrip', { trip: { id: 't2', title: '2つ目改' }, baseUpdatedAt: '2999-01-01T00:00:00.000Z' });
+assert.ok(r4.ok);
+assert.ok(Math.max(...global.__readLog) <= 3, '読むのは ID 列（旅の数ぶん）と更新日時の1セルだけ: ' + global.__readLog);
+global.__readLog = [];
+const r5 = call('saveTrip', { trip: { id: 't2', title: 'X' }, baseUpdatedAt: '2000-01-01T00:00:00.000Z' });
+assert.ok(r5.conflict && r5.trip.title === '2つ目改', '衝突時はサーバ側の旅を返す');
+global.__readLog = [];
+call('deleteTrip', { id: 't2' });
+assert.ok(Math.max(...global.__readLog) <= 2, '削除も ID 列だけ');
+global.__readLog = null;
+assert.strictEqual(call('bootstrap', {}).trips.length, 1);
 call('saveSettings', { settings: { myName: 'テスト' } });
 assert.strictEqual(call('bootstrap', {}).settings.myName, 'テスト');
 call('deleteTrip', { id: 't1' });
@@ -298,3 +314,24 @@ console.log('spotcho integration tests passed');
   assert.strictEqual(pn.names['34.564,135.010'], '淡路市 夢舞台');
   console.log('media API tests passed');
 })();
+
+// ---- v2.0.3 カレンダー登録：旅の現地のタイムゾーンで、所要時間ぶん ----
+{
+  const seen = [];
+  ctx.Utilities.parseDate = (s, tz, fmt) => { seen.push([s, tz, fmt]); if (tz === 'Bad/Zone') throw new Error('bad tz'); return new Date(Date.UTC(2026, 10, 26, 20, 30)); };
+  const events = [];
+  const cal = { createEvent: (title, s, e, opt) => { events.push({ title, s, e, opt }); return { getId: () => 'ev' + events.length }; }, createAllDayEvent: () => ({ getId: () => 'all' }) };
+  ctx.CalendarApp.getDefaultCalendar = () => cal; ctx.CalendarApp.getCalendarById = () => cal;
+  const r = call('calendarAdd', { title: 'ディナー', date: '2026-11-26', start: '10:30', durationMin: 90, timeZone: 'Pacific/Honolulu', location: 'ワイキキ' });
+  assert.ok(r.ok);
+  assert.deepStrictEqual(seen[0], ['2026-11-26 10:30', 'Pacific/Honolulu', 'yyyy-MM-dd HH:mm']);
+  assert.strictEqual(events[0].e - events[0].s, 90 * 60000, '所要時間ぶん（日をまたいでも）');
+  assert.ok(/現地時刻/.test(events[0].opt.description) && events[0].opt.location === 'ワイキキ');
+  call('calendarAdd', { title: '日本', date: '2026-11-26', start: '10:30' });
+  assert.strictEqual(seen[1][1], 'Asia/Tokyo', '指定なしは日本');
+  assert.strictEqual(events[1].e - events[1].s, 3600000, '所要時間なしは1時間');
+  assert.ok(!events[1].opt.description);
+  call('calendarAdd', { title: '壊れ', date: '2026-11-26', start: '10:30', timeZone: 'Bad/Zone' });
+  assert.strictEqual(seen[3][1], 'Asia/Tokyo', '不正なタイムゾーンは日本で登録');
+  console.log('calendar timezone tests passed');
+}

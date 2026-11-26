@@ -198,7 +198,7 @@ async function uploadOne(q, file) {
     q.state = 'done'; q.doneAt = Date.now(); q.sessionUri = ''; q.progress = 1; q.fileId = fileObj.id;
     MQ.files.delete(q.qid);
     mqUpdate(q);
-    render();
+    softRender();
   } catch (e) {
     q.state = 'failed'; q.error = e.message || String(e); mqUpdate(q);
   }
@@ -211,7 +211,7 @@ async function registerMedia(trip, q, fileObj) {
   let meta = {};
   try { const r = await api('mediaMeta', { ids: [fileObj.id] }); meta = (r.meta || {})[fileObj.id] || {}; } catch (e) {}
   const taken = meta.takenAt || '';
-  const date = q.date || (taken ? taken.slice(0, 10) : todayStr());
+  const date = q.date || (taken ? taken.slice(0, 10) : tripToday(trip));   // アップロード日も旅の現地の日付で
   const m = {
     id: uid('md'), fileId: fileObj.id, kind: q.kind, name: fileObj.name || q.name, size: Number(fileObj.size) || q.size,
     mimeType: fileObj.mimeType || q.type, takenAt: taken, date, dateSource: q.date ? 'manual' : taken ? 'exif' : 'upload',
@@ -263,15 +263,52 @@ function previewState(m) {
 // サムネイル（GAS が自権限で取得した base64。端末にもキャッシュしてオフラインでも見られる）
 // ---------------------------------------------------------------------------
 const TH = new Map();
+const THUMB_IDB_MAX = window.__TABICHO_THUMB_MAX || 3000;   // 端末に残すサムネイルの上限（約 20KB × 3000 ≒ 60MB）。テストでだけ小さくできる
 const thumbIdb = (() => {
   let dbp = null;
   const open = () => dbp || (dbp = new Promise((res) => {
     try { const r = indexedDB.open('tabicho_thumbs', 1); r.onupgradeneeded = () => r.result.createObjectStore('t'); r.onsuccess = () => res(r.result); r.onerror = () => res(null); }
     catch (e) { res(null); }
   }));
+  // v2.0.3：値は { d: データ, t: 最後に使った時刻 }（v2.0.2 までの素の文字列も読める）。
+  // 件数が THUMB_IDB_MAX を超えたら、使っていない古いものから 8 割まで減らす
+  let puts = 0, pruning = false;
+  const unwrap = (r) => (r && typeof r === 'object' && 'd' in r) ? r.d : r;
+  async function prune(db) {
+    if (pruning) return; pruning = true;
+    try {
+      const all = await new Promise(res => {
+        const out = [];
+        try {
+          const c = db.transaction('t').objectStore('t').openCursor();
+          c.onsuccess = () => { const cur = c.result; if (!cur) return res(out); const v = cur.value; out.push([cur.key, (v && typeof v === 'object' && v.t) || 0]); cur.continue(); };
+          c.onerror = () => res(out);
+        } catch (e) { res(out); }
+      });
+      if (all.length <= THUMB_IDB_MAX) return;
+      all.sort((a, b) => a[1] - b[1]);
+      const del = all.slice(0, all.length - Math.floor(THUMB_IDB_MAX * 0.8));
+      await new Promise(res => {
+        try { const tx = db.transaction('t', 'readwrite'); const st = tx.objectStore('t'); del.forEach(([k]) => st.delete(k)); tx.oncomplete = res; tx.onerror = res; tx.onabort = res; }
+        catch (e) { res(); }
+      });
+    } finally { pruning = false; }
+  }
   return {
-    async get(k) { const db = await open(); if (!db) return undefined; return new Promise(res => { try { const g = db.transaction('t').objectStore('t').get(k); g.onsuccess = () => res(g.result); g.onerror = () => res(undefined); } catch (e) { res(undefined); } }); },
-    async put(k, v) { const db = await open(); if (!db) return; try { db.transaction('t', 'readwrite').objectStore('t').put(v, k); } catch (e) {} }
+    async get(k) {
+      const db = await open(); if (!db) return undefined;
+      const r = await new Promise(res => { try { const g = db.transaction('t').objectStore('t').get(k); g.onsuccess = () => res(g.result); g.onerror = () => res(undefined); } catch (e) { res(undefined); } });
+      if (r === undefined) return undefined;
+      // 使った印（1日に1回だけ書き直す。読むたびに書かない）
+      if (!(r && typeof r === 'object' && r.t > Date.now() - 86400000)) { try { db.transaction('t', 'readwrite').objectStore('t').put({ d: unwrap(r), t: Date.now() }, k); } catch (e) {} }
+      return unwrap(r);
+    },
+    async put(k, v) {
+      const db = await open(); if (!db) return;
+      try { db.transaction('t', 'readwrite').objectStore('t').put({ d: v, t: Date.now() }, k); } catch (e) {}
+      if (++puts % 50 === 1) prune(db);   // 起動後の最初と、その後 50 件ごとに件数を確かめる
+    },
+    prune: async () => { const db = await open(); if (db) await prune(db); }
   };
 })();
 function thumbKey(fileId, size) { return fileId + '@' + size; }
@@ -560,7 +597,7 @@ async function ensureMediaGeo(trip) {
       Object.keys(r.names || {}).forEach(k => { trip.placeNames[k] = r.names[k]; });
       commitTrip(trip, { silent: true });
     }
-    if (need.length || unnamed.length) render();
+    if (need.length || unnamed.length) softRender();
   } catch (e) { /* 位置情報は任意 */ }
   geoLoading = false;
 }

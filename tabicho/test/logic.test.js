@@ -210,4 +210,48 @@ t('v2.0.2 ビジュアルのレイアウト：枚数（1〜4）と比率の箱',
   assert.deepStrictEqual(r.wide, [60, 0, 80, 100], '横長の枠に 4:5 は中央に縦長');
   assert.deepStrictEqual(r.fill, [1, 2, 3, 4], '枠いっぱいはそのまま');
 });
+t('v2.0.3 タイムゾーン：現地の日付・時刻と、現地時刻→絶対時刻', () => {
+  const r = run(`(() => {
+    const at = Date.UTC(2026, 10, 26, 20, 30);   // 日本 11/27 05:30、ハワイ 11/26 10:30
+    const hon = tzParts('Pacific/Honolulu', new Date(at)), tok = tzParts('Asia/Tokyo', new Date(at));
+    return {
+      hon: hon.year + '-' + hon.month + '-' + hon.day + ' ' + hon.hour + ':' + hon.minute,
+      tok: tok.year + '-' + tok.month + '-' + tok.day + ' ' + tok.hour + ':' + tok.minute,
+      offHon: tzOffsetMin('Pacific/Honolulu', at), offTok: tzOffsetMin('Asia/Tokyo', at),
+      diff: tzDiffHours('Pacific/Honolulu', 'Asia/Tokyo'),
+      z1: zonedEpoch('2026-11-26', 630, 'Pacific/Honolulu') === at,
+      z2: zonedEpoch('2026-11-27', 330, 'Asia/Tokyo') === at,
+      // 夏時間：ロサンゼルス 2026-03-08 は 2:00 → 3:00。10:00 は PDT（UTC-7）
+      z3: zonedEpoch('2026-03-08', 600, 'America/Los_Angeles') === Date.UTC(2026, 2, 8, 17, 0),
+      z4: zonedEpoch('2026-01-08', 600, 'America/Los_Angeles') === Date.UTC(2026, 0, 8, 18, 0),
+      bad: zonedEpoch('2026-11-26', 60, 'Not/AZone') === parseYmd('2026-11-26').getTime() + 3600000,
+      valid: [validTz('Europe/Paris'), validTz('Mars/Base')]
+    };
+  })()`);
+  assert.strictEqual(r.hon, '2026-11-26 10:30');
+  assert.strictEqual(r.tok, '2026-11-27 05:30');
+  assert.strictEqual(r.offHon, -600); assert.strictEqual(r.offTok, 540);
+  assert.strictEqual(r.diff, -19);
+  assert.ok(r.z1 && r.z2, '現地の日付＋分 → 絶対時刻');
+  assert.ok(r.z3 && r.z4, '夏時間と冬時間');
+  assert.ok(r.bad, '不正なタイムゾーンは端末の時刻で計算');
+  assert.deepStrictEqual(r.valid, [true, false]);
+});
+t('v2.0.3 旅のタイムゾーン：未設定は日本／海外は精算通貨から推定／指定が最優先', () => {
+  const r = run(`(() => {
+    const a = newTrip({ title: '淡路島' });
+    const b = newTrip({ title: 'ハワイ' }); b.region = 'overseas'; b.currency = 'USD';
+    const c = newTrip({ title: 'NY' }); c.region = 'overseas'; c.currency = 'USD'; c.timeZone = 'America/New_York';
+    const d = newTrip({ title: '壊れ' }); d.timeZone = 'Bad/Zone';
+    return [tripTz(a), tripTz(b), tripTz(c), tripTz(d), typeof tripToday(b), typeof tripNowMin(b)];
+  })()`);
+  assert.deepStrictEqual(r, ['Asia/Tokyo', 'Pacific/Honolulu', 'America/New_York', 'Asia/Tokyo', 'string', 'number']);
+});
+t('v2.0.3 旅の状態（旅行中かどうか）は現地の日付で決まる', () => {
+  const r = run(`(() => {
+    const t = newTrip({ title: 'ハワイ' }); t.region = 'overseas'; t.currency = 'USD'; t.startDate = '2026-11-20'; t.endDate = '2026-11-26';
+    return [tripStatus(t, '2026-11-26'), tripStatus(t, '2026-11-27')];
+  })()`);
+  assert.notStrictEqual(r[0], r[1], '日本で翌日になっても、現地がまだ最終日なら旅行中のまま');
+});
 console.log(`\n${n} tests passed`);

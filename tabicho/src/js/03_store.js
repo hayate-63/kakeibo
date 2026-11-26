@@ -105,7 +105,8 @@ function newTrip(o) {
     media: [],                // 写真・動画 [{id,fileId,kind,name,size,mimeType,takenAt,date,dateSource,spotId,itemId,favorite,cover,comment,createdAt,...}]
     albums: [],               // 外部アルバム URL（複数・タイトル付き。M6）
     coverLink: '',            // 代表写真のリンク指定（任意）
-    visual: { dayPicks: {}, coverMediaId: '', ratio: 'fill', defaultCount: 'auto', dayCount: {} }
+    visual: { dayPicks: {}, coverMediaId: '', ratio: 'fill', defaultCount: 'auto', dayCount: {} },
+    timeZone: ''              // v2.0.3 旅の現地のタイムゾーン（空＝日本）。今日・今の時刻・カウントダウン・カレンダー登録に使う
   };
   t.region = t.region || detectRegion(t);
   if (!t.members.some(m => m.isMe) && t.members.length) t.members[0].isMe = true;
@@ -123,6 +124,14 @@ function newItem(o) {
 
 // 国内／海外の自動判定（行き先エリア・精算通貨から）
 const OVERSEAS_RE = /台湾|台北|台中|台南|高雄|韓国|ソウル|釜山|済州|中国|上海|北京|香港|マカオ|タイ|バンコク|プーケット|ベトナム|ハノイ|ホーチミン|ダナン|シンガポール|マレーシア|クアラルンプール|インドネシア|バリ|フィリピン|セブ|マニラ|インド|ハワイ|ホノルル|グアム|サイパン|アメリカ|米国|ニューヨーク|ロサンゼルス|ラスベガス|サンフランシスコ|カナダ|バンクーバー|メキシコ|イギリス|英国|ロンドン|フランス|パリ|イタリア|ローマ|ミラノ|ベネチア|スペイン|バルセロナ|ドイツ|スイス|オーストリア|ウィーン|オランダ|ベルギー|チェコ|プラハ|ギリシャ|トルコ|イスタンブール|ドバイ|エジプト|オーストラリア|シドニー|メルボルン|ケアンズ|ニュージーランド|海外/;
+// v2.0.3：旅の現地のタイムゾーン。未設定なら日本（国内の旅）／精算通貨から推定（海外の旅）
+function tripTz(trip) {
+  if (trip && trip.timeZone && validTz(trip.timeZone)) return trip.timeZone;
+  if (trip && trip.region === 'overseas' && CURRENCY_TZ[trip.currency]) return CURRENCY_TZ[trip.currency];
+  return 'Asia/Tokyo';
+}
+function tripToday(trip) { return todayInTz(tripTz(trip)); }
+function tripNowMin(trip) { return nowMinInTz(tripTz(trip)); }
 function detectRegion(t) {
   if (t.currency && t.currency !== 'JPY') return 'overseas';
   if (OVERSEAS_RE.test(String(t.area || '') + ' ' + String(t.title || ''))) return 'overseas';
@@ -147,7 +156,7 @@ function pendingBookingCount(trip) {
   return n;
 }
 function tripStatus(trip, today) {
-  today = today || todayStr();
+  today = today || tripToday(trip);
   if (trip.manualStatus === '中止') return '中止';
   if (trip.manualStatus === '完了') return '完了';
   if (!trip.startDate) return '検討中';
@@ -210,7 +219,7 @@ async function loadSpots(force) {
   } catch (e) {
     S.spotsState = 'error'; S.spotsError = e.message || String(e);
   }
-  render();
+  softRender();
 }
 function normalizeSpot(s) {
   const o = Object.assign({}, s);
@@ -276,7 +285,7 @@ async function loadHours(force) {
       Object.keys(r.hours || {}).forEach(id => { S.hours[id] = { week: r.hours[id], at: Date.now() }; });
     }
     saveCache();
-    render();
+    softRender();
   } catch (e) { /* 営業時間は任意。取れなければ情報なし表示 */ }
   hoursLoading = false;
 }
@@ -284,12 +293,33 @@ async function loadHours(force) {
 // ---------------------------------------------------------------------------
 // 保存：ローカルキャッシュ（オフライン可）→ サーバへ遅延保存（他端末更新の衝突検知つき）
 // ---------------------------------------------------------------------------
+// v2.0.3：端末の保存容量（localStorage はブラウザで約5MB）。いっぱいの時は
+// ①営業時間の控え（サーバから取り直せる）を外して再保存 → ②それでも無理なら一度だけ知らせる
+let quotaWarned = false;
+function isQuotaError(e) {
+  return !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+}
 function saveCache() {
+  const data = { settings: S.settings, trips: S.trips, curTripId: S.curTripId, dirty: S.dirty, settingsDirty: S.settingsDirty, ui: { listSort: S.ui.listSort }, hours: S.hours };
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({
-      settings: S.settings, trips: S.trips, curTripId: S.curTripId, dirty: S.dirty, settingsDirty: S.settingsDirty, ui: { listSort: S.ui.listSort }, hours: S.hours
-    }));
-  } catch (e) { console.warn(e); }
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+    return true;
+  } catch (e) {
+    if (!isQuotaError(e)) { console.warn(e); return false; }
+    try {
+      data.hours = {};
+      localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+      S.hours = {};
+      return true;
+    } catch (e2) {
+      console.warn(e2);
+      if (!quotaWarned) {
+        quotaWarned = true;
+        toast('⚠️ 端末の保存容量がいっぱいです。オンラインならサーバへの保存は続きますが、オフラインでの変更は失われるおそれがあります。終わった旅を整理するか、ブラウザの保存データを確認してください', { ms: 12000 });
+      }
+      return false;
+    }
+  }
 }
 function loadCache() {
   try {
@@ -465,7 +495,7 @@ function startGeo() {
       const prev = S.geo;
       S.geo = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, at: Date.now() };
       S.geoError = '';
-      if (!prev || haversineKm(prev, S.geo) > 0.3) render();
+      if (!prev || haversineKm(prev, S.geo) > 0.3) softRender();
     }, err => { S.geoError = err.message || '現在地を取得できません'; }, { enableHighAccuracy: true, maximumAge: 60000, timeout: 20000 });
   } catch (e) { S.geoError = String(e); }
 }

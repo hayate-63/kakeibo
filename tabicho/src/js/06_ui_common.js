@@ -406,7 +406,7 @@ function faceButtonsHTML(sel, act) {
 }
 async function markVisited(trip, it, visit) {
   const prev = it.visited;
-  const v = Object.assign({ date: todayStr(), rating: 0, comment: '', companions: trip.members.map(m => m.name), people: trip.members.length }, prev || {}, visit || {}, { at: new Date().toISOString() });
+  const v = Object.assign({ date: tripToday(trip), rating: 0, comment: '', companions: trip.members.map(m => m.name), people: trip.members.length }, prev || {}, visit || {}, { at: new Date().toISOString() });
   if (prev && prev.visitId) v.visitId = prev.visitId;
   it.visited = v;
   commitTrip(trip);
@@ -450,7 +450,7 @@ async function retryVisitWrites() {
 // クイック記録（スポット帳の［行った！］と同じ：日付＋評価をタップで即保存）
 function openQuickVisit(trip, it) {
   const info = itemInfo(trip, it);
-  openModal(`<div class="form-grid"><label>訪問日</label><input type="date" id="qvDate" value="${todayStr()}"></div>
+  openModal(`<div class="form-grid"><label>訪問日</label><input type="date" id="qvDate" value="${tripToday(trip)}"></div>
     <div class="b mt">評価（タップで記録）</div>${faceButtonsHTML(0, 'qvFace')}
     <div class="muted small">${it.spotId ? 'スポット帳の訪問記録に入ります。写真・金額はスポット帳で足せます' : 'スポット帳に未登録のため旅帳内だけに記録します'}</div>
     <button class="btn block mt" data-act="qvFull">📝 ひとこと・同行者も書く</button>`, { title: '✅ 行った！ ' + esc(info.name), data: { trip, it } });
@@ -466,13 +466,13 @@ ACT.qvFace = async (el) => {
 ACT.qvFull = () => { const { trip, it } = topModal().data; const d = $('#qvDate', topModalBody()).value; closeModal(); openVisitDialog(trip, it, d); };
 
 function openVisitDialog(trip, it, presetDate) {
-  const v = it.visited || { date: presetDate || todayStr(), rating: 0, comment: '', companions: trip.members.map(m => m.name) };
+  const v = it.visited || { date: presetDate || tripToday(trip), rating: 0, comment: '', companions: trip.members.map(m => m.name) };
   const info = itemInfo(trip, it);
   const comp = new Set(v.companions || []);
   const allNames = Array.from(new Set(trip.members.map(m => m.name).concat(v.companions || [])));
   const remote = it.spotId && v.visitId && S.spots[it.spotId] ? (S.spots[it.spotId].visits || []).find(x => x.visitId === v.visitId) : null;
   openModal(`<div class="form-grid">
-    <label>訪問日</label><input type="date" id="vdDate" value="${esc(v.date || todayStr())}">
+    <label>訪問日</label><input type="date" id="vdDate" value="${esc(v.date || tripToday(trip))}">
     <label>評価<span class="req">必須</span></label><div id="vdFaces" data-v="${v.rating || 0}">${faceButtonsHTML(v.rating || 0, 'vdFace')}</div>
     <label>ひとこと</label><textarea id="vdComment" rows="2" placeholder="ひとことコメント">${esc(v.comment || '')}</textarea>
     <label>同行者</label><div class="chips" id="vdComp">${allNames.map(n => `<label class="chip"><input type="checkbox" value="${esc(n)}" ${comp.has(n) ? 'checked' : ''}><span>${esc(n)}</span></label>`).join('')}</div>
@@ -487,7 +487,7 @@ ACT.vdSave = async () => {
   const b = topModalBody(); const { trip, it } = topModal().data;
   const rating = Number($('#vdFaces', b).dataset.v) || 0;
   if (!rating) return toast('評価を選んでください');
-  const visit = { date: $('#vdDate', b).value || todayStr(), rating, comment: $('#vdComment', b).value.trim(), companions: $$('#vdComp input', b).filter(x => x.checked).map(x => x.value) };
+  const visit = { date: $('#vdDate', b).value || tripToday(trip), rating, comment: $('#vdComment', b).value.trim(), companions: $$('#vdComp input', b).filter(x => x.checked).map(x => x.value) };
   visit.people = visit.companions.length || '';
   closeModal();
   await markVisited(trip, it, visit);
@@ -527,7 +527,7 @@ const requestWeather = (() => {
     try {
       const r = await api('weather', { points: list });
       Object.keys(r.weather || {}).forEach(k => { S.weatherCache[k] = r.weather[k]; });
-      render();
+      softRender();
     } catch (e) { /* 天気は任意 */ }
     list.forEach(p => delete weatherPending[weatherKey(p)]);
   }, 300);
@@ -563,7 +563,7 @@ const requestRoutes = (() => {
     try {
       const r = await api('routes', { list: list.map(q => ({ from: { lat: q.from.lat, lng: q.from.lng }, to: { lat: q.to.lat, lng: q.to.lng }, mode: q.mode, opt: q.opt })) });
       (r.results || []).forEach((res, i) => { if (res) S.routeCache[list[i].k] = res; });
-      render();
+      softRender();
     } catch (e) { /* 概算のまま */ }
     list.forEach(q => delete routePending[q.k]);
   }, 400);

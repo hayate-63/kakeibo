@@ -257,7 +257,23 @@ function ensureFonts() {
   if (!fontsReady) fontsReady = Promise.all(['700 120px "Playfair Display"', '400 40px "Noto Serif JP"', '700 40px "Noto Sans JP"'].map(f => document.fonts && document.fonts.load ? document.fonts.load(f).catch(() => {}) : null)).catch(() => {});
   return fontsReady;
 }
-function loadImg(src) { return new Promise((res) => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
+// v2.0.3：外部サイトの画像は crossOrigin を付けて読む。付けずに描くとキャンバスが「汚れ」て画像に書き出せなくなる。
+// 相手が許可していなければ読み込み失敗（null）になり、呼び出し側は絵文字などの代わりの表示にする
+function loadImg(src) {
+  return new Promise((res) => {
+    if (!src) return res(null);
+    const i = new Image();
+    if (/^https?:/i.test(src) && !src.startsWith(location.origin)) i.crossOrigin = 'anonymous';
+    let done = false;
+    const fin = (v) => { if (!done) { done = true; res(v); } };
+    i.onload = () => fin(i); i.onerror = () => fin(null);
+    setTimeout(() => fin(null), 15000);   // 返事がない外部画像で書き出しが止まらないように
+    i.src = src;
+  });
+}
+// キャンバスが書き出せる状態か（外部画像で汚れていないか）
+function canvasExportable(cv) { try { cv.getContext('2d').getImageData(0, 0, 1, 1); return true; } catch (e) { return false; } }
+function imageExportSafe(img) { const t = document.createElement('canvas'); t.width = t.height = 1; try { t.getContext('2d').drawImage(img, 0, 0, 1, 1); } catch (e) { return false; } return canvasExportable(t); }
 function drawCoverFit(ctx, img, x, y, w, h) {
   if (!img) { ctx.fillStyle = '#d6d3d1'; ctx.fillRect(x, y, w, h); return; }
   const k = Math.max(w / img.width, h / img.height);

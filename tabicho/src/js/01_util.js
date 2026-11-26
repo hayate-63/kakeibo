@@ -1,7 +1,7 @@
 // ============================================================================
 // 01 ユーティリティ・定数
 // ============================================================================
-const APP_VERSION = '2.0.2';
+const APP_VERSION = '2.0.3';
 
 const VEHICLES = {
   car:   { label: '車',       icon: '🚗' },
@@ -89,6 +89,48 @@ function fmtDate(s, withWd) {
 }
 function fmtDateFull(s) { if (!s) return '未定'; const d = parseYmd(s); return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate() + '(' + WD[d.getDay()] + ')'; }
 function todayStr() { return ymd(new Date()); }
+
+// ---- v2.0.3 タイムゾーン（旅ごとの現地時刻） ----
+const DEVICE_TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Tokyo'; } catch (e) { return 'Asia/Tokyo'; } })();
+const TZ_LIST = [
+  ['Asia/Tokyo', '日本'], ['Asia/Seoul', '韓国'], ['Asia/Taipei', '台湾'], ['Asia/Shanghai', '中国'], ['Asia/Hong_Kong', '香港・マカオ'],
+  ['Asia/Manila', 'フィリピン'], ['Asia/Singapore', 'シンガポール'], ['Asia/Kuala_Lumpur', 'マレーシア'], ['Asia/Bangkok', 'タイ'],
+  ['Asia/Ho_Chi_Minh', 'ベトナム'], ['Asia/Jakarta', 'インドネシア（ジャカルタ）'], ['Asia/Makassar', 'インドネシア（バリ）'], ['Asia/Kolkata', 'インド'],
+  ['Asia/Dubai', 'ドバイ'], ['Europe/Istanbul', 'トルコ'], ['Europe/London', 'イギリス'], ['Europe/Paris', 'フランス・ドイツ・イタリア・スペインなど'],
+  ['Europe/Athens', 'ギリシャ・フィンランド'], ['America/New_York', 'アメリカ東部'], ['America/Chicago', 'アメリカ中部'], ['America/Denver', 'アメリカ山岳部'],
+  ['America/Los_Angeles', 'アメリカ西部・ラスベガス'], ['America/Vancouver', 'カナダ西部'], ['America/Toronto', 'カナダ東部'], ['America/Mexico_City', 'メキシコ'],
+  ['Pacific/Honolulu', 'ハワイ'], ['Pacific/Guam', 'グアム・サイパン'], ['Australia/Brisbane', 'オーストラリア（ケアンズ・ブリスベン）'],
+  ['Australia/Sydney', 'オーストラリア（シドニー・メルボルン）'], ['Pacific/Auckland', 'ニュージーランド']
+];
+const CURRENCY_TZ = { JPY: 'Asia/Tokyo', KRW: 'Asia/Seoul', TWD: 'Asia/Taipei', CNY: 'Asia/Shanghai', HKD: 'Asia/Hong_Kong', MOP: 'Asia/Hong_Kong', PHP: 'Asia/Manila',
+  SGD: 'Asia/Singapore', MYR: 'Asia/Kuala_Lumpur', THB: 'Asia/Bangkok', VND: 'Asia/Ho_Chi_Minh', IDR: 'Asia/Makassar', INR: 'Asia/Kolkata', GBP: 'Europe/London',
+  EUR: 'Europe/Paris', CHF: 'Europe/Paris', USD: 'Pacific/Honolulu', CAD: 'America/Vancouver', AUD: 'Australia/Sydney', NZD: 'Pacific/Auckland' };
+function validTz(tz) { try { Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; } catch (e) { return false; } }
+function tzParts(tz, d) {
+  const f = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+  const p = {}; f.formatToParts(d || new Date()).forEach(x => { p[x.type] = x.value; });
+  return p;
+}
+function todayInTz(tz) { if (!tz || !validTz(tz)) return todayStr(); const p = tzParts(tz); return p.year + '-' + p.month + '-' + p.day; }
+function nowMinInTz(tz) { if (!tz || !validTz(tz)) return nowMinutes(); const p = tzParts(tz); return Number(p.hour) * 60 + Number(p.minute) + Number(p.second) / 60; }
+// その時点での UTC との差（分）
+function tzOffsetMin(tz, epoch) {
+  const p = tzParts(tz, new Date(epoch));
+  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+  return Math.round((asUtc - Math.floor(epoch / 1000) * 1000) / 60000);
+}
+// 「その土地の 日付＋分」→ 絶対時刻（ミリ秒）。夏時間の切り替わりも考える
+function zonedEpoch(date, min, tz) {
+  if (!tz || !validTz(tz)) return parseYmd(date).getTime() + min * 60000;
+  const [y, m, d] = date.split('-').map(Number);
+  const guess = Date.UTC(y, m - 1, d, 0, 0) + min * 60000;
+  let t = guess - tzOffsetMin(tz, guess) * 60000;
+  const t2 = guess - tzOffsetMin(tz, t) * 60000;
+  return t2;
+}
+function tzLabel(tz) { const x = TZ_LIST.find(z => z[0] === tz); return x ? x[1] : tz; }
+// 2つのタイムゾーンの時差（時間）。例：ハワイと日本 → -19
+function tzDiffHours(tz, base) { const now = Date.now(); return (tzOffsetMin(tz, now) - tzOffsetMin(base, now)) / 60; }
 
 // ---- 時刻（分） ----
 function toMin(hhmm) {

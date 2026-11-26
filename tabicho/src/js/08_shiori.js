@@ -20,7 +20,8 @@ function shioriDay(trip) {
   const days = tripDays(trip);
   if (!days.length) return null;
   let d = S.ui.shioriDay[trip.id];
-  if (!d || !days.includes(d)) d = days.includes(todayStr()) ? todayStr() : days[0];
+  const td = tripToday(trip);
+  if (!d || !days.includes(d)) d = days.includes(td) ? td : days[0];
   S.ui.shioriDay[trip.id] = d;
   return d;
 }
@@ -33,7 +34,7 @@ function renderPlan(trip) {
   const hidden = trip.items.filter(i => i.hiddenTime);
   if (isShiori && hidden.length) h += `<div class="info-box small">🕘 リストモードに切り替えた時の時刻を ${hidden.length}件 保持しています。<button class="btn sm" data-act="restoreAllTimes">すべて元の時刻に戻す</button></div>`;
   if (days.length) {
-    h += `<div class="day-tabs">${days.map((d, i) => `<button class="day-tab ${d === day ? 'on' : ''}" data-act="pickDay" data-d="${d}">${i + 1}日目${d === todayStr() ? '<em class="today-mark">今日</em>' : ''}<br><span>${fmtDate(d)}</span></button>`).join('')}</div>`;
+    h += `<div class="day-tabs">${days.map((d, i) => `<button class="day-tab ${d === day ? 'on' : ''}" data-act="pickDay" data-d="${d}">${i + 1}日目${d === tripToday(trip) ? '<em class="today-mark">今日</em>' : ''}<br><span>${fmtDate(d)}</span></button>`).join('')}</div>`;
   } else {
     h += `<div class="info-box small">日程が未定です。日付を入れると工程（1日目／2日目）を組めます。 <button class="btn sm" data-act="tripEdit">日程を入れる</button></div>`;
   }
@@ -106,7 +107,7 @@ ACT.addMove = () => { const t = curTrip(); openItemEditor(t, newItem({ kind: 'mo
 // 工程表示：各スポットの左に●、●同士を線で結び、線＝時間軸として絵文字が連続移動
 // ---------------------------------------------------------------------------
 function timelineHTML(trip, rows, day) {
-  const isToday = day === todayStr();
+  const isToday = day === tripToday(trip);
   let h = `<div class="timeline" id="timeline" data-day="${day}">
     <div class="tl-line" id="tlLine"></div><div class="tl-fill" id="tlFill"></div>
     ${isToday ? `<div class="tl-emoji" id="tlEmoji">${esc(tripEmoji(trip))}</div>` : ''}`;
@@ -147,7 +148,7 @@ function positionEmoji() {
   const em = $('#tlEmoji'), fill = $('#tlFill'), stEl = $('#tlStatus');
   if (!em) { fill.style.height = '0px'; stEl.textContent = ''; return; }
   const rows = S._tlRows.rows;
-  const p = progressOnRows(rows, nowMinutes());
+  const p = progressOnRows(rows, tripNowMin(S.trips[S._tlRows.tripId]));
   if (!p) return;
   const i = p.index;
   const y1 = ys[i], y2 = i < ys.length - 1 ? ys[i + 1] : yEnd;
@@ -199,7 +200,7 @@ ACT.visitUndo = (el) => { const t = curTrip(); const it = t.items.find(i => i.id
 // ---------------------------------------------------------------------------
 function sortListItems(trip, list) {
   const o = originPoint(trip);
-  const today = todayStr(), nm = nowMinutes();
+  const today = tripToday(trip), nm = tripNowMin(trip);
   const dist = it => { const p = itemPoint(trip, it); return p && o ? haversineKm(o, p) : 9e9; };
   const closing = it => {
     const s = openStateAt(itemInfo(trip, it).hours, today, nm);
@@ -220,14 +221,14 @@ function listCardHTML(trip, it) {
   const o = originPoint(trip);
   const tr = trip.listTransport || { mode: 'car' };
   const days = tripDays(trip);
-  const today = todayStr();
+  const today = tripToday(trip);
   const pri = it.priority || info.priority || 'maybe';
   let h = `<div class="lcard ${pri === 'must' ? 'must' : ''}" data-id="${it.id}">
     <div class="lc-head"><div class="grow lc-title" data-act="editItem" data-id="${it.id}">
       ${it.kind === 'fixed' ? '📌 ' : ''}${esc(info.name)} ${info.deleted ? '<span class="tag gray">スポット帳で削除済み</span>' : ''}${!p ? '<span class="tag gray">座標なし</span>' : ''}${it.hiddenTime ? `<span class="tag">🕘 保持中 ${fmtDate(it.hiddenTime.date)} ${esc(it.hiddenTime.start || '')}</span>` : ''}</div>
       <button class="pri ${pri}" data-act="togglePri" data-id="${it.id}">${pri === 'must' ? '⭐ 絶対行きたい' : '☆ 行けたら'}</button></div>`;
   // ② 今日行けるか＋閉店まで
-  const sNow = openStateAt(info.hours, today, nowMinutes());
+  const sNow = openStateAt(info.hours, today, tripNowMin(trip));
   const todayLabel = sNow.state === 'open' ? `<span class="ok">今日 営業中・閉店まであと${fmtDuration(sNow.closeIn)}</span>`
     : sNow.state === 'before' ? `<span class="warn">今日 ${fmtMinLabel(sNow.opensAt)}開店（あと${fmtDuration(sNow.opensIn)}）</span>`
     : sNow.state === 'after' ? '<span class="ng">今日の営業は終了</span>'
@@ -582,7 +583,7 @@ ACT.bkCalendar = async (el) => {
   if (b.calendarEventId && !(await confirmDialog('すでにカレンダーに登録済みです。もう一度登録すると二重になります。登録しますか？'))) return;
   try {
     const end = b.time ? fromMin(toMin(b.time) + num(b.durationMin, 60)) : '';
-    const res = await api('calendarAdd', { title: b.title, date: b.date, start: b.time, end, location: b.place });
+    const res = await api('calendarAdd', { title: b.title, date: b.date, start: b.time, end, durationMin: num(b.durationMin, 60), location: b.place, timeZone: tripTz(trip) });
     b.calendarEventId = res.eventId;
     commitTrip(trip, { noRender: true });
     el.textContent = '📅 登録済み';

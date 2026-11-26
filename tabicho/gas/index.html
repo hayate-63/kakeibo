@@ -406,7 +406,7 @@ img.iout { width: 31%; margin: 1%; border-radius: 6px; }
 // 本体が起動しなかった時に、原因（エラーの文面と行番号・スクリプトが欠けていないか）を画面に出す。
 // 開発者ツールが無い iPhone でも原因が分かるようにするため
 (function () {
-  var TB = window.__TB = { started: false, errors: [], expectLen: 311020, expectHash: '2d3ecb9c', version: '2.0.2', built: '2026-11-26 10:00 JST' };
+  var TB = window.__TB = { started: false, errors: [], expectLen: 320090, expectHash: '47ed9069', version: '2.0.3', built: '2026-11-26 18:00 JST' };
   function fnv(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
   function scriptCheck() {
@@ -509,7 +509,7 @@ img.iout { width: 31%; margin: 1%; border-radius: 6px; }
 // ============================================================================
 // 01 ユーティリティ・定数
 // ============================================================================
-const APP_VERSION = '2.0.2';
+const APP_VERSION = '2.0.3';
 
 const VEHICLES = {
   car:   { label: '車',       icon: '🚗' },
@@ -597,6 +597,48 @@ function fmtDate(s, withWd) {
 }
 function fmtDateFull(s) { if (!s) return '未定'; const d = parseYmd(s); return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate() + '(' + WD[d.getDay()] + ')'; }
 function todayStr() { return ymd(new Date()); }
+
+// ---- v2.0.3 タイムゾーン（旅ごとの現地時刻） ----
+const DEVICE_TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Tokyo'; } catch (e) { return 'Asia/Tokyo'; } })();
+const TZ_LIST = [
+  ['Asia/Tokyo', '日本'], ['Asia/Seoul', '韓国'], ['Asia/Taipei', '台湾'], ['Asia/Shanghai', '中国'], ['Asia/Hong_Kong', '香港・マカオ'],
+  ['Asia/Manila', 'フィリピン'], ['Asia/Singapore', 'シンガポール'], ['Asia/Kuala_Lumpur', 'マレーシア'], ['Asia/Bangkok', 'タイ'],
+  ['Asia/Ho_Chi_Minh', 'ベトナム'], ['Asia/Jakarta', 'インドネシア（ジャカルタ）'], ['Asia/Makassar', 'インドネシア（バリ）'], ['Asia/Kolkata', 'インド'],
+  ['Asia/Dubai', 'ドバイ'], ['Europe/Istanbul', 'トルコ'], ['Europe/London', 'イギリス'], ['Europe/Paris', 'フランス・ドイツ・イタリア・スペインなど'],
+  ['Europe/Athens', 'ギリシャ・フィンランド'], ['America/New_York', 'アメリカ東部'], ['America/Chicago', 'アメリカ中部'], ['America/Denver', 'アメリカ山岳部'],
+  ['America/Los_Angeles', 'アメリカ西部・ラスベガス'], ['America/Vancouver', 'カナダ西部'], ['America/Toronto', 'カナダ東部'], ['America/Mexico_City', 'メキシコ'],
+  ['Pacific/Honolulu', 'ハワイ'], ['Pacific/Guam', 'グアム・サイパン'], ['Australia/Brisbane', 'オーストラリア（ケアンズ・ブリスベン）'],
+  ['Australia/Sydney', 'オーストラリア（シドニー・メルボルン）'], ['Pacific/Auckland', 'ニュージーランド']
+];
+const CURRENCY_TZ = { JPY: 'Asia/Tokyo', KRW: 'Asia/Seoul', TWD: 'Asia/Taipei', CNY: 'Asia/Shanghai', HKD: 'Asia/Hong_Kong', MOP: 'Asia/Hong_Kong', PHP: 'Asia/Manila',
+  SGD: 'Asia/Singapore', MYR: 'Asia/Kuala_Lumpur', THB: 'Asia/Bangkok', VND: 'Asia/Ho_Chi_Minh', IDR: 'Asia/Makassar', INR: 'Asia/Kolkata', GBP: 'Europe/London',
+  EUR: 'Europe/Paris', CHF: 'Europe/Paris', USD: 'Pacific/Honolulu', CAD: 'America/Vancouver', AUD: 'Australia/Sydney', NZD: 'Pacific/Auckland' };
+function validTz(tz) { try { Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; } catch (e) { return false; } }
+function tzParts(tz, d) {
+  const f = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+  const p = {}; f.formatToParts(d || new Date()).forEach(x => { p[x.type] = x.value; });
+  return p;
+}
+function todayInTz(tz) { if (!tz || !validTz(tz)) return todayStr(); const p = tzParts(tz); return p.year + '-' + p.month + '-' + p.day; }
+function nowMinInTz(tz) { if (!tz || !validTz(tz)) return nowMinutes(); const p = tzParts(tz); return Number(p.hour) * 60 + Number(p.minute) + Number(p.second) / 60; }
+// その時点での UTC との差（分）
+function tzOffsetMin(tz, epoch) {
+  const p = tzParts(tz, new Date(epoch));
+  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+  return Math.round((asUtc - Math.floor(epoch / 1000) * 1000) / 60000);
+}
+// 「その土地の 日付＋分」→ 絶対時刻（ミリ秒）。夏時間の切り替わりも考える
+function zonedEpoch(date, min, tz) {
+  if (!tz || !validTz(tz)) return parseYmd(date).getTime() + min * 60000;
+  const [y, m, d] = date.split('-').map(Number);
+  const guess = Date.UTC(y, m - 1, d, 0, 0) + min * 60000;
+  let t = guess - tzOffsetMin(tz, guess) * 60000;
+  const t2 = guess - tzOffsetMin(tz, t) * 60000;
+  return t2;
+}
+function tzLabel(tz) { const x = TZ_LIST.find(z => z[0] === tz); return x ? x[1] : tz; }
+// 2つのタイムゾーンの時差（時間）。例：ハワイと日本 → -19
+function tzDiffHours(tz, base) { const now = Date.now(); return (tzOffsetMin(tz, now) - tzOffsetMin(base, now)) / 60; }
 
 // ---- 時刻（分） ----
 function toMin(hhmm) {
@@ -1101,7 +1143,8 @@ function newTrip(o) {
     media: [],                // 写真・動画 [{id,fileId,kind,name,size,mimeType,takenAt,date,dateSource,spotId,itemId,favorite,cover,comment,createdAt,...}]
     albums: [],               // 外部アルバム URL（複数・タイトル付き。M6）
     coverLink: '',            // 代表写真のリンク指定（任意）
-    visual: { dayPicks: {}, coverMediaId: '', ratio: 'fill', defaultCount: 'auto', dayCount: {} }
+    visual: { dayPicks: {}, coverMediaId: '', ratio: 'fill', defaultCount: 'auto', dayCount: {} },
+    timeZone: ''              // v2.0.3 旅の現地のタイムゾーン（空＝日本）。今日・今の時刻・カウントダウン・カレンダー登録に使う
   };
   t.region = t.region || detectRegion(t);
   if (!t.members.some(m => m.isMe) && t.members.length) t.members[0].isMe = true;
@@ -1119,6 +1162,14 @@ function newItem(o) {
 
 // 国内／海外の自動判定（行き先エリア・精算通貨から）
 const OVERSEAS_RE = /台湾|台北|台中|台南|高雄|韓国|ソウル|釜山|済州|中国|上海|北京|香港|マカオ|タイ|バンコク|プーケット|ベトナム|ハノイ|ホーチミン|ダナン|シンガポール|マレーシア|クアラルンプール|インドネシア|バリ|フィリピン|セブ|マニラ|インド|ハワイ|ホノルル|グアム|サイパン|アメリカ|米国|ニューヨーク|ロサンゼルス|ラスベガス|サンフランシスコ|カナダ|バンクーバー|メキシコ|イギリス|英国|ロンドン|フランス|パリ|イタリア|ローマ|ミラノ|ベネチア|スペイン|バルセロナ|ドイツ|スイス|オーストリア|ウィーン|オランダ|ベルギー|チェコ|プラハ|ギリシャ|トルコ|イスタンブール|ドバイ|エジプト|オーストラリア|シドニー|メルボルン|ケアンズ|ニュージーランド|海外/;
+// v2.0.3：旅の現地のタイムゾーン。未設定なら日本（国内の旅）／精算通貨から推定（海外の旅）
+function tripTz(trip) {
+  if (trip && trip.timeZone && validTz(trip.timeZone)) return trip.timeZone;
+  if (trip && trip.region === 'overseas' && CURRENCY_TZ[trip.currency]) return CURRENCY_TZ[trip.currency];
+  return 'Asia/Tokyo';
+}
+function tripToday(trip) { return todayInTz(tripTz(trip)); }
+function tripNowMin(trip) { return nowMinInTz(tripTz(trip)); }
 function detectRegion(t) {
   if (t.currency && t.currency !== 'JPY') return 'overseas';
   if (OVERSEAS_RE.test(String(t.area || '') + ' ' + String(t.title || ''))) return 'overseas';
@@ -1143,7 +1194,7 @@ function pendingBookingCount(trip) {
   return n;
 }
 function tripStatus(trip, today) {
-  today = today || todayStr();
+  today = today || tripToday(trip);
   if (trip.manualStatus === '中止') return '中止';
   if (trip.manualStatus === '完了') return '完了';
   if (!trip.startDate) return '検討中';
@@ -1206,7 +1257,7 @@ async function loadSpots(force) {
   } catch (e) {
     S.spotsState = 'error'; S.spotsError = e.message || String(e);
   }
-  render();
+  softRender();
 }
 function normalizeSpot(s) {
   const o = Object.assign({}, s);
@@ -1272,7 +1323,7 @@ async function loadHours(force) {
       Object.keys(r.hours || {}).forEach(id => { S.hours[id] = { week: r.hours[id], at: Date.now() }; });
     }
     saveCache();
-    render();
+    softRender();
   } catch (e) { /* 営業時間は任意。取れなければ情報なし表示 */ }
   hoursLoading = false;
 }
@@ -1280,12 +1331,33 @@ async function loadHours(force) {
 // ---------------------------------------------------------------------------
 // 保存：ローカルキャッシュ（オフライン可）→ サーバへ遅延保存（他端末更新の衝突検知つき）
 // ---------------------------------------------------------------------------
+// v2.0.3：端末の保存容量（localStorage はブラウザで約5MB）。いっぱいの時は
+// ①営業時間の控え（サーバから取り直せる）を外して再保存 → ②それでも無理なら一度だけ知らせる
+let quotaWarned = false;
+function isQuotaError(e) {
+  return !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+}
 function saveCache() {
+  const data = { settings: S.settings, trips: S.trips, curTripId: S.curTripId, dirty: S.dirty, settingsDirty: S.settingsDirty, ui: { listSort: S.ui.listSort }, hours: S.hours };
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({
-      settings: S.settings, trips: S.trips, curTripId: S.curTripId, dirty: S.dirty, settingsDirty: S.settingsDirty, ui: { listSort: S.ui.listSort }, hours: S.hours
-    }));
-  } catch (e) { console.warn(e); }
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+    return true;
+  } catch (e) {
+    if (!isQuotaError(e)) { console.warn(e); return false; }
+    try {
+      data.hours = {};
+      localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+      S.hours = {};
+      return true;
+    } catch (e2) {
+      console.warn(e2);
+      if (!quotaWarned) {
+        quotaWarned = true;
+        toast('⚠️ 端末の保存容量がいっぱいです。オンラインならサーバへの保存は続きますが、オフラインでの変更は失われるおそれがあります。終わった旅を整理するか、ブラウザの保存データを確認してください', { ms: 12000 });
+      }
+      return false;
+    }
+  }
 }
 function loadCache() {
   try {
@@ -1461,7 +1533,7 @@ function startGeo() {
       const prev = S.geo;
       S.geo = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, at: Date.now() };
       S.geoError = '';
-      if (!prev || haversineKm(prev, S.geo) > 0.3) render();
+      if (!prev || haversineKm(prev, S.geo) > 0.3) softRender();
     }, err => { S.geoError = err.message || '現在地を取得できません'; }, { enableHighAccuracy: true, maximumAge: 60000, timeout: 20000 });
   } catch (e) { S.geoError = String(e); }
 }
@@ -1769,7 +1841,7 @@ function allExpenses(trip) {
   trip.expenses.forEach(e => out.push({ key: 'e:' + e.id, source: 'expense', ref: e, date: e.date, desc: e.desc || '（内容なし）', cat: e.cat || 'その他', memo: e.memo || '', money: e.money }));
   trip.bookings.forEach(b => {
     if (b.status === 'キャンセル' || !b.money || b.money.amount == null || b.money.amount === '') return;
-    out.push({ key: 'b:' + b.id, source: 'booking', ref: b, date: b.payDate || b.date || trip.startDate || todayStr(), desc: (BOOKING_ICON[b.type] || '') + ' ' + (b.title || '予約') + '（事前支払い）', cat: BOOKING_TO_EXPENSE_CAT[b.type] || 'その他', memo: b.memo || '', money: b.money });
+    out.push({ key: 'b:' + b.id, source: 'booking', ref: b, date: b.payDate || b.date || trip.startDate || tripToday(trip), desc: (BOOKING_ICON[b.type] || '') + ' ' + (b.title || '予約') + '（事前支払い）', cat: BOOKING_TO_EXPENSE_CAT[b.type] || 'その他', memo: b.memo || '', money: b.money });
   });
   trip.fuel.forEach(f => {
     if (!f.money || f.money.amount == null || f.money.amount === '') return;
@@ -1957,7 +2029,7 @@ function kakeiboEntries(trip) {
     const iPaid = m.payer === me.id;
     const row = { e, entries: [], disabled: '', note: '' };
     const memo = e.desc.replace(/（事前支払い）/, '') + ' ' + tag;
-    const date = e.date || trip.startDate || todayStr();
+    const date = e.date || trip.startDate || tripToday(trip);
     const sentInfo = e.ref.kakeibo || null;
     if (m.payState === '現地で払う予定') row.disabled = '未払い（現地で払う予定）';
     if (!iPaid && !myS) return;
@@ -2428,7 +2500,7 @@ function faceButtonsHTML(sel, act) {
 }
 async function markVisited(trip, it, visit) {
   const prev = it.visited;
-  const v = Object.assign({ date: todayStr(), rating: 0, comment: '', companions: trip.members.map(m => m.name), people: trip.members.length }, prev || {}, visit || {}, { at: new Date().toISOString() });
+  const v = Object.assign({ date: tripToday(trip), rating: 0, comment: '', companions: trip.members.map(m => m.name), people: trip.members.length }, prev || {}, visit || {}, { at: new Date().toISOString() });
   if (prev && prev.visitId) v.visitId = prev.visitId;
   it.visited = v;
   commitTrip(trip);
@@ -2472,7 +2544,7 @@ async function retryVisitWrites() {
 // クイック記録（スポット帳の［行った！］と同じ：日付＋評価をタップで即保存）
 function openQuickVisit(trip, it) {
   const info = itemInfo(trip, it);
-  openModal(`<div class="form-grid"><label>訪問日</label><input type="date" id="qvDate" value="${todayStr()}"></div>
+  openModal(`<div class="form-grid"><label>訪問日</label><input type="date" id="qvDate" value="${tripToday(trip)}"></div>
     <div class="b mt">評価（タップで記録）</div>${faceButtonsHTML(0, 'qvFace')}
     <div class="muted small">${it.spotId ? 'スポット帳の訪問記録に入ります。写真・金額はスポット帳で足せます' : 'スポット帳に未登録のため旅帳内だけに記録します'}</div>
     <button class="btn block mt" data-act="qvFull">📝 ひとこと・同行者も書く</button>`, { title: '✅ 行った！ ' + esc(info.name), data: { trip, it } });
@@ -2488,13 +2560,13 @@ ACT.qvFace = async (el) => {
 ACT.qvFull = () => { const { trip, it } = topModal().data; const d = $('#qvDate', topModalBody()).value; closeModal(); openVisitDialog(trip, it, d); };
 
 function openVisitDialog(trip, it, presetDate) {
-  const v = it.visited || { date: presetDate || todayStr(), rating: 0, comment: '', companions: trip.members.map(m => m.name) };
+  const v = it.visited || { date: presetDate || tripToday(trip), rating: 0, comment: '', companions: trip.members.map(m => m.name) };
   const info = itemInfo(trip, it);
   const comp = new Set(v.companions || []);
   const allNames = Array.from(new Set(trip.members.map(m => m.name).concat(v.companions || [])));
   const remote = it.spotId && v.visitId && S.spots[it.spotId] ? (S.spots[it.spotId].visits || []).find(x => x.visitId === v.visitId) : null;
   openModal(`<div class="form-grid">
-    <label>訪問日</label><input type="date" id="vdDate" value="${esc(v.date || todayStr())}">
+    <label>訪問日</label><input type="date" id="vdDate" value="${esc(v.date || tripToday(trip))}">
     <label>評価<span class="req">必須</span></label><div id="vdFaces" data-v="${v.rating || 0}">${faceButtonsHTML(v.rating || 0, 'vdFace')}</div>
     <label>ひとこと</label><textarea id="vdComment" rows="2" placeholder="ひとことコメント">${esc(v.comment || '')}</textarea>
     <label>同行者</label><div class="chips" id="vdComp">${allNames.map(n => `<label class="chip"><input type="checkbox" value="${esc(n)}" ${comp.has(n) ? 'checked' : ''}><span>${esc(n)}</span></label>`).join('')}</div>
@@ -2509,7 +2581,7 @@ ACT.vdSave = async () => {
   const b = topModalBody(); const { trip, it } = topModal().data;
   const rating = Number($('#vdFaces', b).dataset.v) || 0;
   if (!rating) return toast('評価を選んでください');
-  const visit = { date: $('#vdDate', b).value || todayStr(), rating, comment: $('#vdComment', b).value.trim(), companions: $$('#vdComp input', b).filter(x => x.checked).map(x => x.value) };
+  const visit = { date: $('#vdDate', b).value || tripToday(trip), rating, comment: $('#vdComment', b).value.trim(), companions: $$('#vdComp input', b).filter(x => x.checked).map(x => x.value) };
   visit.people = visit.companions.length || '';
   closeModal();
   await markVisited(trip, it, visit);
@@ -2549,7 +2621,7 @@ const requestWeather = (() => {
     try {
       const r = await api('weather', { points: list });
       Object.keys(r.weather || {}).forEach(k => { S.weatherCache[k] = r.weather[k]; });
-      render();
+      softRender();
     } catch (e) { /* 天気は任意 */ }
     list.forEach(p => delete weatherPending[weatherKey(p)]);
   }, 300);
@@ -2585,7 +2657,7 @@ const requestRoutes = (() => {
     try {
       const r = await api('routes', { list: list.map(q => ({ from: { lat: q.from.lat, lng: q.from.lng }, to: { lat: q.to.lat, lng: q.to.lng }, mode: q.mode, opt: q.opt })) });
       (r.results || []).forEach((res, i) => { if (res) S.routeCache[list[i].k] = res; });
-      render();
+      softRender();
     } catch (e) { /* 概算のまま */ }
     list.forEach(q => delete routePending[q.k]);
   }, 400);
@@ -2669,7 +2741,7 @@ ACT.tripSelect = (el) => { S.curTripId = el.dataset.id; saveCache(); render(); }
 
 function currentTripCard(trip) {
   const st = tripStatus(trip);
-  const today = todayStr();
+  const today = tripToday(trip);
   const days = tripDays(trip);
   let when = '日程未定';
   if (trip.startDate) {
@@ -2704,6 +2776,7 @@ function currentTripCard(trip) {
       <div>👥 ${trip.members.map(m => esc(m.name) + (m.isMe ? '👤' : '')).join('・')}</div>
       <div>${trip.vehicles.map(v => VEHICLES[v].icon + VEHICLES[v].label).join(' ')} ・ ${trip.mode === 'shiori' ? '📒 しおり' : '📝 リスト'}</div>
       ${trip.area ? `<div>📍 ${esc(trip.area)}</div>` : ''}
+      ${tripTz(trip) !== 'Asia/Tokyo' ? `<div>🕐 現地 ${fromMin(Math.floor(tripNowMin(trip)))}（${esc(tzLabel(tripTz(trip)))}・日本との時差 ${(d => (d > 0 ? '+' : '') + d)(tzDiffHours(tripTz(trip), 'Asia/Tokyo'))}時間）</div>` : ''}
       ${bs.budget != null ? `<div>💰 予算 ${fmtMoney(bs.budget, trip.currency)} ／ 実績 ${fmtMoney(bs.total, trip.currency)}</div>` : (bs.total ? `<div>💰 支出 ${fmtMoney(bs.total, trip.currency)}</div>` : '')}
       ${pk != null ? `<div>🎒 持ち物 ${pk}%</div>` : ''}
     </div>
@@ -2718,9 +2791,9 @@ function currentTripCard(trip) {
   </div>`;
 }
 function nextScheduled(trip) {
-  const today = todayStr();
+  const today = tripToday(trip);
   const rows = daySchedule(trip, today);
-  const now = nowMinutes();
+  const now = tripNowMin(trip);
   return rows.find(r => r.end > now && !r.it.visited) || null;
 }
 ACT.goTab = (el) => switchTab(el.dataset.tab);
@@ -2752,6 +2825,8 @@ function openTripEditor(trip, preset) {
     <label>行き先エリア</label><input id="teArea" value="${esc(t.area)}" placeholder="例：淡路島">
     <label>国内／海外</label><div><select id="teRegion"><option value="auto" ${!t.regionManual ? 'selected' : ''}>自動（今は${detectRegion(t) === 'overseas' ? '海外' : '国内'}）</option><option value="domestic" ${t.regionManual && t.region === 'domestic' ? 'selected' : ''}>国内</option><option value="overseas" ${t.regionManual && t.region === 'overseas' ? 'selected' : ''}>海外</option></select>
       ${t.driveFolderId ? `<div class="muted small">写真の保存フォルダは作成済みのため移動しません（${esc(t.driveFolderName || '')}）</div>` : ''}</div>
+    <label>現地の時刻</label><div><select id="teTz"><option value="">${t.region === 'overseas' ? '自動（精算通貨から：' + esc(tzLabel(tripTz(Object.assign({}, t, { timeZone: '' })))) + '）' : '日本（自動）'}</option>${TZ_LIST.map(([z, l]) => `<option value="${z}" ${t.timeZone === z ? 'selected' : ''}>${esc(l)}（${z}）</option>`).join('')}</select>
+      <div class="muted small">「今日」・現在地の進み具合・出発カウントダウン・営業中の判定・カレンダー登録を、この土地の時刻で計算します</div></div>
     <label>英語タイトル</label><input id="teTitleEn" value="${esc(t.titleEn || '')}" placeholder="任意（ビジュアルの表紙文字。空欄なら自動で英語表示）">
     <label>出発地</label><div class="row gap"><input id="teOrigin" class="grow" value="${esc(t.origin && t.origin.name || '')}" placeholder="自宅"><button class="btn sm" data-act="teOriginHome">自宅</button><button class="btn sm" data-act="teOriginHere">現在地</button></div>
     <input type="hidden" id="teOriginLat" value="${t.origin && t.origin.lat != null ? t.origin.lat : ''}"><input type="hidden" id="teOriginLng" value="${t.origin && t.origin.lng != null ? t.origin.lng : ''}">
@@ -2800,6 +2875,7 @@ ACT.teSave = () => {
   trip.currency = $('#teCur', b).value;
   trip.emoji = Array.from($('#teEmoji', b).value.trim())[0] || '';
   trip.titleEn = $('#teTitleEn', b).value.trim();
+  trip.timeZone = $('#teTz', b).value;
   const rg = $('#teRegion', b).value;
   trip.regionManual = rg !== 'auto';
   trip.region = rg === 'auto' ? detectRegion(trip) : rg;
@@ -2869,7 +2945,8 @@ function shioriDay(trip) {
   const days = tripDays(trip);
   if (!days.length) return null;
   let d = S.ui.shioriDay[trip.id];
-  if (!d || !days.includes(d)) d = days.includes(todayStr()) ? todayStr() : days[0];
+  const td = tripToday(trip);
+  if (!d || !days.includes(d)) d = days.includes(td) ? td : days[0];
   S.ui.shioriDay[trip.id] = d;
   return d;
 }
@@ -2882,7 +2959,7 @@ function renderPlan(trip) {
   const hidden = trip.items.filter(i => i.hiddenTime);
   if (isShiori && hidden.length) h += `<div class="info-box small">🕘 リストモードに切り替えた時の時刻を ${hidden.length}件 保持しています。<button class="btn sm" data-act="restoreAllTimes">すべて元の時刻に戻す</button></div>`;
   if (days.length) {
-    h += `<div class="day-tabs">${days.map((d, i) => `<button class="day-tab ${d === day ? 'on' : ''}" data-act="pickDay" data-d="${d}">${i + 1}日目${d === todayStr() ? '<em class="today-mark">今日</em>' : ''}<br><span>${fmtDate(d)}</span></button>`).join('')}</div>`;
+    h += `<div class="day-tabs">${days.map((d, i) => `<button class="day-tab ${d === day ? 'on' : ''}" data-act="pickDay" data-d="${d}">${i + 1}日目${d === tripToday(trip) ? '<em class="today-mark">今日</em>' : ''}<br><span>${fmtDate(d)}</span></button>`).join('')}</div>`;
   } else {
     h += `<div class="info-box small">日程が未定です。日付を入れると工程（1日目／2日目）を組めます。 <button class="btn sm" data-act="tripEdit">日程を入れる</button></div>`;
   }
@@ -2955,7 +3032,7 @@ ACT.addMove = () => { const t = curTrip(); openItemEditor(t, newItem({ kind: 'mo
 // 工程表示：各スポットの左に●、●同士を線で結び、線＝時間軸として絵文字が連続移動
 // ---------------------------------------------------------------------------
 function timelineHTML(trip, rows, day) {
-  const isToday = day === todayStr();
+  const isToday = day === tripToday(trip);
   let h = `<div class="timeline" id="timeline" data-day="${day}">
     <div class="tl-line" id="tlLine"></div><div class="tl-fill" id="tlFill"></div>
     ${isToday ? `<div class="tl-emoji" id="tlEmoji">${esc(tripEmoji(trip))}</div>` : ''}`;
@@ -2996,7 +3073,7 @@ function positionEmoji() {
   const em = $('#tlEmoji'), fill = $('#tlFill'), stEl = $('#tlStatus');
   if (!em) { fill.style.height = '0px'; stEl.textContent = ''; return; }
   const rows = S._tlRows.rows;
-  const p = progressOnRows(rows, nowMinutes());
+  const p = progressOnRows(rows, tripNowMin(S.trips[S._tlRows.tripId]));
   if (!p) return;
   const i = p.index;
   const y1 = ys[i], y2 = i < ys.length - 1 ? ys[i + 1] : yEnd;
@@ -3048,7 +3125,7 @@ ACT.visitUndo = (el) => { const t = curTrip(); const it = t.items.find(i => i.id
 // ---------------------------------------------------------------------------
 function sortListItems(trip, list) {
   const o = originPoint(trip);
-  const today = todayStr(), nm = nowMinutes();
+  const today = tripToday(trip), nm = tripNowMin(trip);
   const dist = it => { const p = itemPoint(trip, it); return p && o ? haversineKm(o, p) : 9e9; };
   const closing = it => {
     const s = openStateAt(itemInfo(trip, it).hours, today, nm);
@@ -3069,14 +3146,14 @@ function listCardHTML(trip, it) {
   const o = originPoint(trip);
   const tr = trip.listTransport || { mode: 'car' };
   const days = tripDays(trip);
-  const today = todayStr();
+  const today = tripToday(trip);
   const pri = it.priority || info.priority || 'maybe';
   let h = `<div class="lcard ${pri === 'must' ? 'must' : ''}" data-id="${it.id}">
     <div class="lc-head"><div class="grow lc-title" data-act="editItem" data-id="${it.id}">
       ${it.kind === 'fixed' ? '📌 ' : ''}${esc(info.name)} ${info.deleted ? '<span class="tag gray">スポット帳で削除済み</span>' : ''}${!p ? '<span class="tag gray">座標なし</span>' : ''}${it.hiddenTime ? `<span class="tag">🕘 保持中 ${fmtDate(it.hiddenTime.date)} ${esc(it.hiddenTime.start || '')}</span>` : ''}</div>
       <button class="pri ${pri}" data-act="togglePri" data-id="${it.id}">${pri === 'must' ? '⭐ 絶対行きたい' : '☆ 行けたら'}</button></div>`;
   // ② 今日行けるか＋閉店まで
-  const sNow = openStateAt(info.hours, today, nowMinutes());
+  const sNow = openStateAt(info.hours, today, tripNowMin(trip));
   const todayLabel = sNow.state === 'open' ? `<span class="ok">今日 営業中・閉店まであと${fmtDuration(sNow.closeIn)}</span>`
     : sNow.state === 'before' ? `<span class="warn">今日 ${fmtMinLabel(sNow.opensAt)}開店（あと${fmtDuration(sNow.opensIn)}）</span>`
     : sNow.state === 'after' ? '<span class="ng">今日の営業は終了</span>'
@@ -3431,7 +3508,7 @@ ACT.bkCalendar = async (el) => {
   if (b.calendarEventId && !(await confirmDialog('すでにカレンダーに登録済みです。もう一度登録すると二重になります。登録しますか？'))) return;
   try {
     const end = b.time ? fromMin(toMin(b.time) + num(b.durationMin, 60)) : '';
-    const res = await api('calendarAdd', { title: b.title, date: b.date, start: b.time, end, location: b.place });
+    const res = await api('calendarAdd', { title: b.title, date: b.date, start: b.time, end, durationMin: num(b.durationMin, 60), location: b.place, timeZone: tripTz(trip) });
     b.calendarEventId = res.eventId;
     commitTrip(trip, { noRender: true });
     el.textContent = '📅 登録済み';
@@ -3502,13 +3579,13 @@ ACT.packAdd = (el) => {
 //    車以外の旅では次の駅・空港・港の情報表示に切り替わる
 // ============================================================================
 function driveCandidates(trip) {
-  const today = todayStr();
+  const today = tripToday(trip);
   const days = tripDays(trip);
   let rows = [];
   // 今日（旅行中）→ 今後の工程、旅行前 → 1日目の工程
   const day = days.includes(today) ? today : (days.find(d => d >= today) || days[0]);
   if (day) rows = daySchedule(trip, day).map(r => Object.assign({ day }, r));
-  const now = day === today ? nowMinutes() : -1;
+  const now = day === today ? tripNowMin(trip) : -1;
   const sched = rows.filter(r => !r.it.visited && (day !== today || r.end > now));
   const list = sortListItems(trip, unscheduledItems(trip).filter(i => !i.visited)).map(it => ({ it, info: itemInfo(trip, it), start: null, day: null }));
   return { day, sched, list, all: sched.concat(list) };
@@ -3543,7 +3620,7 @@ function driveTargetCard(trip, t, c) {
   let cd = '';
   if (t.start != null && r) {
     const dep = t.start - r.min - margin;
-    const at = parseYmd(t.day).getTime() + dep * 60000;
+    const at = zonedEpoch(t.day, dep, tripTz(trip));   // 旅の現地時刻で出発時刻を決める
     cd = `<div class="countdown"><div class="muted small">出発まで（${fromMin(t.start)}着 − 所要${r.estimated ? '約' : ''}${fmtDuration(r.min)} − 余裕${margin}分）</div>
       <div class="cd-big" id="cdown" data-at="${at}">--:--</div><div class="muted small">出発目安 ${fmtDate(t.day)} ${fmtMinLabel(dep)}</div></div>`;
   }
@@ -3594,7 +3671,7 @@ setInterval(() => {
 function nextTransport(trip, c) {
   const moves = c.sched.filter(r => r.it.kind === 'move');
   if (moves.length) return moves[0];
-  const bk = trip.bookings.filter(b => b.type === '交通' && b.status !== 'キャンセル' && b.date && (b.date > todayStr() || (b.date === todayStr() && toMin(b.time || '23:59') > nowMinutes())))
+  const bk = trip.bookings.filter(b => b.type === '交通' && b.status !== 'キャンセル' && b.date && (b.date > tripToday(trip) || (b.date === tripToday(trip) && toMin(b.time || '23:59') > tripNowMin(trip))))
     .sort((a, b) => (a.date + (a.time || '')) < (b.date + (b.time || '')) ? -1 : 1)[0];
   if (bk) return { it: { kind: 'move', transport: { mode: bk.transportMode || 'train', from: bk.place, to: bk.placeTo, number: bk.number }, bookingId: bk.id, id: 'bk' }, info: { name: bk.title }, start: toMin(bk.time), day: bk.date };
   return null;
@@ -3609,7 +3686,7 @@ function transitCard(trip, t) {
   const v = VEHICLES[tp.mode] || VEHICLES.train;
   const placeWord = tp.mode === 'plane' ? '空港' : tp.mode === 'ferry' ? '港' : '駅';
   const bk = t.it.bookingId ? trip.bookings.find(b => b.id === t.it.bookingId) : null;
-  const at = t.start != null && t.day ? parseYmd(t.day).getTime() + t.start * 60000 : null;
+  const at = t.start != null && t.day ? zonedEpoch(t.day, t.start, tripTz(trip)) : null;
   return `<div class="card transit">
     <div class="muted small">${v.icon} 次の${v.label}（${t.day ? fmtDate(t.day) : ''} ${t.start != null ? fromMin(t.start) + '発' : ''}）</div>
     <div class="drive-name">${esc(tp.from || '出発' + placeWord)} → ${esc(tp.to || '到着地')}</div>
@@ -3624,7 +3701,8 @@ function transitCard(trip, t) {
 // ---- 走行距離（出発／到着のメーター） ----
 function odometerCard(trip) {
   const days = tripDays(trip);
-  const today = days.includes(todayStr()) ? todayStr() : (days[0] || todayStr());
+  const td = tripToday(trip);
+  const today = days.includes(td) ? td : (days[0] || td);
   const rec = (trip.odometer || []).find(o => o.date === today) || { date: today, depart: '', arrive: '' };
   const dist = rec.arrive !== '' && rec.depart !== '' && rec.arrive != null && rec.depart != null ? num(rec.arrive) - num(rec.depart) : null;
   return `<div class="card"><div class="row between"><b>🛣 走行距離（${fmtDate(today)}）</b><span class="muted small">旅の合計 ${totalDistance(trip).toLocaleString()}km</span></div>
@@ -3647,7 +3725,7 @@ function fuelCard(trip) {
   return `<div class="card"><div class="row between"><b>⛽ 給油</b><button class="btn sm primary" data-act="fuelNew">＋ 給油を記録</button></div>
     ${trip.fuel.length ? trip.fuel.map(f => `<div class="list-row" data-act="fuelEdit" data-id="${f.id}"><span>${fmtDate(f.date)} ${f.liters ? f.liters + 'L' : ''} ${esc(f.station || '')}</span><b>${f.money && f.money.amount != null ? fmtMoney(num(f.money.amount), f.money.currency) : '—'}</b></div>`).join('') : '<div class="muted small">給油は記録するとお金タブの支出（給油）に自動で入ります</div>'}</div>`;
 }
-ACT.fuelNew = () => { const t = curTrip(); openFuelEditor(t, { id: uid('fu'), date: todayStr(), liters: '', unitPrice: '', odo: '', station: '', memo: '', money: newMoney(t, { method: (S.settings.payMethods.find(p => p.id === 'gas') || S.settings.payMethods.find(p => p.isCard) || {}).id || 'cash' }) }, true); };
+ACT.fuelNew = () => { const t = curTrip(); openFuelEditor(t, { id: uid('fu'), date: tripToday(t), liters: '', unitPrice: '', odo: '', station: '', memo: '', money: newMoney(t, { method: (S.settings.payMethods.find(p => p.id === 'gas') || S.settings.payMethods.find(p => p.isCard) || {}).id || 'cash' }) }, true); };
 ACT.fuelEdit = (el) => { const t = curTrip(); openFuelEditor(t, t.fuel.find(f => f.id === el.dataset.id)); };
 function openFuelEditor(trip, f, isNew) {
   openModal(`<div class="form-grid">
@@ -3770,7 +3848,7 @@ ACT.fxApply = async () => {
 // 予算・支出一覧
 // ---------------------------------------------------------------------------
 function newExpense(trip, o) {
-  return Object.assign({ id: uid('ex'), date: tripDays(trip).includes(todayStr()) ? todayStr() : (trip.startDate || todayStr()), desc: '', cat: '食費', memo: '', money: newMoney(trip), kakeibo: null }, o || {});
+  return Object.assign({ id: uid('ex'), date: tripDays(trip).includes(tripToday(trip)) ? tripToday(trip) : (trip.startDate || tripToday(trip)), desc: '', cat: '食費', memo: '', money: newMoney(trip), kakeibo: null }, o || {});
 }
 function renderExpenseList(trip) {
   const bs = budgetSummary(trip);
@@ -3824,7 +3902,7 @@ ACT.exSave = () => {
   const b = topModalBody(); const { trip, e, isNew } = topModal().data;
   const money = readMoneyEditor(b);
   if (money.amount == null) return toast('金額を入れてください');
-  Object.assign(e, { date: $('#exDate', b).value || todayStr(), desc: $('#exDesc', b).value.trim(), cat: ($$('input[name="exCat"]', b).find(x => x.checked) || {}).value || 'その他', memo: $('#exMemo', b).value, money });
+  Object.assign(e, { date: $('#exDate', b).value || tripToday(trip), desc: $('#exDesc', b).value.trim(), cat: ($$('input[name="exCat"]', b).find(x => x.checked) || {}).value || 'その他', memo: $('#exMemo', b).value, money });
   if (isNew) trip.expenses.push(e);
   closeModal(); commitTrip(trip);
   toast('支出を保存しました');
@@ -3973,7 +4051,7 @@ ACT.kkUnsend = async (el) => {
   if (!e || !(await confirmDialog('送信済みの印を外します（家計簿側の明細は消えません）。再送すると二重になる可能性があります。よろしいですか？'))) return;
   e.ref.kakeibo = null; commitTrip(t);
 };
-ACT.exchNew = () => { const t = curTrip(); openExchEditor(t, { id: uid('fx'), date: todayStr(), dir: 'buy', jpy: '', amount: '', currency: foreignCurrencies(t)[0] || (t.currency !== 'JPY' ? t.currency : 'USD') }, true); };
+ACT.exchNew = () => { const t = curTrip(); openExchEditor(t, { id: uid('fx'), date: tripToday(t), dir: 'buy', jpy: '', amount: '', currency: foreignCurrencies(t)[0] || (t.currency !== 'JPY' ? t.currency : 'USD') }, true); };
 ACT.exchEdit = (el) => { const t = curTrip(); openExchEditor(t, t.exchanges.find(x => x.id === el.dataset.id)); };
 function openExchEditor(trip, x, isNew) {
   openModal(`<div class="form-grid">
@@ -4597,7 +4675,7 @@ async function uploadOne(q, file) {
     q.state = 'done'; q.doneAt = Date.now(); q.sessionUri = ''; q.progress = 1; q.fileId = fileObj.id;
     MQ.files.delete(q.qid);
     mqUpdate(q);
-    render();
+    softRender();
   } catch (e) {
     q.state = 'failed'; q.error = e.message || String(e); mqUpdate(q);
   }
@@ -4610,7 +4688,7 @@ async function registerMedia(trip, q, fileObj) {
   let meta = {};
   try { const r = await api('mediaMeta', { ids: [fileObj.id] }); meta = (r.meta || {})[fileObj.id] || {}; } catch (e) {}
   const taken = meta.takenAt || '';
-  const date = q.date || (taken ? taken.slice(0, 10) : todayStr());
+  const date = q.date || (taken ? taken.slice(0, 10) : tripToday(trip));   // アップロード日も旅の現地の日付で
   const m = {
     id: uid('md'), fileId: fileObj.id, kind: q.kind, name: fileObj.name || q.name, size: Number(fileObj.size) || q.size,
     mimeType: fileObj.mimeType || q.type, takenAt: taken, date, dateSource: q.date ? 'manual' : taken ? 'exif' : 'upload',
@@ -4662,15 +4740,52 @@ function previewState(m) {
 // サムネイル（GAS が自権限で取得した base64。端末にもキャッシュしてオフラインでも見られる）
 // ---------------------------------------------------------------------------
 const TH = new Map();
+const THUMB_IDB_MAX = window.__TABICHO_THUMB_MAX || 3000;   // 端末に残すサムネイルの上限（約 20KB × 3000 ≒ 60MB）。テストでだけ小さくできる
 const thumbIdb = (() => {
   let dbp = null;
   const open = () => dbp || (dbp = new Promise((res) => {
     try { const r = indexedDB.open('tabicho_thumbs', 1); r.onupgradeneeded = () => r.result.createObjectStore('t'); r.onsuccess = () => res(r.result); r.onerror = () => res(null); }
     catch (e) { res(null); }
   }));
+  // v2.0.3：値は { d: データ, t: 最後に使った時刻 }（v2.0.2 までの素の文字列も読める）。
+  // 件数が THUMB_IDB_MAX を超えたら、使っていない古いものから 8 割まで減らす
+  let puts = 0, pruning = false;
+  const unwrap = (r) => (r && typeof r === 'object' && 'd' in r) ? r.d : r;
+  async function prune(db) {
+    if (pruning) return; pruning = true;
+    try {
+      const all = await new Promise(res => {
+        const out = [];
+        try {
+          const c = db.transaction('t').objectStore('t').openCursor();
+          c.onsuccess = () => { const cur = c.result; if (!cur) return res(out); const v = cur.value; out.push([cur.key, (v && typeof v === 'object' && v.t) || 0]); cur.continue(); };
+          c.onerror = () => res(out);
+        } catch (e) { res(out); }
+      });
+      if (all.length <= THUMB_IDB_MAX) return;
+      all.sort((a, b) => a[1] - b[1]);
+      const del = all.slice(0, all.length - Math.floor(THUMB_IDB_MAX * 0.8));
+      await new Promise(res => {
+        try { const tx = db.transaction('t', 'readwrite'); const st = tx.objectStore('t'); del.forEach(([k]) => st.delete(k)); tx.oncomplete = res; tx.onerror = res; tx.onabort = res; }
+        catch (e) { res(); }
+      });
+    } finally { pruning = false; }
+  }
   return {
-    async get(k) { const db = await open(); if (!db) return undefined; return new Promise(res => { try { const g = db.transaction('t').objectStore('t').get(k); g.onsuccess = () => res(g.result); g.onerror = () => res(undefined); } catch (e) { res(undefined); } }); },
-    async put(k, v) { const db = await open(); if (!db) return; try { db.transaction('t', 'readwrite').objectStore('t').put(v, k); } catch (e) {} }
+    async get(k) {
+      const db = await open(); if (!db) return undefined;
+      const r = await new Promise(res => { try { const g = db.transaction('t').objectStore('t').get(k); g.onsuccess = () => res(g.result); g.onerror = () => res(undefined); } catch (e) { res(undefined); } });
+      if (r === undefined) return undefined;
+      // 使った印（1日に1回だけ書き直す。読むたびに書かない）
+      if (!(r && typeof r === 'object' && r.t > Date.now() - 86400000)) { try { db.transaction('t', 'readwrite').objectStore('t').put({ d: unwrap(r), t: Date.now() }, k); } catch (e) {} }
+      return unwrap(r);
+    },
+    async put(k, v) {
+      const db = await open(); if (!db) return;
+      try { db.transaction('t', 'readwrite').objectStore('t').put({ d: v, t: Date.now() }, k); } catch (e) {}
+      if (++puts % 50 === 1) prune(db);   // 起動後の最初と、その後 50 件ごとに件数を確かめる
+    },
+    prune: async () => { const db = await open(); if (db) await prune(db); }
   };
 })();
 function thumbKey(fileId, size) { return fileId + '@' + size; }
@@ -4959,7 +5074,7 @@ async function ensureMediaGeo(trip) {
       Object.keys(r.names || {}).forEach(k => { trip.placeNames[k] = r.names[k]; });
       commitTrip(trip, { silent: true });
     }
-    if (need.length || unnamed.length) render();
+    if (need.length || unnamed.length) softRender();
   } catch (e) { /* 位置情報は任意 */ }
   geoLoading = false;
 }
@@ -5323,7 +5438,23 @@ function ensureFonts() {
   if (!fontsReady) fontsReady = Promise.all(['700 120px "Playfair Display"', '400 40px "Noto Serif JP"', '700 40px "Noto Sans JP"'].map(f => document.fonts && document.fonts.load ? document.fonts.load(f).catch(() => {}) : null)).catch(() => {});
   return fontsReady;
 }
-function loadImg(src) { return new Promise((res) => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
+// v2.0.3：外部サイトの画像は crossOrigin を付けて読む。付けずに描くとキャンバスが「汚れ」て画像に書き出せなくなる。
+// 相手が許可していなければ読み込み失敗（null）になり、呼び出し側は絵文字などの代わりの表示にする
+function loadImg(src) {
+  return new Promise((res) => {
+    if (!src) return res(null);
+    const i = new Image();
+    if (/^https?:/i.test(src) && !src.startsWith(location.origin)) i.crossOrigin = 'anonymous';
+    let done = false;
+    const fin = (v) => { if (!done) { done = true; res(v); } };
+    i.onload = () => fin(i); i.onerror = () => fin(null);
+    setTimeout(() => fin(null), 15000);   // 返事がない外部画像で書き出しが止まらないように
+    i.src = src;
+  });
+}
+// キャンバスが書き出せる状態か（外部画像で汚れていないか）
+function canvasExportable(cv) { try { cv.getContext('2d').getImageData(0, 0, 1, 1); return true; } catch (e) { return false; } }
+function imageExportSafe(img) { const t = document.createElement('canvas'); t.width = t.height = 1; try { t.getContext('2d').drawImage(img, 0, 0, 1, 1); } catch (e) { return false; } return canvasExportable(t); }
 function drawCoverFit(ctx, img, x, y, w, h) {
   if (!img) { ctx.fillStyle = '#d6d3d1'; ctx.fillRect(x, y, w, h); return; }
   const k = Math.max(w / img.width, h / img.height);
@@ -5525,7 +5656,9 @@ async function renderYearCanvas(y) {
     const t = list[i]; const x = 80 + (i % cols) * (cw + gap), yy = 640 + Math.floor(i / cols) * (ch + 90);
     const cm = coverOrFirst(t);
     const img = cm ? await mediaImage(cm) : (isImageUrl(t.coverLink) ? await loadImg(t.coverLink) : null);
-    if (img) drawCoverFit(ctx, img, x, yy, cw, ch);
+    // v2.0.3：外部の画像は、本番のキャンバスに描く前に小さな試し用キャンバスで確かめる。
+    // 一度でも「汚れた」キャンバスは元に戻せない（書き出し不可）ので、だめな画像は描かずに絵文字にする
+    if (img && imageExportSafe(img)) drawCoverFit(ctx, img, x, yy, cw, ch);
     else { ctx.fillStyle = '#e7e0d3'; ctx.fillRect(x, yy, cw, ch); ctx.font = `80px ${th.sans}`; ctx.fillText(tripEmoji(t), x + cw / 2 - 40, yy + ch / 2 + 28); }
     ctx.fillStyle = th.ink; ctx.font = `700 28px ${th.sans}`;
     ctx.fillText(wrapText(ctx, t.title, cw)[0] || '', x, yy + ch + 40);
@@ -5575,6 +5708,7 @@ function renderModeBanner() {
     : '<div class="mode-banner bad">⚠️ GAS の接続部品が読み込めていません。旅帳は GAS のウェブアプリ URL から開いてください（デモへの切り替えはしません）</div>';
 }
 function render() {
+  renderDeferred = false;
   try { renderInner(); }
   catch (e) {
     console.error(e);
@@ -5582,6 +5716,27 @@ function render() {
     else toast('表示中にエラー：' + e.message);
   }
 }
+// v2.0.3：天気・経路・営業時間・現在地など「後から届く」情報での描き直し。
+// 文字を入力中に画面を作り直すと、入力途中の文字やカーソルが消えるので、入力欄から離れるまで待つ
+let renderDeferred = false;
+function softRender() {
+  const a = document.activeElement;
+  if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && !(a.type === 'checkbox' || a.type === 'radio' || a.type === 'button')) {
+    renderDeferred = true;
+    return false;
+  }
+  render();
+  return true;
+}
+document.addEventListener('focusout', () => {
+  if (!renderDeferred) return;
+  setTimeout(() => {   // 次の入力欄へ移っただけなら、まだ待つ
+    if (!renderDeferred) return;
+    const a = document.activeElement;
+    if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return;
+    renderDeferred = false; render();
+  }, 300);
+});
 function renderInner() {
   renderModeBanner();
   const trip = curTrip();
@@ -5642,6 +5797,8 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { loadSpots(true); if (!modalStack.length && !isTyping()) render(); }
 });
 
+// 画面テスト用の入口（デモモードの時だけ。本番の GAS では出さない）
+if (IS_DEMO) window.__TABICHO_T = { softRender, saveCache, loadImg, imageExportSafe, thumbIdb, tripTz, tripToday, curTrip, S };
 // 起動の各段階を個別に守る（どこかで失敗しても画面は出し、原因を起動ガードに残す）
 function bootStep(name, fn) {
   try { return fn(); }

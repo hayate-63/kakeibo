@@ -26,7 +26,7 @@ function allExpenses(trip) {
   trip.expenses.forEach(e => out.push({ key: 'e:' + e.id, source: 'expense', ref: e, date: e.date, desc: e.desc || '（内容なし）', cat: e.cat || 'その他', memo: e.memo || '', money: e.money }));
   trip.bookings.forEach(b => {
     if (b.status === 'キャンセル' || !b.money || b.money.amount == null || b.money.amount === '') return;
-    out.push({ key: 'b:' + b.id, source: 'booking', ref: b, date: b.payDate || b.date || trip.startDate || todayStr(), desc: (BOOKING_ICON[b.type] || '') + ' ' + (b.title || '予約') + '（事前支払い）', cat: BOOKING_TO_EXPENSE_CAT[b.type] || 'その他', memo: b.memo || '', money: b.money });
+    out.push({ key: 'b:' + b.id, source: 'booking', ref: b, date: b.payDate || b.date || trip.startDate || tripToday(trip), desc: (BOOKING_ICON[b.type] || '') + ' ' + (b.title || '予約') + '（事前支払い）', cat: BOOKING_TO_EXPENSE_CAT[b.type] || 'その他', memo: b.memo || '', money: b.money });
   });
   trip.fuel.forEach(f => {
     if (!f.money || f.money.amount == null || f.money.amount === '') return;
@@ -214,7 +214,7 @@ function kakeiboEntries(trip) {
     const iPaid = m.payer === me.id;
     const row = { e, entries: [], disabled: '', note: '' };
     const memo = e.desc.replace(/（事前支払い）/, '') + ' ' + tag;
-    const date = e.date || trip.startDate || todayStr();
+    const date = e.date || trip.startDate || tripToday(trip);
     const sentInfo = e.ref.kakeibo || null;
     if (m.payState === '現地で払う予定') row.disabled = '未払い（現地で払う予定）';
     if (!iPaid && !myS) return;

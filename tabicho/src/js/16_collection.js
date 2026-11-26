@@ -118,7 +118,9 @@ async function renderYearCanvas(y) {
     const t = list[i]; const x = 80 + (i % cols) * (cw + gap), yy = 640 + Math.floor(i / cols) * (ch + 90);
     const cm = coverOrFirst(t);
     const img = cm ? await mediaImage(cm) : (isImageUrl(t.coverLink) ? await loadImg(t.coverLink) : null);
-    if (img) drawCoverFit(ctx, img, x, yy, cw, ch);
+    // v2.0.3：外部の画像は、本番のキャンバスに描く前に小さな試し用キャンバスで確かめる。
+    // 一度でも「汚れた」キャンバスは元に戻せない（書き出し不可）ので、だめな画像は描かずに絵文字にする
+    if (img && imageExportSafe(img)) drawCoverFit(ctx, img, x, yy, cw, ch);
     else { ctx.fillStyle = '#e7e0d3'; ctx.fillRect(x, yy, cw, ch); ctx.font = `80px ${th.sans}`; ctx.fillText(tripEmoji(t), x + cw / 2 - 40, yy + ch / 2 + 28); }
     ctx.fillStyle = th.ink; ctx.font = `700 28px ${th.sans}`;
     ctx.fillText(wrapText(ctx, t.title, cw)[0] || '', x, yy + ch + 40);

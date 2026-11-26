@@ -92,7 +92,7 @@ ACT.fxApply = async () => {
 // 予算・支出一覧
 // ---------------------------------------------------------------------------
 function newExpense(trip, o) {
-  return Object.assign({ id: uid('ex'), date: tripDays(trip).includes(todayStr()) ? todayStr() : (trip.startDate || todayStr()), desc: '', cat: '食費', memo: '', money: newMoney(trip), kakeibo: null }, o || {});
+  return Object.assign({ id: uid('ex'), date: tripDays(trip).includes(tripToday(trip)) ? tripToday(trip) : (trip.startDate || tripToday(trip)), desc: '', cat: '食費', memo: '', money: newMoney(trip), kakeibo: null }, o || {});
 }
 function renderExpenseList(trip) {
   const bs = budgetSummary(trip);
@@ -146,7 +146,7 @@ ACT.exSave = () => {
   const b = topModalBody(); const { trip, e, isNew } = topModal().data;
   const money = readMoneyEditor(b);
   if (money.amount == null) return toast('金額を入れてください');
-  Object.assign(e, { date: $('#exDate', b).value || todayStr(), desc: $('#exDesc', b).value.trim(), cat: ($$('input[name="exCat"]', b).find(x => x.checked) || {}).value || 'その他', memo: $('#exMemo', b).value, money });
+  Object.assign(e, { date: $('#exDate', b).value || tripToday(trip), desc: $('#exDesc', b).value.trim(), cat: ($$('input[name="exCat"]', b).find(x => x.checked) || {}).value || 'その他', memo: $('#exMemo', b).value, money });
   if (isNew) trip.expenses.push(e);
   closeModal(); commitTrip(trip);
   toast('支出を保存しました');
@@ -295,7 +295,7 @@ ACT.kkUnsend = async (el) => {
   if (!e || !(await confirmDialog('送信済みの印を外します（家計簿側の明細は消えません）。再送すると二重になる可能性があります。よろしいですか？'))) return;
   e.ref.kakeibo = null; commitTrip(t);
 };
-ACT.exchNew = () => { const t = curTrip(); openExchEditor(t, { id: uid('fx'), date: todayStr(), dir: 'buy', jpy: '', amount: '', currency: foreignCurrencies(t)[0] || (t.currency !== 'JPY' ? t.currency : 'USD') }, true); };
+ACT.exchNew = () => { const t = curTrip(); openExchEditor(t, { id: uid('fx'), date: tripToday(t), dir: 'buy', jpy: '', amount: '', currency: foreignCurrencies(t)[0] || (t.currency !== 'JPY' ? t.currency : 'USD') }, true); };
 ACT.exchEdit = (el) => { const t = curTrip(); openExchEditor(t, t.exchanges.find(x => x.id === el.dataset.id)); };
 function openExchEditor(trip, x, isNew) {
   openModal(`<div class="form-grid">

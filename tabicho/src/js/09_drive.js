@@ -3,13 +3,13 @@
 //    車以外の旅では次の駅・空港・港の情報表示に切り替わる
 // ============================================================================
 function driveCandidates(trip) {
-  const today = todayStr();
+  const today = tripToday(trip);
   const days = tripDays(trip);
   let rows = [];
   // 今日（旅行中）→ 今後の工程、旅行前 → 1日目の工程
   const day = days.includes(today) ? today : (days.find(d => d >= today) || days[0]);
   if (day) rows = daySchedule(trip, day).map(r => Object.assign({ day }, r));
-  const now = day === today ? nowMinutes() : -1;
+  const now = day === today ? tripNowMin(trip) : -1;
   const sched = rows.filter(r => !r.it.visited && (day !== today || r.end > now));
   const list = sortListItems(trip, unscheduledItems(trip).filter(i => !i.visited)).map(it => ({ it, info: itemInfo(trip, it), start: null, day: null }));
   return { day, sched, list, all: sched.concat(list) };
@@ -44,7 +44,7 @@ function driveTargetCard(trip, t, c) {
   let cd = '';
   if (t.start != null && r) {
     const dep = t.start - r.min - margin;
-    const at = parseYmd(t.day).getTime() + dep * 60000;
+    const at = zonedEpoch(t.day, dep, tripTz(trip));   // 旅の現地時刻で出発時刻を決める
     cd = `<div class="countdown"><div class="muted small">出発まで（${fromMin(t.start)}着 − 所要${r.estimated ? '約' : ''}${fmtDuration(r.min)} − 余裕${margin}分）</div>
       <div class="cd-big" id="cdown" data-at="${at}">--:--</div><div class="muted small">出発目安 ${fmtDate(t.day)} ${fmtMinLabel(dep)}</div></div>`;
   }
@@ -95,7 +95,7 @@ setInterval(() => {
 function nextTransport(trip, c) {
   const moves = c.sched.filter(r => r.it.kind === 'move');
   if (moves.length) return moves[0];
-  const bk = trip.bookings.filter(b => b.type === '交通' && b.status !== 'キャンセル' && b.date && (b.date > todayStr() || (b.date === todayStr() && toMin(b.time || '23:59') > nowMinutes())))
+  const bk = trip.bookings.filter(b => b.type === '交通' && b.status !== 'キャンセル' && b.date && (b.date > tripToday(trip) || (b.date === tripToday(trip) && toMin(b.time || '23:59') > tripNowMin(trip))))
     .sort((a, b) => (a.date + (a.time || '')) < (b.date + (b.time || '')) ? -1 : 1)[0];
   if (bk) return { it: { kind: 'move', transport: { mode: bk.transportMode || 'train', from: bk.place, to: bk.placeTo, number: bk.number }, bookingId: bk.id, id: 'bk' }, info: { name: bk.title }, start: toMin(bk.time), day: bk.date };
   return null;
@@ -110,7 +110,7 @@ function transitCard(trip, t) {
   const v = VEHICLES[tp.mode] || VEHICLES.train;
   const placeWord = tp.mode === 'plane' ? '空港' : tp.mode === 'ferry' ? '港' : '駅';
   const bk = t.it.bookingId ? trip.bookings.find(b => b.id === t.it.bookingId) : null;
-  const at = t.start != null && t.day ? parseYmd(t.day).getTime() + t.start * 60000 : null;
+  const at = t.start != null && t.day ? zonedEpoch(t.day, t.start, tripTz(trip)) : null;
   return `<div class="card transit">
     <div class="muted small">${v.icon} 次の${v.label}（${t.day ? fmtDate(t.day) : ''} ${t.start != null ? fromMin(t.start) + '発' : ''}）</div>
     <div class="drive-name">${esc(tp.from || '出発' + placeWord)} → ${esc(tp.to || '到着地')}</div>
@@ -125,7 +125,8 @@ function transitCard(trip, t) {
 // ---- 走行距離（出発／到着のメーター） ----
 function odometerCard(trip) {
   const days = tripDays(trip);
-  const today = days.includes(todayStr()) ? todayStr() : (days[0] || todayStr());
+  const td = tripToday(trip);
+  const today = days.includes(td) ? td : (days[0] || td);
   const rec = (trip.odometer || []).find(o => o.date === today) || { date: today, depart: '', arrive: '' };
   const dist = rec.arrive !== '' && rec.depart !== '' && rec.arrive != null && rec.depart != null ? num(rec.arrive) - num(rec.depart) : null;
   return `<div class="card"><div class="row between"><b>🛣 走行距離（${fmtDate(today)}）</b><span class="muted small">旅の合計 ${totalDistance(trip).toLocaleString()}km</span></div>
@@ -148,7 +149,7 @@ function fuelCard(trip) {
   return `<div class="card"><div class="row between"><b>⛽ 給油</b><button class="btn sm primary" data-act="fuelNew">＋ 給油を記録</button></div>
     ${trip.fuel.length ? trip.fuel.map(f => `<div class="list-row" data-act="fuelEdit" data-id="${f.id}"><span>${fmtDate(f.date)} ${f.liters ? f.liters + 'L' : ''} ${esc(f.station || '')}</span><b>${f.money && f.money.amount != null ? fmtMoney(num(f.money.amount), f.money.currency) : '—'}</b></div>`).join('') : '<div class="muted small">給油は記録するとお金タブの支出（給油）に自動で入ります</div>'}</div>`;
 }
-ACT.fuelNew = () => { const t = curTrip(); openFuelEditor(t, { id: uid('fu'), date: todayStr(), liters: '', unitPrice: '', odo: '', station: '', memo: '', money: newMoney(t, { method: (S.settings.payMethods.find(p => p.id === 'gas') || S.settings.payMethods.find(p => p.isCard) || {}).id || 'cash' }) }, true); };
+ACT.fuelNew = () => { const t = curTrip(); openFuelEditor(t, { id: uid('fu'), date: tripToday(t), liters: '', unitPrice: '', odo: '', station: '', memo: '', money: newMoney(t, { method: (S.settings.payMethods.find(p => p.id === 'gas') || S.settings.payMethods.find(p => p.isCard) || {}).id || 'cash' }) }, true); };
 ACT.fuelEdit = (el) => { const t = curTrip(); openFuelEditor(t, t.fuel.find(f => f.id === el.dataset.id)); };
 function openFuelEditor(trip, f, isNew) {
   openModal(`<div class="form-grid">
