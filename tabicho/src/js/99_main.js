@@ -28,7 +28,7 @@ function renderModeBanner() {
 }
 function render() {
   renderDeferred = false;
-  try { renderInner(); }
+  try { renderInner(); if (detourState) detourRender(); }   // v2.2：寄り道レーダーが開いていれば、届いた経路で中身も更新
   catch (e) {
     console.error(e);
     if (window.__TB && !window.__TB.started) window.__TB.fail('画面の描画', e);
@@ -122,7 +122,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // 画面テスト用の入口（デモモードの時だけ。本番の GAS では出さない）
-if (IS_DEMO) window.__TABICHO_T = { softRender, isEditingInput, registerMedia, saveCache, loadImg, imageExportSafe, thumbIdb, tripTz, tripToday, curTrip, S };
+if (IS_DEMO) window.__TABICHO_T = { softRender, isEditingInput, registerMedia, newItem, commitTrip, computeTransfers, newMoney, daySchedule, shioriExportPages, renderShioriPage, settleExportPages, renderReceipt, detourCandidates, planAuto, applyPlan, insertDetour, saveCache, loadImg, imageExportSafe, thumbIdb, tripTz, tripToday, curTrip, S };
 // 起動の各段階を個別に守る（どこかで失敗しても画面は出し、原因を起動ガードに残す）
 function bootStep(name, fn) {
   try { return fn(); }

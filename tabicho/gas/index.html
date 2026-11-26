@@ -399,6 +399,18 @@ img.iout { width: 31%; margin: 1%; border-radius: 6px; }
 .place-head { display: flex; align-items: center; gap: 6px; width: 100%; border: none; background: var(--muted-bg); border-radius: 8px; padding: 7px 9px; font-weight: 700; font-size: 13px; text-align: left; cursor: pointer; }
 .place-head .arrow { color: var(--sub); width: 14px; }
 
+/* v2.2 書き出し・寄り道・自動しおり案 */
+.exp-opts .check { display: block; margin: 4px 0; }
+.exp-prev { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.exp-thumb { width: calc(33% - 6px); height: auto; border: 1px solid var(--line, #ddd); border-radius: 6px; background: #f5efe4; }
+.ap-row { padding: 3px 0; font-size: 14px; }
+.ap-row.new { color: var(--accent, #b45309); }
+.mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+.detour-btn { margin-bottom: 10px; }
+.card.detour .btn { text-decoration: none; }
+.row.end { justify-content: flex-end; }
+.mb { margin-bottom: 8px; }
+
 </style>
 </head>
 <body>
@@ -406,7 +418,7 @@ img.iout { width: 31%; margin: 1%; border-radius: 6px; }
 // 本体が起動しなかった時に、原因（エラーの文面と行番号・スクリプトが欠けていないか）を画面に出す。
 // 開発者ツールが無い iPhone でも原因が分かるようにするため
 (function () {
-  var TB = window.__TB = { started: false, errors: [], expectLen: 321501, expectHash: '491a7a98', version: '2.0.4', built: '2026-11-26 22:24 JST' };
+  var TB = window.__TB = { started: false, errors: [], expectLen: 368427, expectHash: '235314c7', version: '2.2.0', built: '2026-11-26 22:43 JST' };
   function fnv(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
   function scriptCheck() {
@@ -509,7 +521,7 @@ img.iout { width: 31%; margin: 1%; border-radius: 6px; }
 // ============================================================================
 // 01 ユーティリティ・定数
 // ============================================================================
-const APP_VERSION = '2.0.4';
+const APP_VERSION = '2.2.0';
 
 const VEHICLES = {
   car:   { label: '車',       icon: '🚗' },
@@ -2955,7 +2967,7 @@ function renderPlan(trip) {
   const days = tripDays(trip);
   const day = shioriDay(trip);
   const isShiori = trip.mode === 'shiori';
-  let h = `<div class="mode-bar">${segHTML('mode', [{ v: 'shiori', l: '📒 しおり' }, { v: 'list', l: '📝 リスト' }], trip.mode, 'switchMode')}</div>`;
+  let h = `<div class="mode-bar row between">${segHTML('mode', [{ v: 'shiori', l: '📒 しおり' }, { v: 'list', l: '📝 リスト' }], trip.mode, 'switchMode')}<button class="btn sm" data-act="shioriExport">📤 画像で書き出し</button></div>`;
   const hidden = trip.items.filter(i => i.hiddenTime);
   if (isShiori && hidden.length) h += `<div class="info-box small">🕘 リストモードに切り替えた時の時刻を ${hidden.length}件 保持しています。<button class="btn sm" data-act="restoreAllTimes">すべて元の時刻に戻す</button></div>`;
   if (days.length) {
@@ -2985,6 +2997,7 @@ function renderPlan(trip) {
     <button class="link-btn" data-act="toggleListZone">${S.ui.listCollapsed ? '▶' : '▼'} ${label}（${list.length}）</button>
     <span class="row gap">
       <select data-change="listSort" class="sm">${[['distance', '距離順'], ['closing', '閉店が近い順'], ['priority', '優先度順']].map(([v, l]) => `<option value="${v}" ${S.ui.listSort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      ${list.length && days.length ? '<button class="btn sm" data-act="autoPlanOpen" title="定休日を避けて近い順に並べた仮のしおり案">🪄 自動で案</button>' : ''}
       <button class="btn sm primary" data-act="addSpotToList">＋</button></span></div>`;
   if (!S.ui.listCollapsed) {
     if (!list.length) h += `<div class="muted pad small">${isShiori ? '日時が決まっていない予定はここにリストで並びます。' : '行きたい場所を追加しましょう（スポット帳から選べます）'}</div>`;
@@ -3601,7 +3614,7 @@ function renderDrive(trip) {
   if (trip.driveTargetId) target = c.all.find(x => x.it.id === trip.driveTargetId) || null;
   if (!target) target = c.all[0] || null;
   const carTrip = hasVehicle(trip, 'car');
-  let h = '';
+  let h = `<button class="btn block detour-btn" data-act="detourOpen">🧭 寄り道を探す</button>`;   // v2.2 C-1
   if (!carTrip) h += renderTransit(trip, c);
   if (target && carTrip) h += driveTargetCard(trip, target, c);
   else if (!target && carTrip) h += emptyHTML('🚗', '次の目的地がありません。しおりやリストにスポットを入れてください。');
@@ -3925,7 +3938,7 @@ ACT.exDel = async () => {
 function renderSettlement(trip) {
   const { transfers, bal } = computeTransfers(trip);
   const unit = settleUnit(trip), cur = trip.currency;
-  let h = '';
+  let h = `<div class="row end mb"><button class="btn sm" data-act="settleExport">🧾 精算カードを書き出し</button></div>`;
   if (trip.settlement.notice) h += `<div class="alert info">ℹ️ ${esc(trip.settlement.notice)} <button class="btn sm" data-act="dismissNotice">OK</button></div>`;
   const planned = allExpenses(trip).filter(e => e.money.payState === '現地で払う予定');
   if (planned.length) h += `<div class="alert warn small">「現地で払う予定」の支出が ${planned.length}件 含まれています（払う人が決まっている前提で計算）</div>`;
@@ -5697,6 +5710,770 @@ ACT.yearExport = async (el) => {
   el.disabled = false;
 };
 
+// ---- 17_export.js ----
+// ============================================================================
+// 17 v2.2 しおり・精算の画像書き出し（B-1・B-2）
+//   描く中身（文字・行）は純粋な関数で作り（テストできる）、Canvas への描画は別の関数に分ける。
+//   見た目は 15_visual.js の VTHEME（トラベルマガジン風）、書き出しは exportCanvases（共有シート／画像一覧）を使う
+// ============================================================================
+const EXP_W = 1080;
+const EXP_916_H = 1920;
+const EXP_TALL_MAX = 8000;   // 縦長の1枚の高さの上限（1080×8000 ≒ 860万画素）
+const EXP_MONO = '"SF Mono", Menlo, Consolas, "Courier New", monospace';
+const PRI_MARK = { must: '⭐', maybe: '☆' };
+
+// ---------------------------------------------------------------------------
+// B-1 しおり：中身
+// ---------------------------------------------------------------------------
+function shioriExportDefaults(trip) {
+  const days = tripDays(trip);
+  const dayOn = {};
+  days.forEach(d => { dayOn[d] = dayItems(trip, d).length > 0; });
+  return { cover: true, days: dayOn, list: trip.mode === 'list', privacy: false, size: '916' };
+}
+function itemMoveIcon(trip, it) {
+  if (it.kind === 'move' && it.transport && VEHICLES[it.transport.mode]) return VEHICLES[it.transport.mode].icon;
+  const m = (it.moveInfo && it.moveInfo.mode) || (trip.listTransport && trip.listTransport.mode) || 'car';
+  return m === 'walk' ? '🚶' : (VEHICLES[m] ? VEHICLES[m].icon : '🚗');
+}
+// 日別の行（プライバシー ON の時は 料金目安・予約番号・メモ を入れない）
+function shioriDayRows(trip, date, privacy) {
+  const rows = daySchedule(trip, date);
+  return rows.map((r, i) => {
+    const it = r.it, info = r.info;
+    const b = it.bookingId ? (trip.bookings || []).find(x => x.id === it.bookingId) : null;
+    const o = {
+      no: i + 1, start: fromMin(Math.round(r.start)), end: fromMin(Math.round(r.end)), name: info.name,
+      locked: !!it.locked, stay: Math.round(r.stay), kind: it.kind, visited: !!it.visited,
+      price: null, bookingNo: '', memo: '', move: null
+    };
+    if (!privacy) {
+      if (info.price != null && info.price !== '' && it.kind !== 'move') o.price = fmtMoney(Number(info.price), 'JPY');
+      if (b && b.bookingNo) o.bookingNo = String(b.bookingNo);
+      if (it.memo) o.memo = String(it.memo);
+    }
+    if (i < rows.length - 1 && r.move > 0) {
+      const mi = it.moveInfo || {};
+      o.move = { icon: itemMoveIcon(trip, it), min: Math.round(r.move), km: mi.km != null ? fmtKm(Number(mi.km)) : '' };
+    }
+    return o;
+  });
+}
+function shioriListRows(trip) {
+  return sortListItems(trip, unscheduledItems(trip).filter(i => !i.visited)).map(it => {
+    const info = itemInfo(trip, it);
+    return { pri: (it.priority || info.priority) === 'must' ? 'must' : 'maybe', name: info.name, area: info.area || '', hours: info.hours && info.hours.known ? hoursSummary(info.hours) : (info.hoursText || '') };
+  });
+}
+function shioriDaySummary(trip, date) {
+  const names = dayItems(trip, date).filter(i => i.kind !== 'move').map(i => itemInfo(trip, i).name);
+  if (!names.length) return '';
+  const short = names.map(n => n.length > 10 ? n.slice(0, 9) + '…' : n);
+  return short.length > 4 ? short.slice(0, 4).join(' → ') + ` ほか${short.length - 4}件` : short.join(' → ');
+}
+// 1行ぶんの高さ（9:16 の分割・縦長の高さの計算に使う。描画と同じ数字）
+function shioriRowHeight(row, scale) {
+  const k = scale || 1;
+  let h = 118;
+  if (row.price || row.bookingNo) h += 40;
+  if (row.memo) h += 40 * Math.min(2, Math.ceil(row.memo.length / 26));
+  if (row.move) h += 70;
+  return Math.round(h * k);
+}
+const EXP_HEAD_H = 360, EXP_FOOT_H = 150;
+// ページの割り付け。9:16 は「文字を少し小さく（最小 0.82 倍）」→ それでも入らなければ複数枚に分ける
+function shioriExportPages(trip, opt) {
+  opt = Object.assign(shioriExportDefaults(trip), opt || {});
+  const pages = [];
+  if (opt.cover) pages.push({ type: 'cover', h: EXP_916_H });
+  tripDays(trip).forEach((d, i) => {
+    if (!opt.days[d]) return;
+    const rows = shioriDayRows(trip, d, opt.privacy);
+    if (!rows.length) return;
+    const body = rows.reduce((s, r) => s + shioriRowHeight(r), 0);
+    if (opt.size === 'tall' && EXP_HEAD_H + body + EXP_FOOT_H <= EXP_TALL_MAX) { pages.push({ type: 'day', date: d, index: i + 1, rows, scale: 1, part: 1, parts: 1, h: Math.max(EXP_916_H, EXP_HEAD_H + body + EXP_FOOT_H) }); return; }
+    if (opt.size === 'tall') {   // iPhone の Canvas の上限（約1,670万画素）に近づかないよう、極端に長い日は 8000px ごとに分ける
+      const chunks = []; let cur = [], used = 0; const lim = EXP_TALL_MAX - EXP_HEAD_H - EXP_FOOT_H;
+      rows.forEach(r => { const rh = shioriRowHeight(r); if (cur.length && used + rh > lim) { chunks.push(cur); cur = []; used = 0; } cur.push(r); used += rh; });
+      if (cur.length) chunks.push(cur);
+      chunks.forEach((c, k) => pages.push({ type: 'day', date: d, index: i + 1, rows: c, scale: 1, part: k + 1, parts: chunks.length, h: Math.max(EXP_916_H, EXP_HEAD_H + c.reduce((s2, r) => s2 + shioriRowHeight(r), 0) + EXP_FOOT_H) }));
+      return;
+    }
+    const avail = EXP_916_H - EXP_HEAD_H - EXP_FOOT_H;
+    if (body <= avail) { pages.push({ type: 'day', date: d, index: i + 1, rows, scale: 1, part: 1, parts: 1, h: EXP_916_H }); return; }
+    if (body * 0.82 <= avail) { pages.push({ type: 'day', date: d, index: i + 1, rows, scale: Math.max(0.82, avail / body), part: 1, parts: 1, h: EXP_916_H }); return; }
+    const chunks = []; let cur = [], used = 0;
+    rows.forEach(r => { const rh = shioriRowHeight(r, 0.82); if (cur.length && used + rh > avail) { chunks.push(cur); cur = []; used = 0; } cur.push(r); used += rh; });
+    if (cur.length) chunks.push(cur);
+    chunks.forEach((c, k) => pages.push({ type: 'day', date: d, index: i + 1, rows: c, scale: 0.82, part: k + 1, parts: chunks.length, h: EXP_916_H }));
+  });
+  if (opt.list) {
+    const rows = shioriListRows(trip);
+    if (rows.length) {
+      const per = 9;
+      if (opt.size === 'tall' && EXP_HEAD_H + rows.length * 150 + EXP_FOOT_H <= EXP_TALL_MAX) pages.push({ type: 'list', rows, part: 1, parts: 1, h: Math.max(EXP_916_H, EXP_HEAD_H + rows.length * 150 + EXP_FOOT_H) });
+      else for (let k = 0; k * per < rows.length; k++) pages.push({ type: 'list', rows: rows.slice(k * per, k * per + per), part: k + 1, parts: Math.ceil(rows.length / per), h: EXP_916_H });
+    }
+  }
+  return pages;
+}
+
+// ---------------------------------------------------------------------------
+// B-1 しおり：描画
+// ---------------------------------------------------------------------------
+function expCanvas(h) { const c = document.createElement('canvas'); c.width = EXP_W; c.height = h; return c; }
+function expFooter(ctx, trip, H) {
+  const th = VTHEME;
+  ctx.fillStyle = th.sub; ctx.font = `500 28px ${th.sans}`;
+  ctx.fillText(trip.title.length > 28 ? trip.title.slice(0, 27) + '…' : trip.title, 80, H - 70);
+  ctx.fillStyle = th.accent; ctx.font = `600 28px ${th.sans}`;
+  ctx.textAlign = 'right'; ctx.fillText('旅帳', EXP_W - 80, H - 70); ctx.textAlign = 'left';
+}
+function expFit(ctx, text, maxW) { let t = String(text); if (ctx.measureText(t).width <= maxW) return t; while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1); return t + '…'; }
+function renderShioriCover(trip) {
+  const th = VTHEME, c = expCanvas(EXP_916_H), ctx = c.getContext('2d');
+  ctx.fillStyle = th.paper; ctx.fillRect(0, 0, EXP_W, EXP_916_H);
+  ctx.fillStyle = th.accent; ctx.font = `600 34px ${th.sans}`; ctx.letterSpacing = '8px'; ctx.fillText('TRAVEL ITINERARY', 80, 150); ctx.letterSpacing = '0px';
+  // 大きい英語タイトル（英語にできていない＝日本語が残る時は、旅のタイトルを大きく出して重複させない）
+  const en = displayTitleEn(trip);
+  const enOk = en && !/[\u3040-\u30ff\u3400-\u9fff]/.test(en);
+  const big = enOk ? en : trip.title;
+  let size = enOk ? 120 : 96; ctx.fillStyle = th.ink; ctx.font = `700 ${size}px ${enOk ? th.serif : th.sans}`;
+  let lines = wrapText(ctx, big, EXP_W - 160);
+  while (lines.length > 2 && size > 64) { size -= 8; ctx.font = `700 ${size}px ${enOk ? th.serif : th.sans}`; lines = wrapText(ctx, big, EXP_W - 160); }
+  let y = 300; lines.slice(0, 3).forEach(l => { ctx.fillText(l, 80, y); y += size * 1.05; });
+  if (enOk) { ctx.font = `700 56px ${th.sans}`; wrapText(ctx, trip.title, EXP_W - 160).slice(0, 2).forEach(l => { y += 10; ctx.fillText(l, 80, y + 40); y += 66; }); }
+  y += 70;
+  const n = nights(trip), days = tripDays(trip);
+  const facts = [
+    ['📅', trip.startDate ? fmtDateFull(trip.startDate) + (trip.endDate && trip.endDate !== trip.startDate ? ' 〜 ' + fmtDateFull(trip.endDate) : '') : '日程未定'],
+    ['🗓', days.length ? (n ? `${n}泊${days.length}日` : '日帰り') : ''],
+    ['👥', trip.members.map(m => m.name).join('・')],
+    ['📍', trip.area || ''],
+    ['', (trip.vehicles || []).map(v => VEHICLES[v] ? VEHICLES[v].icon + ' ' + VEHICLES[v].label : '').join('　')]
+  ].filter(f => f[1]);
+  ctx.font = `500 40px ${th.sans}`; ctx.fillStyle = th.ink;
+  facts.forEach(([ic, tx]) => { ctx.fillText(expFit(ctx, (ic ? ic + '  ' : '') + tx, EXP_W - 160), 80, y); y += 64; });
+  y += 30; ctx.strokeStyle = th.accent; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(80, y); ctx.lineTo(EXP_W - 80, y); ctx.stroke(); y += 70;
+  days.forEach((d, i) => {
+    if (y > EXP_916_H - 220) return;
+    const s = shioriDaySummary(trip, d);
+    ctx.fillStyle = th.accent; ctx.font = `700 34px ${th.sans}`; ctx.fillText('DAY ' + (i + 1), 80, y);
+    ctx.fillStyle = th.sub; ctx.font = `500 30px ${th.sans}`; ctx.fillText(fmtDate(d), 230, y);
+    ctx.fillStyle = th.ink; ctx.font = `400 34px ${th.sans}`;
+    wrapText(ctx, s || '（予定なし）', EXP_W - 160).slice(0, 2).forEach((l, k) => ctx.fillText(l, 80, y + 52 + k * 46));
+    y += 52 + 46 * Math.min(2, wrapText(ctx, s || '（予定なし）', EXP_W - 160).length) + 40;
+  });
+  expFooter(ctx, trip, EXP_916_H);
+  return c;
+}
+function renderShioriDay(trip, p) {
+  const th = VTHEME, H = p.h, c = expCanvas(H), ctx = c.getContext('2d'), k = p.scale || 1;
+  ctx.fillStyle = th.paper; ctx.fillRect(0, 0, EXP_W, H);
+  ctx.fillStyle = th.accent; ctx.font = `700 46px ${th.sans}`; ctx.letterSpacing = '6px'; ctx.fillText('DAY ' + p.index + (p.parts > 1 ? `  (${p.part}/${p.parts})` : ''), 80, 140); ctx.letterSpacing = '0px';
+  ctx.fillStyle = th.ink; ctx.font = `700 72px ${th.serif}`; ctx.fillText(fmtDateFull(p.date), 80, 240);
+  const w = weatherFor(trip.items.map(i => itemPoint(trip, i)).find(Boolean) || trip.origin, p.date);
+  if (w) { ctx.font = `500 38px ${th.sans}`; ctx.fillStyle = th.sub; ctx.fillText(`${WEATHER_ICON(w.code)} ${Math.round(w.tmax)}°/${Math.round(w.tmin)}°${w.pop != null ? '  ☔' + w.pop + '%' : ''}`, 80, 300); }
+  let y = EXP_HEAD_H;
+  const X = 80, R = 34 * k, TX = X + R * 2 + 30;
+  p.rows.forEach(r => {
+    const top = y;
+    // 丸の番号
+    ctx.fillStyle = r.locked ? th.ink : th.accent;
+    ctx.beginPath(); ctx.arc(X + R, top + R + 4, R, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = `700 ${Math.round(34 * k)}px ${th.sans}`; ctx.textAlign = 'center'; ctx.fillText(String(r.no), X + R, top + R + 16 * k); ctx.textAlign = 'left';
+    ctx.fillStyle = th.sub; ctx.font = `600 ${Math.round(32 * k)}px ${EXP_MONO}`;
+    ctx.fillText(`${r.start}–${r.end}`, TX, top + 30 * k);
+    ctx.fillStyle = th.ink; ctx.font = `700 ${Math.round(44 * k)}px ${th.sans}`;
+    const nm = (r.locked ? '🔒 ' : '') + (r.visited ? '✅ ' : '') + r.name;
+    ctx.fillText(expFit(ctx, nm, EXP_W - TX - 200), TX, top + 84 * k);
+    ctx.fillStyle = th.sub; ctx.font = `500 ${Math.round(30 * k)}px ${th.sans}`; ctx.textAlign = 'right';
+    if (r.stay && r.kind !== 'move') ctx.fillText(`滞在 ${r.stay}分`, EXP_W - 80, top + 30 * k);
+    ctx.textAlign = 'left';
+    let yy = top + 118 * k;
+    if (r.price || r.bookingNo) {
+      ctx.fillStyle = th.sub; ctx.font = `400 ${Math.round(30 * k)}px ${th.sans}`;
+      ctx.fillText([r.price ? '目安 ' + r.price : '', r.bookingNo ? '予約番号 ' + r.bookingNo : ''].filter(Boolean).join('　'), TX, yy + 8 * k); yy += 40 * k;
+    }
+    if (r.memo) {
+      ctx.fillStyle = th.sub; ctx.font = `400 ${Math.round(30 * k)}px ${th.serif}`;
+      wrapText(ctx, r.memo.replace(/\s+/g, ' '), EXP_W - TX - 80).slice(0, 2).forEach(l => { ctx.fillText(l, TX, yy + 8 * k); yy += 40 * k; });
+    }
+    if (r.move) {
+      ctx.strokeStyle = th.accent; ctx.setLineDash([6, 8]); ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(X + R, top + R * 2 + 8); ctx.lineTo(X + R, yy + 64 * k); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = th.accent; ctx.font = `600 ${Math.round(30 * k)}px ${th.sans}`;
+      ctx.fillText(`${r.move.icon}  ${r.move.min}分${r.move.km ? '・' + r.move.km : ''}`, TX, yy + 44 * k);
+      yy += 70 * k;
+    }
+    y = top + shioriRowHeight(r, k);
+  });
+  expFooter(ctx, trip, H);
+  return c;
+}
+function renderShioriList(trip, p) {
+  const th = VTHEME, H = p.h, c = expCanvas(H), ctx = c.getContext('2d');
+  ctx.fillStyle = th.paper; ctx.fillRect(0, 0, EXP_W, H);
+  ctx.fillStyle = th.accent; ctx.font = `700 46px ${th.sans}`; ctx.letterSpacing = '6px'; ctx.fillText('WISH LIST' + (p.parts > 1 ? `  (${p.part}/${p.parts})` : ''), 80, 140); ctx.letterSpacing = '0px';
+  ctx.fillStyle = th.ink; ctx.font = `700 64px ${th.serif}`; ctx.fillText('行きたい場所', 80, 240);
+  let y = EXP_HEAD_H - 40;
+  p.rows.forEach(r => {
+    ctx.fillStyle = '#fffaf0'; ctx.fillRect(80, y, EXP_W - 160, 130);
+    ctx.strokeStyle = '#e7dccb'; ctx.lineWidth = 2; ctx.strokeRect(80, y, EXP_W - 160, 130);
+    ctx.fillStyle = r.pri === 'must' ? th.accent : th.sub; ctx.font = `700 40px ${th.sans}`; ctx.fillText(PRI_MARK[r.pri], 104, y + 56);
+    ctx.fillStyle = th.ink; ctx.font = `700 40px ${th.sans}`; ctx.fillText(expFit(ctx, r.name, EXP_W - 340), 170, y + 56);
+    ctx.fillStyle = th.sub; ctx.font = `400 28px ${th.sans}`;
+    ctx.fillText(expFit(ctx, [r.area, r.hours].filter(Boolean).join('　') || '　', EXP_W - 290), 170, y + 104);
+    y += 150;
+  });
+  ctx.fillStyle = th.sub; ctx.font = `400 26px ${th.sans}`; ctx.fillText('⭐ 絶対行きたい　☆ 行けたら', 80, H - 120);
+  expFooter(ctx, trip, H);
+  return c;
+}
+function renderShioriPage(trip, p) { return p.type === 'cover' ? renderShioriCover(trip) : p.type === 'day' ? renderShioriDay(trip, p) : renderShioriList(trip, p); }
+
+// ---------------------------------------------------------------------------
+// B-1 しおり：書き出しの画面
+// ---------------------------------------------------------------------------
+ACT.shioriExport = () => {
+  const t = curTrip(); if (!t) return;
+  const o = shioriExportDefaults(t);
+  const days = tripDays(t);
+  openModal(`<div class="exp-opts">
+    <div class="b">出力するもの</div>
+    <label class="check"><input type="checkbox" id="seCover" ${o.cover ? 'checked' : ''}> 表紙</label>
+    ${days.map((d, i) => `<label class="check"><input type="checkbox" class="seDay" data-d="${d}" ${o.days[d] ? 'checked' : ''}> ${i + 1}日目 ${fmtDate(d)}（${dayItems(t, d).length}件）</label>`).join('')}
+    <label class="check"><input type="checkbox" id="seList" ${o.list ? 'checked' : ''}> 未配置の「行きたい場所」（${unscheduledItems(t).filter(i => !i.visited).length}件）</label>
+    <div class="b mt">プライバシー</div>
+    <label class="check"><input type="checkbox" id="sePriv"> 🔒 金額・予約番号・メモを隠す（LINE のグループに送る時など）</label>
+    <div class="b mt">画像のサイズ</div>
+    ${segHTML('seSize', [{ v: '916', l: '9:16（1080×1920）' }, { v: 'tall', l: '縦長（1日1枚に収める）' }], '916', 'seSize')}
+    <div class="muted small">9:16 で予定が多い日は、文字を少し小さくし、それでも入らなければ複数枚に分けます</div>
+  </div>
+  <div id="sePrev" class="exp-prev"></div>
+  <button class="btn primary block mt" data-act="seExport" id="seBtn">📤 書き出す</button>`, { title: '📤 しおりを画像で書き出し', data: { t, size: '916' }, onMount: () => sePreview() });
+};
+function seOptions() {
+  const b = topModalBody(); const m = topModal();
+  const days = {}; $$('.seDay', b).forEach(x => { days[x.dataset.d] = x.checked; });
+  return { cover: $('#seCover', b).checked, days, list: $('#seList', b).checked, privacy: $('#sePriv', b).checked, size: m.data.size };
+}
+ACT.seSize = (el) => { topModal().data.size = el.dataset.v; $$('.seg-btn[data-act="seSize"]', topModalBody()).forEach(x => x.classList.toggle('on', x === el)); sePreview(); };
+ON_CHANGE.seOpt = () => sePreview();
+async function sePreview() {
+  const m = topModal(); if (!m) return;
+  const b = topModalBody();
+  $$('input[type="checkbox"]', b).forEach(x => { x.dataset.change = 'seOpt'; });
+  const pages = shioriExportPages(m.data.t, seOptions());
+  m.data.pages = pages;
+  const btn = $('#seBtn', b);
+  if (btn) { btn.textContent = pages.length ? `📤 ${pages.length}枚を書き出す` : '書き出すものがありません'; btn.disabled = !pages.length; }
+  const prev = $('#sePrev', b); if (!prev) return;
+  await ensureFonts();
+  if (topModal() !== m) return;
+  prev.innerHTML = pages.map((p, i) => `<canvas class="exp-thumb" data-i="${i}" width="216" height="${Math.round(p.h / 5)}"></canvas>`).join('');
+  pages.forEach((p, i) => {
+    try { const big = renderShioriPage(m.data.t, p); const cv = prev.querySelector(`canvas[data-i="${i}"]`); if (cv) cv.getContext('2d').drawImage(big, 0, 0, cv.width, cv.height); }
+    catch (e) { console.error(e); toast('プレビューの作成に失敗：' + e.message); }
+  });
+}
+ACT.seExport = async (el) => {
+  const m = topModal(); const t = m.data.t;
+  const pages = shioriExportPages(t, seOptions());
+  if (!pages.length) return toast('書き出すものを選んでください');
+  el.disabled = true; el.textContent = '書き出し中…';
+  try {
+    await ensureFonts();
+    const cs = pages.map(p => renderShioriPage(t, p));
+    const files = await exportCanvases(cs, (displayTitleEn(t) || 'TRIP').replace(/\s+/g, '_') + '_PLAN', 'しおりの画像');
+    toast(files.length + '枚を書き出しました');
+  } catch (e) { toast('書き出しに失敗：' + e.message); }
+  el.disabled = false; el.textContent = `📤 ${pages.length}枚を書き出す`;
+};
+
+// ---------------------------------------------------------------------------
+// B-2 精算レシート：中身（行のリスト）。computeTransfers と同じ計算結果だけを使う
+// ---------------------------------------------------------------------------
+function settleReceiptLines(trip, opt, tr) {
+  opt = Object.assign({ breakdown: true }, opt || {});
+  const { transfers, bal, unit } = computeTransfers(trip);
+  const cur = trip.currency;
+  const L = [];
+  const range = trip.startDate ? fmtDateFull(trip.startDate) + (trip.endDate && trip.endDate !== trip.startDate ? ' 〜 ' + fmtDateFull(trip.endDate) : '') : '';
+  if (!tr) {
+    L.push({ k: 'head', t: 'SETTLEMENT RECEIPT' }, { k: 'title', t: trip.title }, { k: 'sub', t: range }, { k: 'sub', t: '精算通貨 ' + cur }, { k: 'perf' });
+    const total = Object.values(bal).reduce((s, b) => s + b.paid, 0) / unit;
+    const n = trip.members.length || 1;
+    L.push({ k: 'kv', l: '支出の総額', v: fmtMoney(total, cur) }, { k: 'kv', l: `1人あたり目安（${n}人）`, v: fmtMoney(roundCur(total / n, cur), cur) }, { k: 'perf' });
+    if (!transfers.length) L.push({ k: 'none', t: '✅ 精算の必要はありません' });
+    else {
+      L.push({ k: 'cap', t: `送金リスト（${transfers.length}件）` });
+      transfers.forEach(x => L.push({ k: 'big', l: `${memberName(trip, x.from)} → ${memberName(trip, x.to)}`, v: fmtMoney(x.amount, cur) }));
+    }
+    L.push({ k: 'perf' }, { k: 'cap', t: 'メンバー別' }, { k: 'th', c: ['名前', '払った', '負担', '差額'] });
+    trip.members.forEach(m => { const b = bal[m.id]; L.push({ k: 'tr', c: [m.name, fmtMoney(b.paid / unit, cur), fmtMoney(b.owed / unit, cur), (b.diff > 0 ? '+' : '') + fmtMoney(b.diff / unit, cur)] }); });
+    L.push({ k: 'perf' }, { k: 'note', t: '割り勘の端数は支払者が負担しています' });
+    return L;
+  }
+  const A = bal[tr.from], B = bal[tr.to];
+  L.push({ k: 'head', t: 'SETTLEMENT' }, { k: 'title', t: trip.title }, { k: 'sub', t: range }, { k: 'perf' });
+  L.push({ k: 'who', t: `${memberName(trip, tr.from)}さん → ${memberName(trip, tr.to)}さん` }, { k: 'amount', t: fmtMoney(tr.amount, cur) }, { k: 'perf' });
+  if (opt.breakdown) {
+    L.push({ k: 'cap', t: `${memberName(trip, tr.from)}さんの負担` });
+    A.owedItems.forEach(x => L.push({ k: 'row', l: `${fmtDate(x.e.date)} ${x.e.desc}`, v: fmtMoney(x.share / unit, cur) }));
+    L.push({ k: 'sum', l: '負担合計', v: fmtMoney(A.owed / unit, cur) });
+    L.push({ k: 'cap', t: '立て替え分の相殺' });
+    if (A.paidItems.length) A.paidItems.forEach(x => L.push({ k: 'row', l: `${fmtDate(x.e.date)} ${x.e.desc}`, v: '−' + fmtMoney(x.total / unit, cur) }));
+    else L.push({ k: 'row', l: 'なし', v: '' });
+    L.push({ k: 'sum', l: '差し引き（払う額）', v: fmtMoney(-A.diff / unit, cur) });
+    if (transfers.filter(x => x.from === tr.from).length > 1) L.push({ k: 'note', t: `※ ${memberName(trip, tr.from)}さんの支払いは ${transfers.filter(x => x.from === tr.from).length}人に分けて送ります` });
+    L.push({ k: 'perf' });
+  }
+  L.push({ k: 'note', t: '割り勘の端数は支払者が負担しています' });
+  void B;
+  return L;
+}
+const RECEIPT_LH = { head: 70, title: 90, sub: 50, perf: 60, kv: 60, none: 110, cap: 70, big: 110, th: 56, tr: 56, note: 56, who: 80, amount: 150, row: 54, sum: 70 };
+function receiptHeight(lines) { return lines.reduce((s, l) => s + (RECEIPT_LH[l.k] || 56), 0); }
+const RECEIPT_MIN_H = 1350, RECEIPT_MAX_BODY = 2600, RECEIPT_PAD = 220;
+// ページ割り：高さは行数に応じて伸ばし（最小 1350）、長すぎる時は複数枚に分ける
+function settleExportPages(trip, opt) {
+  opt = Object.assign({ mode: 'all', breakdown: true }, opt || {});
+  const { transfers } = computeTransfers(trip);
+  const sets = opt.mode === 'each' ? transfers.map(x => settleReceiptLines(trip, opt, x)) : [settleReceiptLines(trip, opt, null)];
+  const pages = [];
+  sets.forEach(lines => {
+    const chunks = []; let cur = [], h = 0;
+    lines.forEach(l => { const lh = RECEIPT_LH[l.k] || 56; if (cur.length && h + lh > RECEIPT_MAX_BODY && l.k !== 'perf') { chunks.push(cur); cur = []; h = 0; } cur.push(l); h += lh; });
+    if (cur.length) chunks.push(cur);
+    chunks.forEach((c, k) => pages.push({ lines: c, part: k + 1, parts: chunks.length, h: Math.max(RECEIPT_MIN_H, receiptHeight(c) + RECEIPT_PAD) }));
+  });
+  return pages;
+}
+function renderReceipt(trip, p) {
+  const th = VTHEME, H = p.h, c = expCanvas(H), ctx = c.getContext('2d');
+  ctx.fillStyle = '#e7e0d3'; ctx.fillRect(0, 0, EXP_W, H);
+  const X0 = 90, X1 = EXP_W - 90;
+  ctx.fillStyle = th.paper; ctx.fillRect(X0 - 30, 40, X1 - X0 + 60, H - 80);
+  // 上下のミシン目
+  ctx.fillStyle = '#e7e0d3';
+  for (let x = X0 - 30; x < X1 + 30; x += 36) { ctx.beginPath(); ctx.arc(x + 18, 40, 10, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(x + 18, H - 40, 10, 0, Math.PI * 2); ctx.fill(); }
+  let y = 130;
+  const right = (txt, yy, font) => { ctx.font = font; ctx.textAlign = 'right'; ctx.fillText(txt, X1, yy); ctx.textAlign = 'left'; };
+  p.lines.forEach(l => {
+    const lh = RECEIPT_LH[l.k] || 56;
+    ctx.fillStyle = th.ink;
+    switch (l.k) {
+      case 'head': ctx.fillStyle = th.accent; ctx.font = `700 34px ${EXP_MONO}`; ctx.textAlign = 'center'; ctx.fillText(l.t + (p.parts > 1 ? `  (${p.part}/${p.parts})` : ''), EXP_W / 2, y + 40); ctx.textAlign = 'left'; break;
+      case 'title': ctx.font = `700 56px ${th.serif}`; ctx.textAlign = 'center'; ctx.fillText(expFit(ctx, l.t, X1 - X0), EXP_W / 2, y + 62); ctx.textAlign = 'left'; break;
+      case 'sub': ctx.fillStyle = th.sub; ctx.font = `400 30px ${th.sans}`; ctx.textAlign = 'center'; ctx.fillText(l.t, EXP_W / 2, y + 36); ctx.textAlign = 'left'; break;
+      case 'perf': ctx.strokeStyle = th.sub; ctx.setLineDash([10, 10]); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(X0, y + 30); ctx.lineTo(X1, y + 30); ctx.stroke(); ctx.setLineDash([]); break;
+      case 'kv': case 'row': case 'sum':
+        ctx.font = l.k === 'sum' ? `700 34px ${th.sans}` : `400 32px ${th.sans}`;
+        ctx.fillText(expFit(ctx, l.l, X1 - X0 - 260), X0, y + 40);
+        right(l.v, y + 40, `${l.k === 'sum' ? 700 : 500} 34px ${EXP_MONO}`);
+        if (l.k === 'sum') { ctx.strokeStyle = th.ink; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(X1 - 300, y + 4); ctx.lineTo(X1, y + 4); ctx.stroke(); }
+        break;
+      case 'none': ctx.fillStyle = '#15803d'; ctx.font = `700 48px ${th.sans}`; ctx.textAlign = 'center'; ctx.fillText(l.t, EXP_W / 2, y + 70); ctx.textAlign = 'left'; break;
+      case 'cap': ctx.fillStyle = th.accent; ctx.font = `700 32px ${th.sans}`; ctx.fillText(l.t, X0, y + 48); break;
+      case 'big':
+        ctx.strokeStyle = th.ink; ctx.lineWidth = 3; ctx.strokeRect(X0, y + 8, X1 - X0, lh - 20);
+        ctx.font = `700 38px ${th.sans}`; ctx.fillText(expFit(ctx, l.l, X1 - X0 - 360), X0 + 24, y + 68);
+        ctx.font = `700 52px ${EXP_MONO}`; ctx.textAlign = 'right'; ctx.fillText(l.v, X1 - 24, y + 72); ctx.textAlign = 'left';
+        break;
+      case 'th': case 'tr': {
+        // 右端の位置：払った・負担・差額（金額は右揃え。列の間を 220px 以上あける）
+        const cols = [X0, X0 + 420, X0 + 640, X1];
+        ctx.font = l.k === 'th' ? `700 28px ${th.sans}` : `400 30px ${th.sans}`; ctx.fillStyle = l.k === 'th' ? th.sub : th.ink;
+        ctx.fillText(expFit(ctx, l.c[0], 200), cols[0], y + 38);
+        ctx.font = l.k === 'th' ? `700 28px ${th.sans}` : `500 28px ${EXP_MONO}`; ctx.textAlign = 'right';
+        ctx.fillText(l.c[1], cols[1], y + 38); ctx.fillText(l.c[2], cols[2], y + 38);
+        if (l.k === 'tr' && /^\+/.test(l.c[3])) ctx.fillStyle = '#15803d'; else if (l.k === 'tr' && /−/.test(l.c[3])) ctx.fillStyle = '#b91c1c';
+        ctx.fillText(l.c[3], cols[3], y + 38); ctx.textAlign = 'left';
+        break;
+      }
+      case 'note': ctx.fillStyle = th.sub; ctx.font = `400 26px ${th.sans}`; ctx.fillText(l.t, X0, y + 36); break;
+      case 'who': ctx.font = `700 46px ${th.sans}`; ctx.textAlign = 'center'; ctx.fillText(expFit(ctx, l.t, X1 - X0), EXP_W / 2, y + 56); ctx.textAlign = 'left'; break;
+      case 'amount': ctx.font = `700 104px ${EXP_MONO}`; ctx.textAlign = 'center'; ctx.fillText(l.t, EXP_W / 2, y + 112); ctx.textAlign = 'left'; break;
+    }
+    y += lh;
+  });
+  ctx.fillStyle = th.accent; ctx.font = `600 26px ${th.sans}`; ctx.textAlign = 'center'; ctx.fillText('旅帳', EXP_W / 2, H - 80); ctx.textAlign = 'left';
+  return c;
+}
+ACT.settleExport = () => {
+  const t = curTrip(); if (!t) return;
+  const { transfers } = computeTransfers(t);
+  openModal(`<div class="exp-opts">
+    <div class="b">形式</div>
+    ${segHTML('srMode', [{ v: 'all', l: '全員まとめ（1枚）' }, { v: 'each', l: '送金ごと（' + transfers.length + '枚）' }], 'all', 'srMode')}
+    <label class="check mt"><input type="checkbox" id="srBd" data-change="srOpt" checked> 支出の内訳を載せる（送金ごとの時）</label>
+  </div>
+  <div id="srMsg"></div>
+  <div id="srPrev" class="exp-prev"></div>
+  <button class="btn primary block mt" data-act="srExport" id="srBtn">📤 書き出す</button>`, { title: '🧾 精算カードを書き出し', data: { t, mode: 'all' }, onMount: () => srPreview() });
+};
+function srOptions() { const m = topModal(); return { mode: m.data.mode, breakdown: $('#srBd', topModalBody()).checked }; }
+ACT.srMode = (el) => { topModal().data.mode = el.dataset.v; $$('.seg-btn[data-act="srMode"]', topModalBody()).forEach(x => x.classList.toggle('on', x === el)); srPreview(); };
+ON_CHANGE.srOpt = () => srPreview();
+async function srPreview() {
+  const m = topModal(); if (!m) return;
+  const b = topModalBody();
+  const pages = settleExportPages(m.data.t, srOptions());
+  const msg = $('#srMsg', b), btn = $('#srBtn', b), prev = $('#srPrev', b);
+  if (msg) msg.innerHTML = pages.length ? '' : '<div class="card ok-card">✅ 精算はありません（送る相手がいないので、送金ごとのカードは作りません）</div>';
+  if (btn) { btn.textContent = pages.length ? `📤 ${pages.length}枚を書き出す` : '書き出すものがありません'; btn.disabled = !pages.length; }
+  await ensureFonts();
+  if (topModal() !== m || !prev) return;
+  prev.innerHTML = pages.map((p, i) => `<canvas class="exp-thumb" data-i="${i}" width="216" height="${Math.round(p.h / 5)}"></canvas>`).join('');
+  pages.forEach((p, i) => {
+    try { const big = renderReceipt(m.data.t, p); const cv = prev.querySelector(`canvas[data-i="${i}"]`); if (cv) cv.getContext('2d').drawImage(big, 0, 0, cv.width, cv.height); }
+    catch (e) { console.error(e); toast('プレビューの作成に失敗：' + e.message); }
+  });
+}
+ACT.srExport = async (el) => {
+  const t = topModal().data.t;
+  const pages = settleExportPages(t, srOptions());
+  if (!pages.length) return toast('精算はありません');
+  el.disabled = true; el.textContent = '書き出し中…';
+  try {
+    await ensureFonts();
+    const files = await exportCanvases(pages.map(p => renderReceipt(t, p)), (displayTitleEn(t) || 'TRIP').replace(/\s+/g, '_') + '_SETTLEMENT', '精算カード');
+    toast(files.length + '枚を書き出しました');
+  } catch (e) { toast('書き出しに失敗：' + e.message); }
+  el.disabled = false; el.textContent = `📤 ${pages.length}枚を書き出す`;
+};
+
+// ---- 18_assist.js ----
+// ============================================================================
+// 18 v2.2 旅先の相棒（C-1 寄り道レーダー・C-2 仮しおりの自動生成）
+//   判定・計算は純粋な関数（テストできる）、画面はその結果を表示するだけ。外部 API は使わない
+//   （C-1 の上位候補だけ、既存の routeFor＝経路キャッシュつき で実際の所要に置き換える）
+// ============================================================================
+const DETOUR_DEFAULT_STAY = 60;   // 滞在目安が無いスポットの既定（分）
+const DETOUR_TOP_ROUTES = 6;      // 実経路に置き換える上位件数
+const PLAN_DAY_END = '21:00';     // 1日の終わりの目安（設定に「終了時刻」が無いため）
+const DAY_END_MIN = 1440;         // 次の予定が無い日の「今日中」
+
+function travelMode(trip) {
+  const m = (trip.listTransport && trip.listTransport.mode) || (trip.vehicles || [])[0] || 'car';
+  return m === 'plane' || m === 'ferry' ? 'train' : m;   // 寄り道・街中の移動に飛行機・船は使わない
+}
+function roundUp5(m) { return Math.ceil(m / 5) * 5; }
+
+// ---------------------------------------------------------------------------
+// C-1 寄り道レーダー
+// ---------------------------------------------------------------------------
+// 候補：スポット帳の「行きたい」で未訪問のもの ＋ この旅の未配置リスト（同じスポットは1つ）。今日の工程に入っているものは除く
+function detourPool(trip, date) {
+  const today = new Set(dayItems(trip, date).map(i => i.spotId).filter(Boolean));
+  const out = [], seen = new Set();
+  unscheduledItems(trip).filter(i => !i.visited).forEach(it => {
+    const info = itemInfo(trip, it);
+    if (it.spotId) { if (today.has(it.spotId)) return; seen.add(it.spotId); }
+    out.push({ key: 'it:' + it.id, itemId: it.id, spotId: it.spotId || null, info, from: 'list' });
+  });
+  Object.values(S.spots || {}).forEach(sp => {
+    if (seen.has(sp.id) || today.has(sp.id)) return;
+    if (sp.status !== 'want' || (sp.visits && sp.visits.length)) return;
+    const info = itemInfo(trip, newItem({ spotId: sp.id, nameCache: sp.name }));
+    out.push({ key: 'sp:' + sp.id, itemId: null, spotId: sp.id, info, from: 'spotcho' });
+  });
+  return out;
+}
+// 次の予定（今より後に始まる、まだ行っていない工程）。固定枠はその開始時刻、通常の工程は daySchedule の算出時刻
+function nextAppointment(trip, date, nowMin) {
+  const r = daySchedule(trip, date).find(x => x.start > nowMin && !x.it.visited);
+  if (!r) return null;
+  return { row: r, start: r.start, locked: !!r.it.locked, name: r.info.name, point: r.info.lat != null ? { lat: r.info.lat, lng: r.info.lng } : null };
+}
+// ctx：{ date, now(分), geo, routes:{key:{min,km}}（実経路があれば） }
+function detourCandidates(trip, ctx) {
+  if (!ctx.geo || ctx.geo.lat == null) return { error: 'nogeo', list: [] };
+  const mode = travelMode(trip);
+  const next = nextAppointment(trip, ctx.date, ctx.now);
+  const deadline = next ? next.start : DAY_END_MIN;
+  const list = [];
+  detourPool(trip, ctx.date).forEach(c => {
+    const info = c.info;
+    if (info.lat == null) return;                                                   // 1. 座標があるもの
+    const os = openStateAt(info.hours, ctx.date, ctx.now);
+    if (os.state !== 'open' && os.state !== 'unknown') return;                      // 2. 今営業中（不明は残して後ろへ）
+    const km = haversineKm(ctx.geo, info);
+    const real = ctx.routes && ctx.routes[c.key];
+    const go = real ? real.min : estimateMinutes(km, mode);
+    const stay = num(info.stay, 0) > 0 ? num(info.stay, 0) : DETOUR_DEFAULT_STAY;
+    const back = next && next.point ? estimateMinutes(haversineKm(info, next.point), mode) : 0;
+    const need = go + stay + back;                                                  // 3. 移動＋滞在（＋次の予定の場所まで）
+    const left = deadline - ctx.now;
+    if (need > left) return;
+    if (os.state === 'open' && os.closeIn != null && os.closeIn < go + Math.min(stay, 30)) return;   // 着いたら閉店、は出さない
+    list.push({
+      key: c.key, itemId: c.itemId, spotId: c.spotId, name: info.name, point: { lat: info.lat, lng: info.lng, name: info.name, address: info.address },
+      km: real && real.km != null ? real.km : km, go, stay, back, need, spare: Math.round(left - need), real: !!real,
+      open: os.state, closeIn: os.closeIn != null ? Math.round(os.closeIn) : null, priority: info.priority === 'must' ? 'must' : 'maybe', from: c.from
+    });
+  });
+  list.sort((a, b) => (a.open === 'unknown') - (b.open === 'unknown') || a.km - b.km);
+  return { list, next: next ? { name: next.name, start: next.start, locked: next.locked, left: Math.round(deadline - ctx.now) } : null, mode };
+}
+// 工程に差し込む：今の時刻の位置（次の予定の前）に入れる。固定枠は動かさない
+function insertDetour(trip, date, nowMin, cand) {
+  const rows = daySchedule(trip, date);
+  const nextIdx = rows.findIndex(r => r.start > nowMin);
+  const prev = nextIdx > 0 ? rows[nextIdx - 1] : (nextIdx === -1 ? rows[rows.length - 1] : null);
+  const nxt = nextIdx >= 0 ? rows[nextIdx] : null;
+  let it = cand.itemId ? trip.items.find(i => i.id === cand.itemId) : null;
+  if (!it) { it = newItem({ spotId: cand.spotId, nameCache: cand.name }); trip.items.push(it); }
+  it.hiddenTime = null;
+  it.date = date;
+  it.start = fromMin(roundUp5(nowMin + cand.go));
+  it.startManual = true;
+  it.locked = false;
+  it.stay = cand.stay;
+  if (prev && nxt) it.order = (prev.it.order + nxt.it.order) / 2;
+  else if (nxt) it.order = nxt.it.order - 1000;
+  else it.order = prev ? prev.it.order + 1000 : 1000;
+  it.moveAfter = cand.back ? roundUp5(cand.back) : null;
+  it.moveAuto = true;
+  return it;
+}
+let detourState = null;
+async function getGeoOnce() {
+  if (S.geo && Date.now() - (S.geo.at || 0) < 5 * 60 * 1000) return S.geo;
+  if (!navigator.geolocation) return null;
+  return new Promise(res => {
+    try {
+      navigator.geolocation.getCurrentPosition(p => { S.geo = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, at: Date.now() }; res(S.geo); },
+        () => res(null), { enableHighAccuracy: true, maximumAge: 60000, timeout: 15000 });
+    } catch (e) { res(null); }
+  });
+}
+ACT.detourOpen = async (el) => {
+  const t = curTrip(); if (!t) return;
+  if (el) { el.disabled = true; el.innerHTML = '<span class="spin"></span> 現在地を確認中…'; }
+  const geo = await getGeoOnce();
+  if (el) { el.disabled = false; el.innerHTML = '🧭 寄り道を探す'; }
+  if (!geo) { toast('現在地が分かりません（位置情報をオンにして、もう一度お試しください）', { ms: 5000 }); return; }
+  if (S.spotsState !== 'ok') loadSpots(true);
+  detourState = { tripId: t.id, routes: {} };
+  openModal('<div id="detourBody"></div>', { title: '🧭 寄り道レーダー', onMount: () => detourRender(), onClose: () => { detourState = null; } });
+};
+function detourCompute() {
+  const t = S.trips[detourState.tripId];
+  const date = tripToday(t), now = tripNowMin(t);
+  const res = detourCandidates(t, { date, now, geo: S.geo, routes: detourState.routes });
+  // 上位だけ実経路に置き換える（routeFor はキャッシュつき。届いたら描き直す）
+  res.list.slice(0, DETOUR_TOP_ROUTES).forEach(c => {
+    if (detourState.routes[c.key]) return;
+    const r = routeFor(S.geo, c.point, res.mode === 'walk' ? 'walk' : res.mode, t.listTransport);
+    if (r && !r.estimated) detourState.routes[c.key] = r;
+  });
+  return Object.assign(detourCandidates(t, { date, now, geo: S.geo, routes: detourState.routes }), { t, date, now });
+}
+function detourRender() {
+  const box = $('#detourBody'); if (!box || !detourState) return;
+  const r = detourCompute();
+  let h = '';
+  h += r.next ? `<div class="info-box small">次の予定：<b>${r.next.locked ? '🔒 ' : ''}${esc(r.next.name)}</b>（${fromMin(Math.round(r.next.start))}）まで あと <b>${r.next.left}分</b>。戻る時間も含めて間に合う所だけ出しています</div>`
+    : `<div class="info-box small">今日はこの後の予定がありません。営業時間内に寄れる所を出しています</div>`;
+  if (S.spotsState === 'loading') h += '<div class="muted small">スポット帳を読み込み中…</div>';
+  if (!r.list.length) h += `<div class="card muted">今から寄れる候補がありません（営業中・座標あり・時間内のもの）</div>`;
+  r.list.forEach(c => {
+    h += `<div class="card detour">
+      <div class="row between"><b>${c.priority === 'must' ? '⭐ ' : ''}${esc(c.name)}</b><span class="muted small">${fmtKm(c.km)}</span></div>
+      <div class="small">${VEHICLES[r.mode] ? VEHICLES[r.mode].icon : '🚶'} ${c.go}分${c.real ? '' : '（概算）'} ・ 滞在 ${c.stay}分${c.back ? ` ・ 次の場所へ ${c.back}分` : ''}</div>
+      <div class="small">${c.open === 'open' ? `<span class="ok">営業中</span>${c.closeIn != null ? `（閉店まで ${c.closeIn}分）` : ''}` : '<span class="warn">営業時間不明</span>'} ・ ${r.next ? `余裕 <b>${c.spare}分</b>（間に合う）` : '今日中なら自由'}</div>
+      <div class="row gap mt"><button class="btn sm primary" data-act="detourInsert" data-k="${esc(c.key)}">＋ 工程に差し込む</button>
+      <a class="btn sm" href="${mapsDirUrl(c.point, r.mode)}" target="_blank" rel="noopener">🧭 このままナビ開始</a></div></div>`;
+  });
+  box.innerHTML = h;
+}
+ACT.detourInsert = (el) => {
+  const r = detourCompute();
+  const c = r.list.find(x => x.key === el.dataset.k); if (!c) return toast('候補が見つかりません（時間が過ぎた可能性）');
+  if (!tripDays(r.t).includes(r.date)) return toast('今日は旅の日程の外です');
+  insertDetour(r.t, r.date, r.now, c);
+  closeModal();
+  commitTrip(r.t);
+  autoMoveTimes(r.t, r.date);
+  toast(c.name + ' を今日の工程に入れました');
+};
+
+// ---------------------------------------------------------------------------
+// C-2 仮しおりの自動生成（定休日パズル＋近い順の巡回）
+// ---------------------------------------------------------------------------
+function isAnchor(it) { return !!((it.locked || it.startManual) && toMin(it.start) != null); }
+// その日の出発点：前の日の最後の場所（宿の固定枠など）→ 無ければ旅の出発地
+function dayStartPoint(trip, days, idx, seqByDay) {
+  for (let k = idx - 1; k >= 0; k--) {
+    const seq = seqByDay[days[k]] || [];
+    for (let j = seq.length - 1; j >= 0; j--) if (seq[j].p) return seq[j].p;
+  }
+  const o = trip.origin || S.settings.home;
+  return o && o.lat != null ? { lat: o.lat, lng: o.lng } : null;
+}
+function legMin(a, b, mode) { return a && b ? roundUp5(estimateMinutes(haversineKm(a, b), mode)) : 0; }
+// 1日の並び（seq）を時刻でなぞる。固定枠・時刻指定は動かさず、新しく入れたものだけ開店待ちをする
+function simulateDay(trip, date, seq, startPoint, mode) {
+  const dayStart = toMin(S.settings.dayStart) || 540, dayEnd = toMin(PLAN_DAY_END);
+  let cursor = null, late = 0, ok = true, moveTotal = 0, prevP = startPoint, prevExisting = null;
+  const out = [];
+  seq.forEach((x, i) => {
+    let leg;
+    if (prevExisting && !x.isNew && prevExisting.moveAfter != null && prevExisting.moveAfter !== '') leg = num(prevExisting.moveAfter, 0);
+    else leg = i === 0 ? 0 : legMin(prevP, x.p, mode);
+    if (i > 0) moveTotal += leg;
+    let start;
+    const at = cursor == null ? dayStart : cursor + leg;
+    if (isAnchor(x.it) && !x.isNew) { start = toMin(x.it.start); if (cursor != null && at > start + 0.5) late++; }
+    else start = i === 0 && toMin(x.it.start) != null ? toMin(x.it.start) : at;
+    let wait = 0;
+    if (x.isNew) {
+      const r = hoursOn(x.info.hours, date);
+      if (r !== null) {
+        if (!r.length) ok = false;
+        const fit = r.map(w => [Math.max(start, w[0]), w[1]]).filter(w => w[0] + x.stay <= w[1]).sort((a, b) => a[0] - b[0])[0];
+        if (!fit) ok = false; else { wait = fit[0] - start; start = fit[0]; }
+      }
+      if (start + x.stay > dayEnd) ok = false;
+    }
+    const end = start + x.stay;
+    out.push({ x, start, end, leg, wait });
+    cursor = end;
+    prevP = x.p || prevP;
+    prevExisting = x.isNew ? null : x.it;
+  });
+  return { ok, late, rows: out, moveTotal, end: cursor };
+}
+function seqDistance(seq, startPoint) {
+  let d = 0, p = startPoint;
+  seq.forEach(x => { if (p && x.p) d += haversineKm(p, x.p); if (x.p) p = x.p; });
+  return d;
+}
+// 生成本体。trip は書き換えない（プレビューを作るだけ）
+function planAuto(trip) {
+  const days = tripDays(trip);
+  const mode = travelMode(trip);
+  const result = { days: [], unplaced: [], closedAvoided: 0, unknownHours: 0, moveTotal: 0, mode };
+  if (!days.length) { result.error = 'nodays'; return result; }
+  const cands = unscheduledItems(trip).filter(i => !i.visited).map(it => {
+    const info = itemInfo(trip, it);
+    return { it, info, isNew: true, p: info.lat != null ? { lat: info.lat, lng: info.lng } : null, stay: num(it.stay, 0) || num(info.stay, 0) || 60, pri: (it.priority || info.priority) === 'must' ? 'must' : 'maybe' };
+  });
+  const seqByDay = {};
+  days.forEach(d => { seqByDay[d] = dayItems(trip, d).map(it => { const info = itemInfo(trip, it); return { it, info, isNew: false, p: info.lat != null ? { lat: info.lat, lng: info.lng } : null, stay: Math.max(0, num(it.stay, 0)) }; }); });
+  const base = {};
+  days.forEach((d, i) => { base[d] = simulateDay(trip, d, seqByDay[d], dayStartPoint(trip, days, i, seqByDay), mode).late; });
+  const placeable = [];
+  cands.forEach(c => {
+    if (!c.p) { result.unplaced.push({ name: c.info.name, reason: '座標がない' }); return; }
+    c.allowed = days.filter(d => dayAvailability(c.info.hours, d) !== 'closed');
+    c.closedDays = days.length - c.allowed.length;
+    if (!c.allowed.length) { result.unplaced.push({ name: c.info.name, reason: '旅の日程がすべて定休日' }); return; }
+    placeable.push(c);
+  });
+  // 絶対行きたい → 行ける日が少ない順（定休日のパズルを先に解く）→ 行けたら
+  placeable.sort((a, b) => (a.pri === 'must' ? 0 : 1) - (b.pri === 'must' ? 0 : 1) || a.allowed.length - b.allowed.length);
+  placeable.forEach(c => {
+    let best = null;
+    c.allowed.forEach(d => {
+      const i = days.indexOf(d);
+      const sp = dayStartPoint(trip, days, i, seqByDay);
+      const seq = seqByDay[d];
+      const before = seqDistance(seq, sp);
+      // 最安挿入：工程の並びのどこに入れると移動が一番増えないか（既存の工程の順番は変えない）
+      for (let pos = 0; pos <= seq.length; pos++) {
+        const trial = seq.slice(0, pos).concat([c], seq.slice(pos));
+        const added = seqDistance(trial, sp) - before;
+        if (best && added >= best.added) continue;
+        const sim = simulateDay(trip, d, trial, sp, mode);
+        if (!sim.ok || sim.late > base[d]) continue;
+        best = { d, pos, added };
+      }
+    });
+    if (!best) { result.unplaced.push({ name: c.info.name, reason: '時間内に入りきらない', pri: c.pri }); return; }
+    seqByDay[best.d].splice(best.pos, 0, c);
+    if (c.closedDays) result.closedAvoided++;
+  });
+  // 2-opt：新しく入れたものが続いている区間の中だけで順番を入れ替える（既存の工程の位置は変えない）
+  days.forEach((d, i) => {
+    const sp = dayStartPoint(trip, days, i, seqByDay);
+    let seq = seqByDay[d], improved = true, guard = 0;
+    while (improved && guard++ < 50) {
+      improved = false;
+      for (let a = 0; a < seq.length; a++) {
+        if (!seq[a].isNew) continue;
+        let b = a; while (b + 1 < seq.length && seq[b + 1].isNew) b++;
+        for (let x = a; x < b; x++) for (let y = x + 1; y <= b; y++) {
+          const trial = seq.slice(0, x).concat(seq.slice(x, y + 1).reverse(), seq.slice(y + 1));
+          if (seqDistance(trial, sp) + 1e-9 < seqDistance(seq, sp)) {
+            const sim = simulateDay(trip, d, trial, sp, mode);
+            if (sim.ok && sim.late <= base[d]) { seq = trial; improved = true; }
+          }
+        }
+        a = b;
+      }
+    }
+    seqByDay[d] = seq;
+    const sim = simulateDay(trip, d, seq, sp, mode);
+    result.moveTotal += sim.moveTotal;
+    result.days.push({
+      date: d, index: i + 1, moveTotal: sim.moveTotal,
+      rows: sim.rows.map(r => ({ id: r.x.it.id, name: r.x.info.name, isNew: r.x.isNew, locked: !!r.x.it.locked, anchor: isAnchor(r.x.it), start: Math.round(r.start), end: Math.round(r.end), leg: r.leg, wait: Math.round(r.wait), unknownHours: r.x.isNew && dayAvailability(r.x.info.hours, d) === 'unknown' }))
+    });
+    sim.rows.forEach(r => { if (r.x.isNew && dayAvailability(r.x.info.hours, d) === 'unknown') result.unknownHours++; });
+  });
+  result.placed = result.days.reduce((s, d) => s + d.rows.filter(r => r.isNew).length, 0);
+  return result;
+}
+// 反映：プレビューの並びをそのまま旅に書く（固定枠・時刻指定の工程は触らない）
+function applyPlan(trip, plan) {
+  plan.days.forEach(d => {
+    d.rows.forEach((r, k) => {
+      const it = trip.items.find(i => i.id === r.id); if (!it) return;
+      if (!r.isNew) { it.order = (k + 1) * 1000; return; }   // 既存の工程は並び順の番号を振り直すだけ（順番は変えない）
+      it.hiddenTime = null;
+      it.date = d.date;
+      it.order = (k + 1) * 1000;
+      if (r.wait > 0) { it.start = fromMin(r.start); it.startManual = true; }   // 開店を待つものだけ時刻を入れる
+      else { it.start = null; it.startManual = false; }
+    });
+    // 移動時間：新しく入れたものの前後は概算を入れておき、反映のあと経路で計算し直す
+    d.rows.forEach((r, k) => {
+      const nx = d.rows[k + 1]; if (!nx) return;
+      if (!r.isNew && !nx.isNew) return;
+      const it = trip.items.find(i => i.id === r.id);
+      if (it && it.moveAuto !== false) { it.moveAfter = nx.leg; it.moveAuto = true; }
+    });
+  });
+}
+ACT.autoPlanOpen = () => {
+  const t = curTrip(); if (!t) return;
+  const plan = planAuto(JSON.parse(JSON.stringify(t)));
+  if (plan.error === 'nodays') return toast('日程を入れると、自動でしおり案を作れます');
+  let h = `<div class="info-box small">「行きたい場所」から、定休日を避けて近い順に回る仮のしおり案です。<b>まだしおりは変わっていません</b>。
+    固定枠🔒と時刻を決めた工程は動かしません。1日は ${esc(S.settings.dayStart || '09:00')}〜${PLAN_DAY_END} を目安にしています</div>
+    <div class="card small"><b>配置 ${plan.placed}件</b> ・ 総移動 約${plan.moveTotal}分${plan.closedAvoided ? ` ・ 定休日を避けた ${plan.closedAvoided}件` : ''}${plan.unknownHours ? ` ・ <span class="warn">営業時間未確認 ${plan.unknownHours}件</span>` : ''}${plan.unplaced.length ? ` ・ 未配置のまま ${plan.unplaced.length}件` : ''}</div>`;
+  plan.days.forEach(d => {
+    if (!d.rows.length) return;
+    h += `<div class="card"><div class="row between"><b>${d.index}日目 ${fmtDate(d.date)}</b><span class="muted small">移動 約${d.moveTotal}分</span></div>
+      ${d.rows.map(r => `<div class="ap-row ${r.isNew ? 'new' : ''}">${r.leg ? `<div class="muted small">　↓ ${r.leg}分</div>` : ''}<div><span class="mono">${fromMin(r.start)}–${fromMin(r.end)}</span> ${r.locked ? '🔒 ' : ''}${r.isNew ? '<b>🆕 ' + esc(r.name) + '</b>' : esc(r.name)}${r.wait ? ` <span class="muted small">（開店待ち ${r.wait}分）</span>` : ''}${r.unknownHours ? ' <span class="warn small">営業時間未確認</span>' : ''}</div></div>`).join('')}</div>`;
+  });
+  if (plan.unplaced.length) h += `<div class="card"><b>未配置のまま残すもの</b>${plan.unplaced.map(u => `<div class="small">${u.pri === 'must' ? '⭐ ' : ''}${esc(u.name)} <span class="muted">— ${esc(u.reason)}</span></div>`).join('')}</div>`;
+  h += `<div class="row gap mt"><button class="btn grow" data-act="closeModal">キャンセル</button><button class="btn primary grow" data-act="autoPlanApply" ${plan.placed ? '' : 'disabled'}>この案をしおりに反映</button></div>`;
+  openModal(h, { title: '🪄 自動でしおり案', data: { t, plan } });
+};
+ACT.autoPlanApply = () => {
+  const { t, plan } = topModal().data;
+  applyPlan(t, plan);
+  if (t.mode !== 'shiori') switchMode(t, 'shiori');
+  closeModal();
+  commitTrip(t);
+  plan.days.forEach(d => { if (d.rows.some(r => r.isNew)) autoMoveTimes(t, d.date); });
+  toast(plan.placed + '件をしおりに入れました（移動時間は経路で計算し直しています）');
+};
+
 // ---- 99_main.js ----
 // ============================================================================
 // 99 描画・タブ切替・イベント委譲・起動
@@ -5728,7 +6505,7 @@ function renderModeBanner() {
 }
 function render() {
   renderDeferred = false;
-  try { renderInner(); }
+  try { renderInner(); if (detourState) detourRender(); }   // v2.2：寄り道レーダーが開いていれば、届いた経路で中身も更新
   catch (e) {
     console.error(e);
     if (window.__TB && !window.__TB.started) window.__TB.fail('画面の描画', e);
@@ -5822,7 +6599,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // 画面テスト用の入口（デモモードの時だけ。本番の GAS では出さない）
-if (IS_DEMO) window.__TABICHO_T = { softRender, isEditingInput, registerMedia, saveCache, loadImg, imageExportSafe, thumbIdb, tripTz, tripToday, curTrip, S };
+if (IS_DEMO) window.__TABICHO_T = { softRender, isEditingInput, registerMedia, newItem, commitTrip, computeTransfers, newMoney, daySchedule, shioriExportPages, renderShioriPage, settleExportPages, renderReceipt, detourCandidates, planAuto, applyPlan, insertDetour, saveCache, loadImg, imageExportSafe, thumbIdb, tripTz, tripToday, curTrip, S };
 // 起動の各段階を個別に守る（どこかで失敗しても画面は出し、原因を起動ガードに残す）
 function bootStep(name, fn) {
   try { return fn(); }

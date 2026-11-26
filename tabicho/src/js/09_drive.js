@@ -20,7 +20,7 @@ function renderDrive(trip) {
   if (trip.driveTargetId) target = c.all.find(x => x.it.id === trip.driveTargetId) || null;
   if (!target) target = c.all[0] || null;
   const carTrip = hasVehicle(trip, 'car');
-  let h = '';
+  let h = `<button class="btn block detour-btn" data-act="detourOpen">🧭 寄り道を探す</button>`;   // v2.2 C-1
   if (!carTrip) h += renderTransit(trip, c);
   if (target && carTrip) h += driveTargetCard(trip, target, c);
   else if (!target && carTrip) h += emptyHTML('🚗', '次の目的地がありません。しおりやリストにスポットを入れてください。');

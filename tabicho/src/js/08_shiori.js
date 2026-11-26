@@ -30,7 +30,7 @@ function renderPlan(trip) {
   const days = tripDays(trip);
   const day = shioriDay(trip);
   const isShiori = trip.mode === 'shiori';
-  let h = `<div class="mode-bar">${segHTML('mode', [{ v: 'shiori', l: '📒 しおり' }, { v: 'list', l: '📝 リスト' }], trip.mode, 'switchMode')}</div>`;
+  let h = `<div class="mode-bar row between">${segHTML('mode', [{ v: 'shiori', l: '📒 しおり' }, { v: 'list', l: '📝 リスト' }], trip.mode, 'switchMode')}<button class="btn sm" data-act="shioriExport">📤 画像で書き出し</button></div>`;
   const hidden = trip.items.filter(i => i.hiddenTime);
   if (isShiori && hidden.length) h += `<div class="info-box small">🕘 リストモードに切り替えた時の時刻を ${hidden.length}件 保持しています。<button class="btn sm" data-act="restoreAllTimes">すべて元の時刻に戻す</button></div>`;
   if (days.length) {
@@ -60,6 +60,7 @@ function renderPlan(trip) {
     <button class="link-btn" data-act="toggleListZone">${S.ui.listCollapsed ? '▶' : '▼'} ${label}（${list.length}）</button>
     <span class="row gap">
       <select data-change="listSort" class="sm">${[['distance', '距離順'], ['closing', '閉店が近い順'], ['priority', '優先度順']].map(([v, l]) => `<option value="${v}" ${S.ui.listSort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      ${list.length && days.length ? '<button class="btn sm" data-act="autoPlanOpen" title="定休日を避けて近い順に並べた仮のしおり案">🪄 自動で案</button>' : ''}
       <button class="btn sm primary" data-act="addSpotToList">＋</button></span></div>`;
   if (!S.ui.listCollapsed) {
     if (!list.length) h += `<div class="muted pad small">${isShiori ? '日時が決まっていない予定はここにリストで並びます。' : '行きたい場所を追加しましょう（スポット帳から選べます）'}</div>`;

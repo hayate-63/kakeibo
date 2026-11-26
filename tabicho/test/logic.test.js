@@ -9,7 +9,7 @@ const ctx = {
   render() {}, toast() {}, confirmDialog: async () => true
 };
 vm.createContext(ctx);
-['01_util.js', '02_api.js', '03_store.js', '04_schedule.js', '05_money.js', '06_ui_common.js', '14_media.js', '15_visual.js', '16_collection.js'].forEach(f => vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
+['01_util.js', '02_api.js', '03_store.js', '04_schedule.js', '05_money.js', '06_ui_common.js', '07_home.js', '08_shiori.js', '14_media.js', '15_visual.js', '16_collection.js', '17_export.js', '18_assist.js'].forEach(f => vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const run = (code) => { const v = vm.runInContext(code, ctx); return v === undefined ? v : JSON.parse(JSON.stringify(v)); };
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('✓', name); };
 
@@ -253,5 +253,134 @@ t('v2.0.3 旅の状態（旅行中かどうか）は現地の日付で決まる'
     return [tripStatus(t, '2026-11-26'), tripStatus(t, '2026-11-27')];
   })()`);
   assert.notStrictEqual(r[0], r[1], '日本で翌日になっても、現地がまだ最終日なら旅行中のまま');
+});
+// ---- v2.2 ----
+const V22 = `
+  const mkTrip = () => {
+    const tr = newTrip({ title: '淡路島', startDate: '2026-11-30', endDate: '2026-12-01', mode: 'shiori', members: ['A', 'B'] });
+    tr.origin = { lat: 34.30, lng: 134.90, name: '家' };
+    return tr;
+  };`;
+t('v2.2 B-1 しおり書き出し：枚数（表紙・予定のある日・未配置）、プライバシー、9:16 の分割と縦長', () => {
+  const r = run(`(() => { ${V22}
+    const tr = mkTrip();
+    tr.bookings.push({ id: 'bk1', title: '夕食', bookingNo: 'ABC-123', status: '予約済' });
+    tr.items.push(newItem({ name: '海の駅', date: '2026-11-30', start: '09:00', stay: 60, order: 1, memo: '駐車場は裏', priceEst: 1500, lat: 34.3, lng: 134.9 }));
+    tr.items.push(newItem({ name: '夕食', kind: 'fixed', date: '2026-11-30', start: '18:00', locked: true, startManual: true, stay: 90, order: 2, bookingId: 'bk1' }));
+    tr.items.push(newItem({ name: '行きたいA', priority: 'must' }), newItem({ name: '行きたいB' }));
+    const def = shioriExportPages(tr).map(p => p.type);
+    const withList = shioriExportPages(tr, { list: true }).map(p => p.type);
+    const open = shioriDayRows(tr, '2026-11-30', false), priv = shioriDayRows(tr, '2026-11-30', true);
+    const big = mkTrip();
+    for (let i = 0; i < 30; i++) big.items.push(newItem({ name: 'スポット' + i, date: '2026-11-30', stay: 30, moveAfter: 10, order: i, memo: i % 2 ? 'メモ'.repeat(20) : '' }));
+    const p916 = shioriExportPages(big, { cover: false }), tall = shioriExportPages(big, { cover: false, size: 'tall' });
+    const huge = mkTrip(); for (let i = 0; i < 80; i++) huge.items.push(newItem({ name: 'S' + i, date: '2026-11-30', stay: 10, moveAfter: 5, order: i, memo: 'メモ'.repeat(30) }));
+    const hugeTall = shioriExportPages(huge, { cover: false, size: 'tall' }).map(p => p.h);
+    const lt = mkTrip(); lt.mode = 'list'; lt.items.push(newItem({ name: 'リストだけ' }));
+    return { def, withList, open: [open[0].memo, open[0].price, open[1].bookingNo, open[1].locked], priv: [priv[0].memo, priv[0].price, priv[1].bookingNo],
+      p916: p916.map(p => [p.parts, p.h]), tall: tall.map(p => [p.parts, p.h > 1920]), listOnly: shioriExportPages(lt).map(p => p.type), hugeTall,
+      summary: shioriDaySummary(tr, '2026-11-30') };
+  })()`);
+  assert.deepStrictEqual(r.def, ['cover', 'day'], '予定のある日だけ（2日目は予定なし）');
+  assert.deepStrictEqual(r.withList, ['cover', 'day', 'list']);
+  assert.deepStrictEqual(r.open, ['駐車場は裏', '¥1,500', 'ABC-123', true]);
+  assert.deepStrictEqual(r.priv, ['', null, ''], 'プライバシー ON：メモ・料金目安・予約番号を入れない');
+  assert.ok(r.p916.length >= 2 && r.p916.every(([parts, h]) => parts === r.p916.length && h === 1920), '9:16 は複数枚に分割: ' + JSON.stringify(r.p916));
+  assert.deepStrictEqual(r.tall, [[1, true]], '縦長は1日1枚（高さが伸びる）');
+  assert.deepStrictEqual(r.listOnly, ['cover', 'list'], 'リストモードの旅は未配置リストが既定で ON');
+  assert.ok(r.hugeTall.length >= 2 && r.hugeTall.every(h => h <= 8000), '縦長でも 8000px を超えたら分ける: ' + r.hugeTall);
+  assert.strictEqual(r.summary, '海の駅 → 夕食');
+});
+t('v2.2 B-2 精算カード：全員まとめ・送金ごと・精算なし・長い内訳の分割（computeTransfers と同じ結果）', () => {
+  const r = run(`(() => { ${V22}
+    const tr = mkTrip(); tr.members.push({ id: 'mC', name: 'C' });
+    const [a, b, c] = tr.members;
+    tr.expenses.push({ id: 'e1', date: '2026-11-30', desc: '宿', cat: '宿', money: newMoney(tr, { amount: 30000, payer: a.id }) });
+    tr.expenses.push({ id: 'e2', date: '2026-11-30', desc: '昼', cat: '食費', money: newMoney(tr, { amount: 3000, payer: b.id }) });
+    const tx = computeTransfers(tr).transfers;
+    const all = settleExportPages(tr, { mode: 'all' }), each = settleExportPages(tr, { mode: 'each' }), eachNo = settleExportPages(tr, { mode: 'each', breakdown: false });
+    const big = all[0].lines.filter(l => l.k === 'big').map(l => l.v);
+    const amt = each.map(p => p.lines.find(l => l.k === 'amount').t);
+    const zero = mkTrip();
+    const z1 = settleExportPages(zero, { mode: 'all' }), z2 = settleExportPages(zero, { mode: 'each' });
+    const long = mkTrip(); const [la, lb] = long.members;
+    for (let i = 0; i < 120; i++) long.expenses.push({ id: 'x' + i, date: '2026-11-30', desc: '支出' + i, cat: '食費', money: newMoney(long, { amount: 1000, payer: i % 3 ? la.id : lb.id }) });
+    const lp = settleExportPages(long, { mode: 'each' });
+    return { n: tx.length, all: all.length, minH: all[0].h, big, txAmt: tx.map(x => fmtMoney(x.amount, tr.currency)), each: each.length, amt,
+      bd: each[0].lines.some(l => l.k === 'row'), nobd: eachNo[0].lines.some(l => l.k === 'row'),
+      z1: [z1.length, z1[0].lines.some(l => l.k === 'none')], z2: z2.length, lp: lp.map(p => [p.part, p.parts, p.h >= 1350]) };
+  })()`);
+  assert.strictEqual(r.all, 1); assert.ok(r.minH >= 1350);
+  assert.deepStrictEqual(r.big, r.txAmt, '送金リストは画面と同じ計算結果');
+  assert.strictEqual(r.each, r.n); assert.deepStrictEqual(r.amt, r.txAmt);
+  assert.ok(r.bd && !r.nobd, '内訳の ON/OFF');
+  assert.deepStrictEqual(r.z1, [1, true], '精算なし：まとめは「精算の必要はありません」の1枚');
+  assert.strictEqual(r.z2, 0, '精算なし：送金ごとは0枚（画面で「精算はありません」）');
+  assert.ok(r.lp.length >= 2 && r.lp.every(([pt, ps, h]) => ps === r.lp.length && h), '長い内訳は複数枚: ' + JSON.stringify(r.lp));
+});
+t('v2.2 C-1 寄り道レーダー：固定枠まで60分で間に合わないものは外す・位置情報なしは出さない', () => {
+  const r = run(`(() => { ${V22}
+    const tr = mkTrip();
+    const here = { lat: 34.30, lng: 134.90 };
+    tr.items.push(newItem({ name: '出航', kind: 'fixed', date: '2026-11-30', start: '11:00', locked: true, startManual: true, stay: 30, order: 1, lat: 34.30, lng: 134.90 }));
+    const H = '8:00-22:00';
+    tr.items.push(newItem({ name: '近くてすぐ', hoursText: H, stayEst: 20, lat: 34.303, lng: 134.90 }));            // 往復＋20分 → 間に合う
+    tr.items.push(newItem({ name: '近いが長居', hoursText: H, stayEst: 60, lat: 34.303, lng: 134.90 }));            // 往復＋60分 → 間に合わない
+    tr.items.push(newItem({ name: '遠い', hoursText: H, stayEst: 20, lat: 34.45, lng: 134.90 }));                   // 片道だけで約30分
+    tr.items.push(newItem({ name: '閉まっている', hoursText: '13:00-17:00', stayEst: 10, lat: 34.301, lng: 134.90 }));
+    tr.items.push(newItem({ name: '営業時間不明', stayEst: 10, lat: 34.302, lng: 134.90 }));
+    tr.items.push(newItem({ name: '座標なし', hoursText: H, stayEst: 10 }));
+    S.spots = { s1: normalizeSpot({ id: 's1', name: 'スポット帳の行きたい', status: '行きたい', lat: 34.3005, lng: 134.90, stayMin: 15 }), s2: normalizeSpot({ id: 's2', name: '行った所', status: '行った', lat: 34.3005, lng: 134.90 }) };
+    const res = detourCandidates(tr, { date: '2026-11-30', now: 600, geo: here, routes: {} });
+    const none = detourCandidates(tr, { date: '2026-11-30', now: 600, geo: null, routes: {} });
+    const free = detourCandidates(tr, { date: '2026-11-30', now: 690, geo: here, routes: {} });
+    // 差し込み：次の予定の前に入り、固定枠は動かない
+    const c = res.list.find(x => x.name === '近くてすぐ');
+    const it = insertDetour(tr, '2026-11-30', 600, c);
+    const rows = daySchedule(tr, '2026-11-30').map(x => [x.info.name, fromMin(x.start)]);
+    S.spots = {};
+    return { names: res.list.map(x => x.name), next: res.next, none, freeNext: free.next, rows, start: it.start };
+  })()`);
+  assert.deepStrictEqual(r.names, ['近くてすぐ', 'スポット帳の行きたい', '営業時間不明'], '営業中を距離順 → 営業時間不明（スポット帳の分は営業時間なし）を距離順: ' + r.names);
+  assert.strictEqual(r.next.name, '出航'); assert.strictEqual(r.next.left, 60);
+  assert.deepStrictEqual(r.none, { error: 'nogeo', list: [] });
+  assert.strictEqual(r.freeNext, null, '固定枠の後は次の予定なし＝今日中なら自由');
+  assert.deepStrictEqual(r.rows, [['近くてすぐ', '10:05'], ['出航', '11:00']], '差し込んでも固定枠の時刻は同じ');
+});
+t('v2.2 C-2 仮しおり：定休日の日に入れない・固定枠は動かない・プレビューでは旅を変えない・入りきらない分は残す', () => {
+  const r = run(`(() => { ${V22}
+    const tr = mkTrip();   // 11/30 月・12/1 火
+    tr.items.push(newItem({ name: '昼の予約', kind: 'fixed', date: '2026-11-30', start: '12:00', locked: true, startManual: true, stay: 60, order: 1, lat: 34.31, lng: 134.91 }));
+    tr.items.push(newItem({ name: '宿', kind: 'fixed', date: '2026-12-01', start: '15:00', locked: true, startManual: true, stay: 60, order: 1, lat: 34.35, lng: 134.95 }));
+    tr.items.push(newItem({ name: '月曜定休', hoursText: '10:00-17:00 月曜定休', stay: 60, priority: 'must', lat: 34.32, lng: 134.92 }));
+    tr.items.push(newItem({ name: '火曜定休', hoursText: '9:00-18:00 火曜定休', stay: 60, lat: 34.33, lng: 134.93 }));
+    tr.items.push(newItem({ name: '不明', stay: 30, lat: 34.315, lng: 134.915 }));
+    tr.items.push(newItem({ name: '両日定休', hoursText: '10:00-17:00 月火定休', stay: 60, lat: 34.33, lng: 134.93 }));
+    tr.items.push(newItem({ name: '座標なし', stay: 30 }));
+    for (let i = 0; i < 12; i++) tr.items.push(newItem({ name: '多い' + i, hoursText: '9:00-20:00', stay: 120, lat: 34.3 + i * 0.01, lng: 134.9 }));
+    const before = JSON.stringify(tr);
+    const plan = planAuto(tr);
+    const unchanged = JSON.stringify(tr) === before;
+    const dayOf = (name) => { const d = plan.days.find(d => d.rows.some(r => r.name === name)); return d ? d.date : null; };
+    const fixedBefore = tr.items.filter(i => i.locked).map(i => [i.name, i.date, i.start]);
+    applyPlan(tr, plan);
+    const fixedAfter = tr.items.filter(i => i.locked).map(i => [i.name, i.date, i.start]);
+    const late = tripDays(tr).some(d => daySchedule(tr, d).some(x => x.it.locked && x.warns.some(w => w.lv === 'err')));
+    const newClosed = tripDays(tr).some(d => daySchedule(tr, d).some(x => !x.it.locked && x.warns.some(w => w.t === '定休日です')));
+    const endOk = tripDays(tr).every(d => { const rs = daySchedule(tr, d); return !rs.length || rs[rs.length - 1].end <= 21 * 60 + 0.5; });
+    return { unchanged, mon: dayOf('月曜定休'), tue: dayOf('火曜定休'), unknownFlag: plan.days.some(d => d.rows.some(r => r.name === '不明' && r.unknownHours)),
+      unplaced: plan.unplaced.map(u => u.name + ':' + u.reason), fixedSame: JSON.stringify(fixedBefore) === JSON.stringify(fixedAfter), late, newClosed, endOk, placed: plan.placed };
+  })()`);
+  assert.ok(r.unchanged, 'プレビューを作っても旅は変わらない（キャンセル＝何も変わらない）');
+  assert.strictEqual(r.mon, '2026-12-01', '月曜定休は火曜に');
+  assert.strictEqual(r.tue, '2026-11-30', '火曜定休は月曜に');
+  assert.ok(r.unknownFlag, '営業時間不明は配置できるが印が付く');
+  assert.ok(r.unplaced.includes('両日定休:旅の日程がすべて定休日'));
+  assert.ok(r.unplaced.includes('座標なし:座標がない'));
+  assert.ok(r.unplaced.some(u => /^多い\d+:時間内に入りきらない$/.test(u)), '入りきらない分は未配置のまま');
+  assert.ok(r.fixedSame, '固定枠の日付・時刻は反映の前後で同じ');
+  assert.ok(!r.late, '固定枠が「間に合いません」にならない');
+  assert.ok(!r.newClosed, '定休日の警告が出る配置をしない');
+  assert.ok(r.endOk, '21:00 までに収まる');
 });
 console.log(`\n${n} tests passed`);

@@ -383,3 +383,15 @@ img.iout { width: 31%; margin: 1%; border-radius: 6px; }
 .place-sec { margin-top: 8px; }
 .place-head { display: flex; align-items: center; gap: 6px; width: 100%; border: none; background: var(--muted-bg); border-radius: 8px; padding: 7px 9px; font-weight: 700; font-size: 13px; text-align: left; cursor: pointer; }
 .place-head .arrow { color: var(--sub); width: 14px; }
+
+/* v2.2 書き出し・寄り道・自動しおり案 */
+.exp-opts .check { display: block; margin: 4px 0; }
+.exp-prev { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.exp-thumb { width: calc(33% - 6px); height: auto; border: 1px solid var(--line, #ddd); border-radius: 6px; background: #f5efe4; }
+.ap-row { padding: 3px 0; font-size: 14px; }
+.ap-row.new { color: var(--accent, #b45309); }
+.mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+.detour-btn { margin-bottom: 10px; }
+.card.detour .btn { text-decoration: none; }
+.row.end { justify-content: flex-end; }
+.mb { margin-bottom: 8px; }

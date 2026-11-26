@@ -164,7 +164,7 @@ ACT.exDel = async () => {
 function renderSettlement(trip) {
   const { transfers, bal } = computeTransfers(trip);
   const unit = settleUnit(trip), cur = trip.currency;
-  let h = '';
+  let h = `<div class="row end mb"><button class="btn sm" data-act="settleExport">🧾 精算カードを書き出し</button></div>`;
   if (trip.settlement.notice) h += `<div class="alert info">ℹ️ ${esc(trip.settlement.notice)} <button class="btn sm" data-act="dismissNotice">OK</button></div>`;
   const planned = allExpenses(trip).filter(e => e.money.payState === '現地で払う予定');
   if (planned.length) h += `<div class="alert warn small">「現地で払う予定」の支出が ${planned.length}件 含まれています（払う人が決まっている前提で計算）</div>`;
