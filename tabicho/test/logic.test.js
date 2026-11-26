@@ -4,7 +4,7 @@ const dir = path.join(__dirname, '..', 'src', 'js');
 const ctx = {
   console, setTimeout, clearTimeout, setInterval: () => 0, Date, Math, JSON,
   localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
-  window: { addEventListener() {} }, navigator: { onLine: true }, document: { getElementById: () => null, addEventListener() {}, querySelectorAll: () => [] },
+  window: { addEventListener() {} }, navigator: { onLine: true }, document: { getElementById: () => null, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null },
   location: { origin: 'null', protocol: 'file:', hostname: '', href: 'file:///x' }, ACT: undefined,
   render() {}, toast() {}, confirmDialog: async () => true
 };
@@ -383,4 +383,110 @@ t('v2.2 C-2 仮しおり：定休日の日に入れない・固定枠は動か�
   assert.ok(!r.newClosed, '定休日の警告が出る配置をしない');
   assert.ok(r.endOk, '21:00 までに収まる');
 });
-console.log(`\n${n} tests passed`);
+t('v2.2.1 精算カード：2枚目以降にも見出しと旅のタイトル（宛先）、高さは本文＋280 以上（H-3・H-8）', () => {
+  const r = run(`(() => { ${V22}
+    const long = mkTrip(); const [la, lb] = long.members;
+    for (let i = 0; i < 120; i++) long.expenses.push({ id: 'x' + i, date: '2026-11-30', desc: '支出' + i, cat: '食費', money: newMoney(long, { amount: 1000, payer: i % 3 ? la.id : lb.id }) });
+    const ps = settleExportPages(long, { mode: 'each' });
+    return ps.map(p => ({ head: p.lines[0].k, sub: (p.lines.find(l => l.k === 'sub') || {}).t || '', hOk: p.h >= receiptHeight(p.lines) + 280 }));
+  })()`);
+  assert.ok(r.length >= 2);
+  r.forEach((p, i) => { assert.strictEqual(p.head, 'head', i + 1 + '枚目の先頭が見出し'); assert.ok(p.hOk, i + 1 + '枚目の高さ'); });
+  assert.ok(r.slice(1).every(p => /淡路島/.test(p.sub) && /→/.test(p.sub)), '続きのページに旅のタイトルと宛先: ' + JSON.stringify(r.slice(1)));
+});
+t('v2.2.1 寄り道：他の日の工程・旅で行ったスポットは候補にしない／差し込みは行った工程を飛ばす・23:55 まで（H-4・H-5・M-5）', () => {
+  const r = run(`(() => { ${V22}
+    const tr = mkTrip();
+    S.spots = {};
+    ['a', 'b', 'c'].forEach(id => { S.spots[id] = normalizeSpot({ id, name: 'スポット' + id, status: '行きたい', lat: 34.301, lng: 134.90 }); });
+    tr.items.push(newItem({ name: '明日の予定', spotId: 'a', date: '2026-12-01', stay: 30, order: 1 }));
+    tr.items.push(newItem({ name: '行った', spotId: 'b', visited: { date: '2026-11-30', rating: 5 } }));
+    const pool = detourPool(tr, '2026-11-30').map(c => c.spotId);
+    // 行った工程（15:00）を飛ばして 16:00 の前に入る
+    const t2 = mkTrip();
+    t2.items.push(newItem({ name: '15時（行った）', date: '2026-11-30', start: '15:00', startManual: true, stay: 30, order: 1000, visited: { date: '2026-11-30', rating: 4 } }));
+    t2.items.push(newItem({ name: '16時', date: '2026-11-30', start: '16:00', locked: true, startManual: true, stay: 30, order: 2000 }));
+    insertDetour(t2, '2026-11-30', 14 * 60, { name: '寄り道', go: 10, stay: 20, back: 5, spotId: null, itemId: null });
+    const order = daySchedule(t2, '2026-11-30').map(x => x.info.name);
+    const t3 = mkTrip();
+    const late = insertDetour(t3, '2026-11-30', 1430, { name: '深夜', go: 10, stay: 20, back: 0 });
+    const none = detourCandidates(t3, { date: '2026-11-30', now: 1436, geo: { lat: 34.3, lng: 134.9 } });
+    S.spots = {};
+    return { pool, order, lateStart: late.start, none: [none.list.length, !!none.late] };
+  })()`);
+  assert.deepStrictEqual(r.pool, ['c'], '明日の工程の a・行った b は出ない');
+  assert.deepStrictEqual(r.order, ['15時（行った）', '寄り道', '16時']);
+  assert.strictEqual(r.lateStart, '23:55', '24:00 にならない');
+  assert.deepStrictEqual(r.none, [0, true], '23:55 を過ぎたら候補を出さない');
+});
+t('v2.2.1 寄り道：実際の所要（現在地込みのキャッシュ）で間に合わなくなったものは外す（M-6）', () => {
+  const r = run(`(() => { ${V22}
+    const tr = mkTrip(); S.spots = {};
+    tr.items.push(newItem({ name: '出航', kind: 'fixed', date: '2026-11-30', start: '11:00', locked: true, startManual: true, stay: 30, order: 1, lat: 34.30, lng: 134.90 }));
+    tr.items.push(newItem({ name: '近いが渋滞', hoursText: '8:00-22:00', stayEst: 20, lat: 34.303, lng: 134.90 }));
+    tr.items.push(newItem({ name: '近くて空いてる', hoursText: '8:00-22:00', stayEst: 20, lat: 34.304, lng: 134.90 }));
+    const ctx = { date: '2026-11-30', now: 600, geo: { lat: 34.30, lng: 134.90 } };
+    const est = detourCandidates(tr, ctx).list.map(c => c.name);
+    const real = detourCandidates(tr, Object.assign({ routeOf: c => c.name === '近いが渋滞' ? { min: 50, km: 3 } : { min: 4, km: 0.6 } }, ctx)).list.map(c => [c.name, c.go, c.real]);
+    return { est, real };
+  })()`);
+  assert.deepStrictEqual(r.est, ['近いが渋滞', '近くて空いてる']);
+  assert.deepStrictEqual(r.real, [['近くて空いてる', 4, true]], '実際の所要 50分＋滞在20分 は60分に収まらない');
+});
+t('v2.2.1 仮しおり：既存の遅れが悪化する挿入はしない・先頭でも古い時刻を使わない・滞在と移動時間を書き戻す（M-1・H-7・M-3・M-9）', () => {
+  const r = run(`(() => { ${V22}
+    // M-1：もともと10分遅れている固定枠（09:00 開始＋80分 → 10:20 > 10:10）の手前には何も入れない
+    const a = mkTrip(); a.startDate = a.endDate = '2026-11-30';
+    a.items.push(newItem({ name: '朝', date: '2026-11-30', start: '09:00', startManual: true, stay: 80, order: 1000, lat: 34.30, lng: 134.90, moveAfter: 0 }));
+    a.items.push(newItem({ name: '固定', kind: 'fixed', date: '2026-11-30', start: '10:10', locked: true, startManual: true, stay: 30, order: 2000, lat: 34.30, lng: 134.90 }));
+    a.items.push(newItem({ name: '新', stay: 30, lat: 34.3001, lng: 134.9001, hoursText: '6:00-20:00' }));
+    const pa = planAuto(a);
+    const posA = pa.days[0].rows.map(x => x.name);
+    // H-7：リストモードに切り替えた時の古い開始時刻（13:00）が残っていても、先頭に置く時は 1日の開始（09:00）で計算
+    const b = mkTrip(); b.startDate = b.endDate = '2026-11-30';
+    const old = newItem({ name: '古い時刻', date: '2026-11-30', start: '13:00', startManual: true, stay: 0, order: 1, lat: 34.30, lng: 134.90 });
+    b.items.push(old); switchMode(b, 'list');
+    const pb = planAuto(b);
+    const first = pb.days[0].rows[0];
+    applyPlan(b, pb); switchMode(b, 'shiori');
+    const after = daySchedule(b, '2026-11-30')[0];
+    // M-9：手で入れた移動時間（90分・別の行き先向け）は、直後に新しいスポットが入ったら上書き
+    const c = mkTrip(); c.startDate = c.endDate = '2026-11-30';
+    c.items.push(newItem({ name: 'A', date: '2026-11-30', start: '09:00', startManual: true, stay: 30, order: 1000, lat: 34.30, lng: 134.90, moveAfter: 90, moveAuto: false }));
+    c.items.push(newItem({ name: 'B', stay: 15, lat: 34.301, lng: 134.90, hoursText: '6:00-20:00' }));
+    const pc = planAuto(c); applyPlan(c, pc);
+    const A = c.items.find(i => i.name === 'A');
+    return { posA, unplacedA: pa.unplaced.map(u => u.name), first: [first.name, fromMin(first.start)], after: [after.info.name, fromMin(after.start), after.stay, old.stay],
+      A: [A.moveAuto, A.moveAfter < 90] };
+  })()`);
+  assert.ok(r.posA.indexOf('新') > r.posA.indexOf('固定'), '遅れている固定枠より前には入れない: ' + r.posA);
+  assert.deepStrictEqual(r.first, ['古い時刻', '09:00']);
+  assert.deepStrictEqual(r.after.slice(0, 2), ['古い時刻', '09:00'], 'プレビューと反映後が同じ時刻');
+  assert.strictEqual(r.after[3], 60, '滞在 0（未設定）でもプレビューの 60分を書き戻す');
+  assert.deepStrictEqual(r.A, [true, true], '移動時間を上書きして自動に戻す');
+});
+// ---- 非同期のテスト ----
+(async () => {
+  const r = JSON.parse(JSON.stringify(await vm.runInContext(`(async () => { ${V22}
+    const tr = mkTrip(); S.spots = {}; S.hours = {}; S.geo = { lat: 34.30, lng: 134.90, at: Date.now() };
+    for (let i = 0; i < 25; i++) S.spots['s' + i] = normalizeSpot({ id: 's' + i, name: 'S' + i, status: '行きたい', lat: 34.30 + i * 0.001, lng: 134.90, placeId: 'p' + i });
+    S.spots.noPid = normalizeSpot({ id: 'noPid', name: 'placeId なし', status: '行きたい', lat: 34.30, lng: 134.90 });
+    S.hours.s0 = { week: {}, at: Date.now() };   // 取ったばかり
+    const calls = [];
+    const orig = api;
+    api = async (name, a) => { calls.push([name, a.spots.map(x => x.id)]); const hours = {}; a.spots.forEach(x => { hours[x.id] = { 1: [['09:00', '18:00']] }; }); return { ok: true, hours }; };
+    detourState = { tripId: tr.id, hoursLoading: false }; S.trips[tr.id] = tr;
+    await detourFetchHours(tr);
+    api = orig; detourState = null;
+    const got = Object.keys(S.hours).length;
+    S.spots = {}; S.hours = {}; S.geo = null; delete S.trips[tr.id];
+    return { calls, got };
+  })()`, ctx)));
+  assert.strictEqual(r.calls.length, 1, '1回だけ呼ぶ');
+  assert.strictEqual(r.calls[0][0], 'placeHours');
+  assert.strictEqual(r.calls[0][1].length, 18, '近い20件（placeId なし・s0〜s18）のうち、取ったばかりの s0 と placeId なしを除く: ' + r.calls[0][1]);
+  assert.ok(!r.calls[0][1].includes('s0') && !r.calls[0][1].includes('noPid') && !r.calls[0][1].includes('s19'), '21番目より遠いものは取らない');
+  assert.strictEqual(r.got, 19);
+  n++; console.log('✓ v2.2.1 寄り道：スポット帳の候補の営業時間を、近い20件だけその場で取る（H-2）');
+  console.log(`\n${n} tests passed`);
+})().catch(e => { console.error(e); process.exitCode = 1; });

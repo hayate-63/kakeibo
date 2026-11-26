@@ -66,11 +66,17 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     await p.click('.seg-btn[data-act="seSize"][data-v="tall"]'); await p.waitForTimeout(500);
     assert.strictEqual(await thumbs(p), 4);
     await shot('b1_shiori_export');
+    // v2.2.1 H-1：設定を立て続けに変えても、最後の設定の枚数だけが並ぶ（古いプレビューは捨てる）
+    for (let k = 0; k < 6; k++) { await p.click('#seList'); await p.click(`.seg-btn[data-act="seSize"][data-v="${k % 2 ? 'tall' : '916'}"]`); }
+    await p.uncheck('#seList'); await p.click('.seg-btn[data-act="seSize"][data-v="tall"]'); await p.check('#seList');
+    await p.waitForTimeout(1200);
+    assert.strictEqual(await thumbs(p), 4, '連続で変えても最後の設定（4枚）だけ');
+    assert.ok(await p.$$eval('.modal .exp-thumb', cs => cs.every(c => c.width === 216)), '縮小は残っている（解放したのは大きい方）');
     await p.click('#seBtn'); await p.waitForTimeout(1500);
     const imgs = await p.$$eval('#instaOut img', x => x.length);
     assert.strictEqual(imgs, 4, '共有シートが無い環境は画像一覧で出る');
     await p.click('.modal-wrap:last-child [data-act="closeModal"]'); await p.click('.modal-wrap:last-child [data-act="closeModal"]');
-    ok('B-1 しおり書き出し：表紙・日別・未配置、プライバシー・縦長、プレビューと書き出し（4枚）');
+    ok('B-1 しおり書き出し：表紙・日別・未配置、プライバシー・縦長、連続変更、プレビューと書き出し（4枚）');
 
     // ---- B-2 精算カード ----
     await p.click('.nav-item[data-tab="money"]'); await p.click('.seg-btn[data-v="settle"]'); await p.waitForTimeout(300);

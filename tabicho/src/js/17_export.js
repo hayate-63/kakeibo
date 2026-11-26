@@ -30,12 +30,12 @@ function shioriDayRows(trip, date, privacy) {
     const it = r.it, info = r.info;
     const b = it.bookingId ? (trip.bookings || []).find(x => x.id === it.bookingId) : null;
     const o = {
-      no: i + 1, start: fromMin(Math.round(r.start)), end: fromMin(Math.round(r.end)), name: info.name,
+      no: i + 1, start: fmtMinLabel(Math.round(r.start)), end: fmtMinLabel(Math.round(r.end)), name: info.name,
       locked: !!it.locked, stay: Math.round(r.stay), kind: it.kind, visited: !!it.visited,
       price: null, bookingNo: '', memo: '', move: null
     };
     if (!privacy) {
-      if (info.price != null && info.price !== '' && it.kind !== 'move') o.price = fmtMoney(Number(info.price), 'JPY');
+      if (info.price != null && info.price !== '' && it.kind !== 'move') o.price = Number(info.price) === 0 ? '無料' : fmtMoney(Number(info.price), 'JPY');
       if (b && b.bookingNo) o.bookingNo = String(b.bookingNo);
       if (it.memo) o.memo = String(it.memo);
     }
@@ -59,11 +59,12 @@ function shioriDaySummary(trip, date) {
   return short.length > 4 ? short.slice(0, 4).join(' → ') + ` ほか${short.length - 4}件` : short.join(' → ');
 }
 // 1行ぶんの高さ（9:16 の分割・縦長の高さの計算に使う。描画と同じ数字）
+function memoLines(row) { return row.memo ? Math.min(2, Math.ceil(row.memo.replace(/\s+/g, ' ').length / 20)) : 0; }
 function shioriRowHeight(row, scale) {
   const k = scale || 1;
   let h = 118;
   if (row.price || row.bookingNo) h += 40;
-  if (row.memo) h += 40 * Math.min(2, Math.ceil(row.memo.length / 26));
+  h += 40 * memoLines(row);
   if (row.move) h += 70;
   return Math.round(h * k);
 }
@@ -142,8 +143,10 @@ function renderShioriCover(trip) {
   ctx.font = `500 40px ${th.sans}`; ctx.fillStyle = th.ink;
   facts.forEach(([ic, tx]) => { ctx.fillText(expFit(ctx, (ic ? ic + '  ' : '') + tx, EXP_W - 160), 80, y); y += 64; });
   y += 30; ctx.strokeStyle = th.accent; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(80, y); ctx.lineTo(EXP_W - 80, y); ctx.stroke(); y += 70;
+  let shown = 0;
   days.forEach((d, i) => {
     if (y > EXP_916_H - 220) return;
+    shown++;
     const s = shioriDaySummary(trip, d);
     ctx.fillStyle = th.accent; ctx.font = `700 34px ${th.sans}`; ctx.fillText('DAY ' + (i + 1), 80, y);
     ctx.fillStyle = th.sub; ctx.font = `500 30px ${th.sans}`; ctx.fillText(fmtDate(d), 230, y);
@@ -151,6 +154,7 @@ function renderShioriCover(trip) {
     wrapText(ctx, s || '（予定なし）', EXP_W - 160).slice(0, 2).forEach((l, k) => ctx.fillText(l, 80, y + 52 + k * 46));
     y += 52 + 46 * Math.min(2, wrapText(ctx, s || '（予定なし）', EXP_W - 160).length) + 40;
   });
+  if (shown < days.length) { ctx.fillStyle = th.sub; ctx.font = `500 30px ${th.sans}`; ctx.fillText(`ほか ${days.length - shown}日`, 80, Math.min(y, EXP_916_H - 150)); }
   expFooter(ctx, trip, EXP_916_H);
   return c;
 }
@@ -159,7 +163,9 @@ function renderShioriDay(trip, p) {
   ctx.fillStyle = th.paper; ctx.fillRect(0, 0, EXP_W, H);
   ctx.fillStyle = th.accent; ctx.font = `700 46px ${th.sans}`; ctx.letterSpacing = '6px'; ctx.fillText('DAY ' + p.index + (p.parts > 1 ? `  (${p.part}/${p.parts})` : ''), 80, 140); ctx.letterSpacing = '0px';
   ctx.fillStyle = th.ink; ctx.font = `700 72px ${th.serif}`; ctx.fillText(fmtDateFull(p.date), 80, 240);
-  const w = weatherFor(trip.items.map(i => itemPoint(trip, i)).find(Boolean) || trip.origin, p.date);
+  const wp = trip.items.map(i => itemPoint(trip, i)).find(Boolean) || trip.origin;
+  const wl = wp && wp.lat != null ? S.weatherCache[weatherKey(wp)] : null;   // v2.2.1：キャッシュを読むだけ（描画中に通信を始めない）
+  const w = wl ? wl.find(x => x.date === p.date) : null;
   if (w) { ctx.font = `500 38px ${th.sans}`; ctx.fillStyle = th.sub; ctx.fillText(`${WEATHER_ICON(w.code)} ${Math.round(w.tmax)}°/${Math.round(w.tmin)}°${w.pop != null ? '  ☔' + w.pop + '%' : ''}`, 80, 300); }
   let y = EXP_HEAD_H;
   const X = 80, R = 34 * k, TX = X + R * 2 + 30;
@@ -173,9 +179,9 @@ function renderShioriDay(trip, p) {
     ctx.fillText(`${r.start}–${r.end}`, TX, top + 30 * k);
     ctx.fillStyle = th.ink; ctx.font = `700 ${Math.round(44 * k)}px ${th.sans}`;
     const nm = (r.locked ? '🔒 ' : '') + (r.visited ? '✅ ' : '') + r.name;
-    ctx.fillText(expFit(ctx, nm, EXP_W - TX - 200), TX, top + 84 * k);
+    ctx.fillText(expFit(ctx, nm, EXP_W - TX - 80), TX, top + 84 * k);
     ctx.fillStyle = th.sub; ctx.font = `500 ${Math.round(30 * k)}px ${th.sans}`; ctx.textAlign = 'right';
-    if (r.stay && r.kind !== 'move') ctx.fillText(`滞在 ${r.stay}分`, EXP_W - 80, top + 30 * k);
+    if (r.stay && r.kind !== 'move') ctx.fillText(`滞在 ${fmtDuration(r.stay)}`, EXP_W - 80, top + 30 * k);
     ctx.textAlign = 'left';
     let yy = top + 118 * k;
     if (r.price || r.bookingNo) {
@@ -184,13 +190,14 @@ function renderShioriDay(trip, p) {
     }
     if (r.memo) {
       ctx.fillStyle = th.sub; ctx.font = `400 ${Math.round(30 * k)}px ${th.serif}`;
-      wrapText(ctx, r.memo.replace(/\s+/g, ' '), EXP_W - TX - 80).slice(0, 2).forEach(l => { ctx.fillText(l, TX, yy + 8 * k); yy += 40 * k; });
+      const ml = memoLines(r), wl2 = wrapText(ctx, r.memo.replace(/\s+/g, ' '), EXP_W - TX - 80);
+      wl2.slice(0, ml).forEach((l, j) => { ctx.fillText(j === ml - 1 && wl2.length > ml ? expFit(ctx, l + '…', EXP_W - TX - 80) : l, TX, yy + 8 * k); yy += 40 * k; });
     }
     if (r.move) {
       ctx.strokeStyle = th.accent; ctx.setLineDash([6, 8]); ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.moveTo(X + R, top + R * 2 + 8); ctx.lineTo(X + R, yy + 64 * k); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(X + R, top + R * 2 + 8); ctx.lineTo(X + R, top + shioriRowHeight(r, k) - 8); ctx.stroke(); ctx.setLineDash([]);
       ctx.fillStyle = th.accent; ctx.font = `600 ${Math.round(30 * k)}px ${th.sans}`;
-      ctx.fillText(`${r.move.icon}  ${r.move.min}分${r.move.km ? '・' + r.move.km : ''}`, TX, yy + 44 * k);
+      ctx.fillText(`${r.move.icon}  ${fmtDuration(r.move.min)}${r.move.km ? '・' + r.move.km : ''}`, TX, yy + 44 * k);
       yy += 70 * k;
     }
     y = top + shioriRowHeight(r, k);
@@ -222,7 +229,7 @@ function renderShioriPage(trip, p) { return p.type === 'cover' ? renderShioriCov
 // ---------------------------------------------------------------------------
 // B-1 しおり：書き出しの画面
 // ---------------------------------------------------------------------------
-ACT.shioriExport = () => {
+ACT.shioriExport = () => {   // 閉じる時にプレビューのキャンバスを解放
   const t = curTrip(); if (!t) return;
   const o = shioriExportDefaults(t);
   const days = tripDays(t);
@@ -238,7 +245,7 @@ ACT.shioriExport = () => {
     <div class="muted small">9:16 で予定が多い日は、文字を少し小さくし、それでも入らなければ複数枚に分けます</div>
   </div>
   <div id="sePrev" class="exp-prev"></div>
-  <button class="btn primary block mt" data-act="seExport" id="seBtn">📤 書き出す</button>`, { title: '📤 しおりを画像で書き出し', data: { t, size: '916' }, onMount: () => sePreview() });
+  <button class="btn primary block mt" data-act="seExport" id="seBtn">📤 書き出す</button>`, { title: '📤 しおりを画像で書き出し', data: { t, size: '916' }, onMount: () => sePreview(), onClose: () => $$('#sePrev canvas').forEach(releaseCanvas) });
 };
 function seOptions() {
   const b = topModalBody(); const m = topModal();
@@ -247,8 +254,21 @@ function seOptions() {
 }
 ACT.seSize = (el) => { topModal().data.size = el.dataset.v; $$('.seg-btn[data-act="seSize"]', topModalBody()).forEach(x => x.classList.toggle('on', x === el)); sePreview(); };
 ON_CHANGE.seOpt = () => sePreview();
+// v2.2.1 H-1：プレビューは「最後に頼まれた分」だけ作る（フォント待ちの間に設定を変えたら古い方は捨てる）。
+// 大きいキャンバスは縮小に写したらすぐ解放、古い縮小も解放してから入れ替える
+function previewInto(prev, pages, render) {
+  $$('canvas', prev).forEach(releaseCanvas);
+  prev.innerHTML = pages.map((p, i) => `<canvas class="exp-thumb" data-i="${i}" width="216" height="${Math.round(p.h / 5)}"></canvas>`).join('');
+  pages.forEach((p, i) => {
+    let big = null;
+    try { big = render(p); const cv = prev.querySelector(`canvas[data-i="${i}"]`); if (cv) cv.getContext('2d').drawImage(big, 0, 0, cv.width, cv.height); }
+    catch (e) { console.error(e); toast('プレビューの作成に失敗：' + e.message); }
+    finally { releaseCanvas(big); }
+  });
+}
 async function sePreview() {
   const m = topModal(); if (!m) return;
+  const gen = (m.data.gen = (m.data.gen || 0) + 1);
   const b = topModalBody();
   $$('input[type="checkbox"]', b).forEach(x => { x.dataset.change = 'seOpt'; });
   const pages = shioriExportPages(m.data.t, seOptions());
@@ -257,12 +277,8 @@ async function sePreview() {
   if (btn) { btn.textContent = pages.length ? `📤 ${pages.length}枚を書き出す` : '書き出すものがありません'; btn.disabled = !pages.length; }
   const prev = $('#sePrev', b); if (!prev) return;
   await ensureFonts();
-  if (topModal() !== m) return;
-  prev.innerHTML = pages.map((p, i) => `<canvas class="exp-thumb" data-i="${i}" width="216" height="${Math.round(p.h / 5)}"></canvas>`).join('');
-  pages.forEach((p, i) => {
-    try { const big = renderShioriPage(m.data.t, p); const cv = prev.querySelector(`canvas[data-i="${i}"]`); if (cv) cv.getContext('2d').drawImage(big, 0, 0, cv.width, cv.height); }
-    catch (e) { console.error(e); toast('プレビューの作成に失敗：' + e.message); }
-  });
+  if (topModal() !== m || m.data.gen !== gen) return;
+  previewInto(prev, pages, p => renderShioriPage(m.data.t, p));
 }
 ACT.seExport = async (el) => {
   const m = topModal(); const t = m.data.t;
@@ -322,7 +338,7 @@ function settleReceiptLines(trip, opt, tr) {
 }
 const RECEIPT_LH = { head: 70, title: 90, sub: 50, perf: 60, kv: 60, none: 110, cap: 70, big: 110, th: 56, tr: 56, note: 56, who: 80, amount: 150, row: 54, sum: 70 };
 function receiptHeight(lines) { return lines.reduce((s, l) => s + (RECEIPT_LH[l.k] || 56), 0); }
-const RECEIPT_MIN_H = 1350, RECEIPT_MAX_BODY = 2600, RECEIPT_PAD = 220;
+const RECEIPT_MIN_H = 1350, RECEIPT_MAX_BODY = 2600, RECEIPT_PAD = 280;   // v2.2.1 H-8：上の余白 130＋下（「旅帳」）150
 // ページ割り：高さは行数に応じて伸ばし（最小 1350）、長すぎる時は複数枚に分ける
 function settleExportPages(trip, opt) {
   opt = Object.assign({ mode: 'all', breakdown: true }, opt || {});
@@ -330,8 +346,16 @@ function settleExportPages(trip, opt) {
   const sets = opt.mode === 'each' ? transfers.map(x => settleReceiptLines(trip, opt, x)) : [settleReceiptLines(trip, opt, null)];
   const pages = [];
   sets.forEach(lines => {
+    // v2.2.1 H-3：2枚目以降の頭にも見出し（SETTLEMENT…（2/3））と旅のタイトル（送金ごとなら宛先も）を入れる
+    const head = lines.find(l => l.k === 'head'), who = lines.find(l => l.k === 'who');
+    const cont = [{ k: 'head', t: head ? head.t : 'SETTLEMENT' }, { k: 'sub', t: trip.title + (who ? '　' + who.t : '') }, { k: 'perf' }];
+    const contH = receiptHeight(cont);
     const chunks = []; let cur = [], h = 0;
-    lines.forEach(l => { const lh = RECEIPT_LH[l.k] || 56; if (cur.length && h + lh > RECEIPT_MAX_BODY && l.k !== 'perf') { chunks.push(cur); cur = []; h = 0; } cur.push(l); h += lh; });
+    lines.forEach(l => {
+      const lh = RECEIPT_LH[l.k] || 56;
+      if (cur.length && h + lh > RECEIPT_MAX_BODY && l.k !== 'perf') { chunks.push(cur); cur = cont.slice(); h = contH; }
+      cur.push(l); h += lh;
+    });
     if (cur.length) chunks.push(cur);
     chunks.forEach((c, k) => pages.push({ lines: c, part: k + 1, parts: chunks.length, h: Math.max(RECEIPT_MIN_H, receiptHeight(c) + RECEIPT_PAD) }));
   });
@@ -374,9 +398,11 @@ function renderReceipt(trip, p) {
         ctx.font = l.k === 'th' ? `700 28px ${th.sans}` : `400 30px ${th.sans}`; ctx.fillStyle = l.k === 'th' ? th.sub : th.ink;
         ctx.fillText(expFit(ctx, l.c[0], 200), cols[0], y + 38);
         ctx.font = l.k === 'th' ? `700 28px ${th.sans}` : `500 28px ${EXP_MONO}`; ctx.textAlign = 'right';
-        ctx.fillText(l.c[1], cols[1], y + 38); ctx.fillText(l.c[2], cols[2], y + 38);
+        // v2.2.1：桁の多い通貨（Rp15,000,000 など）は、列の幅 210px に収まるまで文字を小さくする
+        const fitCell = (txt, x) => { let fs = 28; if (l.k === 'tr') { while (fs > 16 && ctx.measureText(txt).width > 210) { fs -= 2; ctx.font = `500 ${fs}px ${EXP_MONO}`; } } ctx.fillText(txt, x, y + 38); ctx.font = l.k === 'th' ? `700 28px ${th.sans}` : `500 28px ${EXP_MONO}`; };
+        fitCell(l.c[1], cols[1]); fitCell(l.c[2], cols[2]);
         if (l.k === 'tr' && /^\+/.test(l.c[3])) ctx.fillStyle = '#15803d'; else if (l.k === 'tr' && /−/.test(l.c[3])) ctx.fillStyle = '#b91c1c';
-        ctx.fillText(l.c[3], cols[3], y + 38); ctx.textAlign = 'left';
+        fitCell(l.c[3], cols[3]); ctx.textAlign = 'left';
         break;
       }
       case 'note': ctx.fillStyle = th.sub; ctx.font = `400 26px ${th.sans}`; ctx.fillText(l.t, X0, y + 36); break;
@@ -398,25 +424,22 @@ ACT.settleExport = () => {
   </div>
   <div id="srMsg"></div>
   <div id="srPrev" class="exp-prev"></div>
-  <button class="btn primary block mt" data-act="srExport" id="srBtn">📤 書き出す</button>`, { title: '🧾 精算カードを書き出し', data: { t, mode: 'all' }, onMount: () => srPreview() });
+  <button class="btn primary block mt" data-act="srExport" id="srBtn">📤 書き出す</button>`, { title: '🧾 精算カードを書き出し', data: { t, mode: 'all' }, onMount: () => srPreview(), onClose: () => $$('#srPrev canvas').forEach(releaseCanvas) });
 };
 function srOptions() { const m = topModal(); return { mode: m.data.mode, breakdown: $('#srBd', topModalBody()).checked }; }
 ACT.srMode = (el) => { topModal().data.mode = el.dataset.v; $$('.seg-btn[data-act="srMode"]', topModalBody()).forEach(x => x.classList.toggle('on', x === el)); srPreview(); };
 ON_CHANGE.srOpt = () => srPreview();
 async function srPreview() {
   const m = topModal(); if (!m) return;
+  const gen = (m.data.gen = (m.data.gen || 0) + 1);
   const b = topModalBody();
   const pages = settleExportPages(m.data.t, srOptions());
   const msg = $('#srMsg', b), btn = $('#srBtn', b), prev = $('#srPrev', b);
   if (msg) msg.innerHTML = pages.length ? '' : '<div class="card ok-card">✅ 精算はありません（送る相手がいないので、送金ごとのカードは作りません）</div>';
   if (btn) { btn.textContent = pages.length ? `📤 ${pages.length}枚を書き出す` : '書き出すものがありません'; btn.disabled = !pages.length; }
   await ensureFonts();
-  if (topModal() !== m || !prev) return;
-  prev.innerHTML = pages.map((p, i) => `<canvas class="exp-thumb" data-i="${i}" width="216" height="${Math.round(p.h / 5)}"></canvas>`).join('');
-  pages.forEach((p, i) => {
-    try { const big = renderReceipt(m.data.t, p); const cv = prev.querySelector(`canvas[data-i="${i}"]`); if (cv) cv.getContext('2d').drawImage(big, 0, 0, cv.width, cv.height); }
-    catch (e) { console.error(e); toast('プレビューの作成に失敗：' + e.message); }
-  });
+  if (topModal() !== m || m.data.gen !== gen || !prev) return;
+  previewInto(prev, pages, p => renderReceipt(m.data.t, p));
 }
 ACT.srExport = async (el) => {
   const t = topModal().data.t;

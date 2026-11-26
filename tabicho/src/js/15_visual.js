@@ -250,11 +250,18 @@ async function drawInstaPreviews() {
   for (const c of Array.from(document.querySelectorAll('.ipv'))) {
     const big = await renderPageCanvas(VIS.trip, VIS.pages[Number(c.dataset.i)]);
     c.getContext('2d').drawImage(big, 0, 0, c.width, c.height);
+    releaseCanvas(big);   // v2.2.1 H-1：縮小に写したら大きい方はすぐ解放（iPhone の Canvas のメモリ上限対策）
   }
 }
 let fontsReady = null;
+// v2.2.1 H-6：電波が弱い・オフラインでフォントの通信が止まっても待ち続けない。2.5秒で諦めて端末の文字で描き、次の機会にまた読む
+const FONT_WAIT_MS = 2500;
 function ensureFonts() {
-  if (!fontsReady) fontsReady = Promise.all(['700 120px "Playfair Display"', '400 40px "Noto Serif JP"', '700 40px "Noto Sans JP"'].map(f => document.fonts && document.fonts.load ? document.fonts.load(f).catch(() => {}) : null)).catch(() => {});
+  if (!fontsReady) {
+    const load = Promise.all(['700 120px "Playfair Display"', '400 40px "Noto Serif JP"', '700 40px "Noto Sans JP"'].map(f => document.fonts && document.fonts.load ? document.fonts.load(f).catch(() => {}) : null)).then(() => true, () => true);
+    const p = Promise.race([load, new Promise(r => setTimeout(() => r(false), FONT_WAIT_MS))]).then(ok => { if (!ok && fontsReady === p) fontsReady = null; });
+    fontsReady = p;
+  }
   return fontsReady;
 }
 // v2.0.3：外部サイトの画像は crossOrigin を付けて読む。付けずに描くとキャンバスが「汚れ」て画像に書き出せなくなる。
@@ -327,17 +334,22 @@ async function renderPageCanvas(t, p) {
   return c;
 }
 function canvasBlob(c) { return new Promise(r => c.toBlob(b => r(b), 'image/jpeg', 0.92)); }
+// v2.2.1 H-1：使い終わったキャンバスの画素をすぐ手放す（iPhone は Canvas の合計メモリに上限があり、超えると真っ白・タブが落ちる）
+function releaseCanvas(c) { if (c) { c.width = 0; c.height = 0; } }
+let exportUrls = [];
+function revokeExportUrls() { exportUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) {} }); exportUrls = []; }
 async function exportCanvases(canvases, baseName, fallbackTitle) {
   const files = [];
-  for (let i = 0; i < canvases.length; i++) { const b = await canvasBlob(canvases[i]); files.push(new File([b], `${baseName}_${pad2(i + 1)}.jpg`, { type: 'image/jpeg' })); }
+  for (let i = 0; i < canvases.length; i++) { const b = await canvasBlob(canvases[i]); releaseCanvas(canvases[i]); files.push(new File([b], `${baseName}_${pad2(i + 1)}.jpg`, { type: 'image/jpeg' })); }
   if (navigator.canShare && navigator.canShare({ files })) {
     try { await navigator.share({ files, title: baseName }); return files; } catch (e) { if (e && e.name === 'AbortError') return files; }
   }
   // 共有シートが使えない時だけ、画像を並べて保存してもらう
   let out = document.getElementById('instaOut');
   if (out && !out.offsetParent) out = null;   // 閉じた画面に残った受け皿は使わない
-  if (!out) { openModal('<div id="instaOut"></div>', { title: fallbackTitle || '書き出した画像' }); out = document.getElementById('instaOut'); }
-  if (out) out.innerHTML = '<div class="muted small mt">長押しで保存、またはリンクからダウンロードできます</div>' + files.map(f => { const u = URL.createObjectURL(f); return `<a href="${u}" download="${esc(f.name)}"><img class="iout" src="${u}" alt=""></a>`; }).join('');
+  revokeExportUrls();   // 前回の一覧の分
+  if (!out) { openModal('<div id="instaOut"></div>', { title: fallbackTitle || '書き出した画像', onClose: revokeExportUrls }); out = document.getElementById('instaOut'); }
+  if (out) out.innerHTML = '<div class="muted small mt">長押しで保存、またはリンクからダウンロードできます</div>' + files.map(f => { const u = URL.createObjectURL(f); exportUrls.push(u); return `<a href="${u}" download="${esc(f.name)}"><img class="iout" src="${u}" alt=""></a>`; }).join('');
   return files;
 }
 ACT.instaExport = async (el) => {

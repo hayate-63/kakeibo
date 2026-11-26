@@ -19,7 +19,9 @@ function roundUp5(m) { return Math.ceil(m / 5) * 5; }
 // ---------------------------------------------------------------------------
 // 候補：スポット帳の「行きたい」で未訪問のもの ＋ この旅の未配置リスト（同じスポットは1つ）。今日の工程に入っているものは除く
 function detourPool(trip, date) {
-  const today = new Set(dayItems(trip, date).map(i => i.spotId).filter(Boolean));
+  // v2.2.1 H-4：今日だけでなく、旅のどの日かに入っているもの・この旅で「行った」にしたものも除く（同じスポットが2件にならないように）
+  const today = new Set(trip.items.filter(i => i.spotId && (isScheduled(i, trip) || i.visited)).map(i => i.spotId));
+  void date;
   const out = [], seen = new Set();
   unscheduledItems(trip).filter(i => !i.visited).forEach(it => {
     const info = itemInfo(trip, it);
@@ -41,20 +43,23 @@ function nextAppointment(trip, date, nowMin) {
   return { row: r, start: r.start, locked: !!r.it.locked, name: r.info.name, point: r.info.lat != null ? { lat: r.info.lat, lng: r.info.lng } : null };
 }
 // ctx：{ date, now(分), geo, routes:{key:{min,km}}（実経路があれば） }
+const DETOUR_LAST_START = 1435;   // 23:55。これより後は差し込めない（24:00 は時刻として無効）
+// ctx.routeOf(c)：現在地からの実際の所要（{min, km}）。無ければ概算だけ。上位 DETOUR_TOP_ROUTES 件にだけ使う
 function detourCandidates(trip, ctx) {
   if (!ctx.geo || ctx.geo.lat == null) return { error: 'nogeo', list: [] };
   const mode = travelMode(trip);
   const next = nextAppointment(trip, ctx.date, ctx.now);
   const deadline = next ? next.start : DAY_END_MIN;
   const list = [];
+  if (ctx.now >= DETOUR_LAST_START) return { list, next: null, mode, late: true };
   detourPool(trip, ctx.date).forEach(c => {
     const info = c.info;
     if (info.lat == null) return;                                                   // 1. 座標があるもの
     const os = openStateAt(info.hours, ctx.date, ctx.now);
     if (os.state !== 'open' && os.state !== 'unknown') return;                      // 2. 今営業中（不明は残して後ろへ）
     const km = haversineKm(ctx.geo, info);
-    const real = ctx.routes && ctx.routes[c.key];
-    const go = real ? real.min : estimateMinutes(km, mode);
+    const real = null;
+    const go = estimateMinutes(km, mode);
     const stay = num(info.stay, 0) > 0 ? num(info.stay, 0) : DETOUR_DEFAULT_STAY;
     const back = next && next.point ? estimateMinutes(haversineKm(info, next.point), mode) : 0;
     const need = go + stay + back;                                                  // 3. 移動＋滞在（＋次の予定の場所まで）
@@ -67,20 +72,38 @@ function detourCandidates(trip, ctx) {
       open: os.state, closeIn: os.closeIn != null ? Math.round(os.closeIn) : null, priority: info.priority === 'must' ? 'must' : 'maybe', from: c.from
     });
   });
-  list.sort((a, b) => (a.open === 'unknown') - (b.open === 'unknown') || a.km - b.km);
-  return { list, next: next ? { name: next.name, start: next.start, locked: next.locked, left: Math.round(deadline - ctx.now) } : null, mode };
+  const order = (a, b) => (a.open === 'unknown') - (b.open === 'unknown') || a.km - b.km;
+  list.sort(order);
+  // 上位だけ実際の所要に置き換え、それで間に合わなくなったものは外す
+  let out = list;
+  if (ctx.routeOf) {
+    out = [];
+    list.forEach((c, i) => {
+      const r = i < DETOUR_TOP_ROUTES ? ctx.routeOf(c) : null;
+      if (r && r.min != null) {
+        c.go = Math.round(r.min); c.km = r.km != null ? r.km : c.km; c.real = true;
+        c.need = c.go + c.stay + c.back; c.spare = Math.round(deadline - ctx.now - c.need);
+        if (c.spare < 0) return;
+        if (c.open === 'open' && c.closeIn != null && c.closeIn < c.go + Math.min(c.stay, 30)) return;
+      }
+      out.push(c);
+    });
+    out.sort(order);
+  }
+  return { list: out, next: next ? { name: next.name, start: next.start, locked: next.locked, left: Math.round(deadline - ctx.now) } : null, mode };
 }
 // 工程に差し込む：今の時刻の位置（次の予定の前）に入れる。固定枠は動かさない
 function insertDetour(trip, date, nowMin, cand) {
   const rows = daySchedule(trip, date);
-  const nextIdx = rows.findIndex(r => r.start > nowMin);
+  const nextIdx = rows.findIndex(r => r.start > nowMin && !r.it.visited);   // v2.2.1 H-5：nextAppointment と同じ（行った工程は飛ばす）
   const prev = nextIdx > 0 ? rows[nextIdx - 1] : (nextIdx === -1 ? rows[rows.length - 1] : null);
   const nxt = nextIdx >= 0 ? rows[nextIdx] : null;
   let it = cand.itemId ? trip.items.find(i => i.id === cand.itemId) : null;
   if (!it) { it = newItem({ spotId: cand.spotId, nameCache: cand.name }); trip.items.push(it); }
   it.hiddenTime = null;
   it.date = date;
-  it.start = fromMin(roundUp5(nowMin + cand.go));
+  const st = Math.min(DETOUR_LAST_START, roundUp5(nowMin + cand.go));   // v2.2.1 M-5：24:00 にしない
+  it.start = fromMin(st);
   it.startManual = true;
   it.locked = false;
   it.stay = cand.stay;
@@ -89,6 +112,12 @@ function insertDetour(trip, date, nowMin, cand) {
   else it.order = prev ? prev.it.order + 1000 : 1000;
   it.moveAfter = cand.back ? roundUp5(cand.back) : null;
   it.moveAuto = true;
+  // v2.2.1 M-5：前の工程の行き先が変わったので移動時間は計算し直す。前の工程の途中で切り上げた時は、滞在を実際に合わせて詰める
+  if (prev && prev.it !== it) {
+    prev.it.moveAuto = true;
+    if (!prev.it.locked && prev.it.kind !== 'move' && prev.start < nowMin && nowMin < prev.end) prev.it.stay = Math.max(0, Math.round(nowMin - prev.start));
+    if (prev.end <= st) prev.it.moveAfter = Math.max(0, Math.min(roundUp5(cand.go), st - Math.round(Math.min(prev.end, nowMin))));
+  }
   return it;
 }
 let detourState = null;
@@ -108,26 +137,46 @@ ACT.detourOpen = async (el) => {
   const geo = await getGeoOnce();
   if (el) { el.disabled = false; el.innerHTML = '🧭 寄り道を探す'; }
   if (!geo) { toast('現在地が分かりません（位置情報をオンにして、もう一度お試しください）', { ms: 5000 }); return; }
-  if (S.spotsState !== 'ok') loadSpots(true);
-  detourState = { tripId: t.id, routes: {} };
+  detourState = { tripId: t.id, hoursLoading: false };
   openModal('<div id="detourBody"></div>', { title: '🧭 寄り道レーダー', onMount: () => detourRender(), onClose: () => { detourState = null; } });
+  if (S.spotsState !== 'ok') await loadSpots(true);
+  detourFetchHours(t);
 };
+// v2.2.1 H-2：営業時間は普段「旅に入っているスポット」の分しか取っていない。スポット帳から拾った候補のうち、
+// 現在地に近い20件で営業時間が無い（または1日以上前の）ものだけ、この場で Google から取る
+const DETOUR_HOURS_N = 20;
+async function detourFetchHours(t) {
+  if (!detourState || !S.geo) return;
+  const date = tripToday(t);
+  const need = detourPool(t, date).filter(c => c.from === 'spotcho' && c.info.lat != null)
+    .map(c => ({ c, km: haversineKm(S.geo, c.info) })).sort((a, b) => a.km - b.km).slice(0, DETOUR_HOURS_N)
+    .map(x => S.spots[x.c.spotId]).filter(sp => sp && sp.placeId && !(S.hours[sp.id] && Date.now() - S.hours[sp.id].at < 24 * 3600e3))
+    .map(sp => ({ id: sp.id, placeId: sp.placeId }));
+  if (!need.length) { detourRender(); return; }
+  detourState.hoursLoading = true; detourRender();
+  try {
+    const r = await api('placeHours', { spots: need });
+    Object.keys(r.hours || {}).forEach(id => { S.hours[id] = { week: r.hours[id], at: Date.now() }; });
+    saveCache();
+  } catch (e) { /* 取れなければ「営業時間不明」のまま */ }
+  if (!detourState) return;
+  detourState.hoursLoading = false;
+  detourRender();
+}
+// v2.2.1 M-6：実際の所要は routeFor（現在地の座標込みでキャッシュ）をそのまま使う。移動して現在地が変われば取り直しになる
 function detourCompute() {
   const t = S.trips[detourState.tripId];
-  const date = tripToday(t), now = tripNowMin(t);
-  const res = detourCandidates(t, { date, now, geo: S.geo, routes: detourState.routes });
-  // 上位だけ実経路に置き換える（routeFor はキャッシュつき。届いたら描き直す）
-  res.list.slice(0, DETOUR_TOP_ROUTES).forEach(c => {
-    if (detourState.routes[c.key]) return;
-    const r = routeFor(S.geo, c.point, res.mode === 'walk' ? 'walk' : res.mode, t.listTransport);
-    if (r && !r.estimated) detourState.routes[c.key] = r;
-  });
-  return Object.assign(detourCandidates(t, { date, now, geo: S.geo, routes: detourState.routes }), { t, date, now });
+  const date = tripToday(t), now = tripNowMin(t), mode = travelMode(t);
+  const routeOf = (c) => { const r = routeFor(S.geo, c.point, mode, t.listTransport); return r && !r.estimated ? r : null; };
+  return Object.assign(detourCandidates(t, { date, now, geo: S.geo, routeOf }), { t, date, now, inTrip: tripDays(t).includes(date) });
 }
 function detourRender() {
   const box = $('#detourBody'); if (!box || !detourState) return;
   const r = detourCompute();
   let h = '';
+  if (!r.inTrip) h += `<div class="warn-box small">今日は旅の日程の外なので、工程には差し込めません（ナビ開始だけ使えます）</div>`;
+  if (r.late) h += `<div class="info-box small">23:55 を過ぎたので、今日の寄り道はここまでです</div>`;
+  if (detourState.hoursLoading) h += '<div class="muted small"><span class="spin"></span> 近くのスポットの営業時間を確認中…</div>';
   h += r.next ? `<div class="info-box small">次の予定：<b>${r.next.locked ? '🔒 ' : ''}${esc(r.next.name)}</b>（${fromMin(Math.round(r.next.start))}）まで あと <b>${r.next.left}分</b>。戻る時間も含めて間に合う所だけ出しています</div>`
     : `<div class="info-box small">今日はこの後の予定がありません。営業時間内に寄れる所を出しています</div>`;
   if (S.spotsState === 'loading') h += '<div class="muted small">スポット帳を読み込み中…</div>';
@@ -135,12 +184,14 @@ function detourRender() {
   r.list.forEach(c => {
     h += `<div class="card detour">
       <div class="row between"><b>${c.priority === 'must' ? '⭐ ' : ''}${esc(c.name)}</b><span class="muted small">${fmtKm(c.km)}</span></div>
-      <div class="small">${VEHICLES[r.mode] ? VEHICLES[r.mode].icon : '🚶'} ${c.go}分${c.real ? '' : '（概算）'} ・ 滞在 ${c.stay}分${c.back ? ` ・ 次の場所へ ${c.back}分` : ''}</div>
+      <div class="small">${VEHICLES[r.mode] ? VEHICLES[r.mode].icon : '🚶'} ${fmtDuration(c.go)}${c.real ? '' : '（概算）'} ・ 滞在 ${fmtDuration(c.stay)}${c.back ? ` ・ 次の場所へ ${fmtDuration(c.back)}` : ''}</div>
       <div class="small">${c.open === 'open' ? `<span class="ok">営業中</span>${c.closeIn != null ? `（閉店まで ${c.closeIn}分）` : ''}` : '<span class="warn">営業時間不明</span>'} ・ ${r.next ? `余裕 <b>${c.spare}分</b>（間に合う）` : '今日中なら自由'}</div>
-      <div class="row gap mt"><button class="btn sm primary" data-act="detourInsert" data-k="${esc(c.key)}">＋ 工程に差し込む</button>
+      <div class="row gap mt">${r.inTrip ? `<button class="btn sm primary" data-act="detourInsert" data-k="${esc(c.key)}">＋ 工程に差し込む</button>` : ''}
       <a class="btn sm" href="${mapsDirUrl(c.point, r.mode)}" target="_blank" rel="noopener">🧭 このままナビ開始</a></div></div>`;
   });
+  const body = box.closest('.modal-body'), top = body ? body.scrollTop : 0;   // v2.2.1 L-1：描き直してもスクロール位置はそのまま
   box.innerHTML = h;
+  if (body) body.scrollTop = top;
 }
 ACT.detourInsert = (el) => {
   const r = detourCompute();
@@ -170,7 +221,7 @@ function legMin(a, b, mode) { return a && b ? roundUp5(estimateMinutes(haversine
 // 1日の並び（seq）を時刻でなぞる。固定枠・時刻指定は動かさず、新しく入れたものだけ開店待ちをする
 function simulateDay(trip, date, seq, startPoint, mode) {
   const dayStart = toMin(S.settings.dayStart) || 540, dayEnd = toMin(PLAN_DAY_END);
-  let cursor = null, late = 0, ok = true, moveTotal = 0, prevP = startPoint, prevExisting = null;
+  let cursor = null, late = 0, lateMin = 0, exOut = 0, exEnd = 0, ok = true, moveTotal = 0, prevP = startPoint, prevExisting = null;
   const out = [];
   seq.forEach((x, i) => {
     let leg;
@@ -179,8 +230,8 @@ function simulateDay(trip, date, seq, startPoint, mode) {
     if (i > 0) moveTotal += leg;
     let start;
     const at = cursor == null ? dayStart : cursor + leg;
-    if (isAnchor(x.it) && !x.isNew) { start = toMin(x.it.start); if (cursor != null && at > start + 0.5) late++; }
-    else start = i === 0 && toMin(x.it.start) != null ? toMin(x.it.start) : at;
+    if (isAnchor(x.it) && !x.isNew) { start = toMin(x.it.start); if (cursor != null && at > start + 0.5) { late++; lateMin += at - start; } }
+    else start = !x.isNew && i === 0 && toMin(x.it.start) != null ? toMin(x.it.start) : at;   // v2.2.1 H-7：新しく入れるものの古い時刻は使わない
     let wait = 0;
     if (x.isNew) {
       const r = hoursOn(x.info.hours, date);
@@ -192,13 +243,20 @@ function simulateDay(trip, date, seq, startPoint, mode) {
       if (start + x.stay > dayEnd) ok = false;
     }
     const end = start + x.stay;
+    // v2.2.1 M-2：既存の（時刻を決めていない）工程が押し出されて営業時間外・21時過ぎになるのも数える
+    if (!x.isNew && !isAnchor(x.it) && x.it.kind !== 'move') {
+      if (withinHours(x.info.hours, date, start, Math.max(end, start + 1)) === false) exOut++;
+      if (end > dayEnd) exEnd++;
+    }
     out.push({ x, start, end, leg, wait });
     cursor = end;
     prevP = x.p || prevP;
     prevExisting = x.isNew ? null : x.it;
   });
-  return { ok, late, rows: out, moveTotal, end: cursor };
+  return { ok, late, lateMin, exOut, exEnd, rows: out, moveTotal, end: cursor };
 }
+// v2.2.1 M-1・M-2：元の状態より悪くなる案は採らない（遅れの件数・分数、既存の工程の営業時間外・21時過ぎ）
+function planWorse(sim, b) { return !sim.ok || sim.late > b.late || sim.lateMin > b.lateMin + 0.5 || sim.exOut > b.exOut || sim.exEnd > b.exEnd; }
 function seqDistance(seq, startPoint) {
   let d = 0, p = startPoint;
   seq.forEach(x => { if (p && x.p) d += haversineKm(p, x.p); if (x.p) p = x.p; });
@@ -217,7 +275,7 @@ function planAuto(trip) {
   const seqByDay = {};
   days.forEach(d => { seqByDay[d] = dayItems(trip, d).map(it => { const info = itemInfo(trip, it); return { it, info, isNew: false, p: info.lat != null ? { lat: info.lat, lng: info.lng } : null, stay: Math.max(0, num(it.stay, 0)) }; }); });
   const base = {};
-  days.forEach((d, i) => { base[d] = simulateDay(trip, d, seqByDay[d], dayStartPoint(trip, days, i, seqByDay), mode).late; });
+  days.forEach((d, i) => { base[d] = simulateDay(trip, d, seqByDay[d], dayStartPoint(trip, days, i, seqByDay), mode); });
   const placeable = [];
   cands.forEach(c => {
     if (!c.p) { result.unplaced.push({ name: c.info.name, reason: '座標がない' }); return; }
@@ -241,7 +299,7 @@ function planAuto(trip) {
         const added = seqDistance(trial, sp) - before;
         if (best && added >= best.added) continue;
         const sim = simulateDay(trip, d, trial, sp, mode);
-        if (!sim.ok || sim.late > base[d]) continue;
+        if (planWorse(sim, base[d])) continue;
         best = { d, pos, added };
       }
     });
@@ -262,7 +320,7 @@ function planAuto(trip) {
           const trial = seq.slice(0, x).concat(seq.slice(x, y + 1).reverse(), seq.slice(y + 1));
           if (seqDistance(trial, sp) + 1e-9 < seqDistance(seq, sp)) {
             const sim = simulateDay(trip, d, trial, sp, mode);
-            if (sim.ok && sim.late <= base[d]) { seq = trial; improved = true; }
+            if (!planWorse(sim, base[d])) { seq = trial; improved = true; }
           }
         }
         a = b;
@@ -289,6 +347,7 @@ function applyPlan(trip, plan) {
       it.hiddenTime = null;
       it.date = d.date;
       it.order = (k + 1) * 1000;
+      it.stay = r.end - r.start;   // v2.2.1 M-3：プレビューで使った滞在を書き戻す（未設定だと反映後に0分になる）
       if (r.wait > 0) { it.start = fromMin(r.start); it.startManual = true; }   // 開店を待つものだけ時刻を入れる
       else { it.start = null; it.startManual = false; }
     });
@@ -297,7 +356,8 @@ function applyPlan(trip, plan) {
       const nx = d.rows[k + 1]; if (!nx) return;
       if (!r.isNew && !nx.isNew) return;
       const it = trip.items.find(i => i.id === r.id);
-      if (it && it.moveAuto !== false) { it.moveAfter = nx.leg; it.moveAuto = true; }
+      // v2.2.1 M-9：行き先が新しいスポットに変わったので、手で入れた移動時間（別の行き先向け）も上書きする
+      if (it) { it.moveAfter = nx.leg; it.moveAuto = true; }
     });
   });
 }
@@ -313,16 +373,21 @@ ACT.autoPlanOpen = () => {
     h += `<div class="card"><div class="row between"><b>${d.index}日目 ${fmtDate(d.date)}</b><span class="muted small">移動 約${d.moveTotal}分</span></div>
       ${d.rows.map(r => `<div class="ap-row ${r.isNew ? 'new' : ''}">${r.leg ? `<div class="muted small">　↓ ${r.leg}分</div>` : ''}<div><span class="mono">${fromMin(r.start)}–${fromMin(r.end)}</span> ${r.locked ? '🔒 ' : ''}${r.isNew ? '<b>🆕 ' + esc(r.name) + '</b>' : esc(r.name)}${r.wait ? ` <span class="muted small">（開店待ち ${r.wait}分）</span>` : ''}${r.unknownHours ? ' <span class="warn small">営業時間未確認</span>' : ''}</div></div>`).join('')}</div>`;
   });
+  const hiddenLeft = t.items.filter(i => i.hiddenTime && !isScheduled(i, t)).length;
+  if (hiddenLeft && plan.placed) h += `<div class="muted small">リストモードで隠していた元の時刻（${hiddenLeft}件）は、反映するとリセットされます</div>`;
   if (plan.unplaced.length) h += `<div class="card"><b>未配置のまま残すもの</b>${plan.unplaced.map(u => `<div class="small">${u.pri === 'must' ? '⭐ ' : ''}${esc(u.name)} <span class="muted">— ${esc(u.reason)}</span></div>`).join('')}</div>`;
   h += `<div class="row gap mt"><button class="btn grow" data-act="closeModal">キャンセル</button><button class="btn primary grow" data-act="autoPlanApply" ${plan.placed ? '' : 'disabled'}>この案をしおりに反映</button></div>`;
   openModal(h, { title: '🪄 自動でしおり案', data: { t, plan } });
 };
-ACT.autoPlanApply = () => {
+ACT.autoPlanApply = async () => {
   const { t, plan } = topModal().data;
   applyPlan(t, plan);
+  // v2.2.1 M-7：配置しなかったものに残っている「リストモードで隠した時刻」は消す（しおりに戻った時の「元の時刻に戻す」と自動案がぶつからないように）
+  t.items.forEach(i => { if (i.hiddenTime && !isScheduled(i, t)) i.hiddenTime = null; });
   if (t.mode !== 'shiori') switchMode(t, 'shiori');
   closeModal();
   commitTrip(t);
-  plan.days.forEach(d => { if (d.rows.some(r => r.isNew)) autoMoveTimes(t, d.date); });
-  toast(plan.placed + '件をしおりに入れました（移動時間は経路で計算し直しています）');
+  toast(plan.placed + '件をしおりに入れました（移動時間を経路で計算し直しています）');
+  // v2.2.1 M-4：経路の計算は1日ずつ順番に（同時にたくさん呼ばない）
+  for (const d of plan.days) { if (d.rows.some(r => r.isNew)) { try { await autoMoveTimes(t, d.date); } catch (e) {} } }
 };
