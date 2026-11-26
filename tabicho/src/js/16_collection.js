@@ -133,8 +133,7 @@ ACT.yearExport = async (el) => {
   try {
     await ensureFonts();
     const c = await renderYearCanvas(el.dataset.y);
-    openModal(`<div id="instaOut"></div>`, { title: el.dataset.y + ' 年別レポート' });
-    await exportCanvases([c], 'TABICHO_' + el.dataset.y);
+    await exportCanvases([c], 'TABICHO_' + el.dataset.y, el.dataset.y + ' 年別レポート');
   } catch (e) { toast('書き出しに失敗：' + e.message); }
   el.disabled = false;
 };

@@ -184,4 +184,30 @@ t('v2.0 コレクションの対象（C1）：旅行中・精算・記録中・�
   assert.deepStrictEqual(r.titles, ['完了', '旅行中', '精算中']);
   assert.strictEqual(r.st.trips, 3); assert.strictEqual(r.st.days, 7); assert.strictEqual(r.st.spots, 1, '同じスポットは1件と数える');
 });
+
+t('v2.0.2 場所ごとの振り分け（700m 以内をまとめる・位置情報なしは別）', () => {
+  const r = run(`(() => {
+    const m = (id, lat, lng) => ({ id, kind: 'photo', lat, lng });
+    const cl = placeClusters([m('a', 34.5636, 135.0103), m('b', 34.5660, 135.0120), m('c', 34.3401, 134.9046), m('d', null, null)]);
+    return cl.map(c => c.items.map(x => x.id).join(''));
+  })()`);
+  assert.deepStrictEqual(r, ['ab', 'c']);
+});
+t('v2.0.2 ビジュアルのレイアウト：枚数（1〜4）と比率の箱', () => {
+  const r = run(`(() => {
+    const tr = newTrip({ startDate: '2026-11-24', endDate: '2026-11-24' });
+    const lim = [dayLimit(tr, '2026-11-24')];
+    tr.visual.defaultCount = '4'; lim.push(dayLimit(tr, '2026-11-24'));
+    tr.visual.dayCount['2026-11-24'] = '1'; lim.push(dayLimit(tr, '2026-11-24'));
+    const cells = layoutCells(4, 0, 0, 100, 100, 10).map(c => c.map(Math.round));
+    const box = fitRatio([0, 0, 100, 200], ratioValue('1:1')).map(Math.round);
+    const wide = fitRatio([0, 0, 200, 100], ratioValue('4:5')).map(Math.round);
+    return { lim, cells, box, wide, fill: fitRatio([1, 2, 3, 4], ratioValue('fill')) };
+  })()`);
+  assert.deepStrictEqual(r.lim, [3, 4, 1]);
+  assert.deepStrictEqual(r.cells, [[0, 0, 45, 45], [55, 0, 45, 45], [0, 55, 45, 45], [55, 55, 45, 45]]);
+  assert.deepStrictEqual(r.box, [0, 50, 100, 100], '縦長の枠に 1:1 は中央に正方形');
+  assert.deepStrictEqual(r.wide, [60, 0, 80, 100], '横長の枠に 4:5 は中央に縦長');
+  assert.deepStrictEqual(r.fill, [1, 2, 3, 4], '枠いっぱいはそのまま');
+});
 console.log(`\n${n} tests passed`);

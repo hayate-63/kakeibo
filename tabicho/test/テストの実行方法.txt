@@ -1,0 +1,26 @@
+旅帳 テストの実行方法（zip の「テスト一式」フォルダだけで再実行できます）
+
+■ 必要なもの
+・Node.js 18 以上
+・画面のテスト（*.e2e.js）だけ Playwright の Chromium（下の手順で入る）
+
+■ 手順（「テスト一式」フォルダで）
+1. npm install
+2. npx playwright install chromium      ← 画面のテストを動かす時だけ（初回のみ）
+3. npm test                              ← ビルド → 計算・GAS のテスト → 画面のテスト
+
+　計算・GAS のテストだけなら：npm run test:unit（Playwright 不要）
+
+■ 中身
+・tabicho/src …………………… 画面のソース（tabicho/build.js で tabicho/gas/index.html にまとめる）
+・tabicho/gas …………………… GAS（Code.gs）と配信する index.html
+・tabicho/test/logic.test.js …… 計算ロジック（営業時間・割り勘・精算・実効レート・家計簿・工程・ステータス・v2.0 の振り分けやレイアウト）
+・tabicho/test/gas.test.js …… 旅帳 GAS（偽のスプレッドシート・偽の家計簿 GAS v7.0・偽のスポット帳 GAS v3.1・偽の Drive 相手）
+・tabicho/test/boot.e2e.js …… 起動ガード・モード判定（GAS の配信を真似て開く）
+・tabicho/test/smoke.e2e.js …… v1 機能の画面の通し
+・tabicho/test/v2.e2e.js ……… v2 機能の画面の通し（アップロードは tabicho-poc/test/mock-server.js へ本当に PUT）
+・tabicho-poc/test/mock-server.js … Drive の resumable upload の振る舞いを真似た模擬サーバ
+
+■ 注意
+・画面のテストは 127.0.0.1 のポート 8701〜8713 を使います
+・実機（iPhone）・実際の GAS・実データの確認の代わりにはなりません

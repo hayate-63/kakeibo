@@ -26,7 +26,8 @@ function renderRecord(trip) {
     <input type="file" id="mediaPick" accept="image/*,video/*" multiple style="display:none">
     ${albumsHTML(trip)}
     ${trip.driveFolderName ? `<div class="muted small">保存先：Drive「${esc(trip.driveFolderName)}」</div>` : ''}
-    ${queueHTML(trip)}`;
+    ${queueHTML(trip)}
+    ${trip.media.length ? `<div class="row gap group-mode"><span class="muted small">場所ごとに分ける</span>${segHTML('gm', [{ v: 'auto', l: '自動' }, { v: 'on', l: 'する' }, { v: 'off', l: 'しない' }], groupModeOf(trip), 'groupMode')}</div>` : ''}`;
   const { by, unset } = mediaByDay(trip);
   days.forEach((d, i) => {
     const list = by[d];
@@ -36,13 +37,13 @@ function renderRecord(trip) {
     h += `<div class="card day-sec"><div class="row between day-head" data-act="dayToggle" data-k="${key}">
         <b>${closed ? '▶' : '▼'} ${i + 1}日目 ${fmtDateFull(d)}</b><span class="muted small">${np ? '📷' + np : ''} ${nv ? '🎬' + nv : ''}</span></div>
       ${closed ? '' : `<textarea rows="3" data-change="recDay" data-d="${d}" placeholder="この日の出来事・感想">${esc(rec.days[d] || '')}</textarea>
-        ${mediaGridHTML(trip, list)}
+        ${mediaSectionHTML(trip, list, d)}
         <button class="btn sm mt" data-act="mediaAdd" data-date="${d}">＋ この日に写真・動画</button>`}</div>`;
   });
   if (unset.length || !days.length) {
     h += `<div class="card day-sec"><div class="row between"><b>📂 日付未設定</b><span class="muted small">${unset.length}件</span></div>
       <div class="muted small">撮影日時が取れない・日程の外のものはここに入ります。タップして日付を変えると日別に移ります</div>
-      ${mediaGridHTML(trip, unset)}</div>`;
+      ${mediaSectionHTML(trip, unset, 'unset')}</div>`;
   }
 
   h += `<div class="section-title">✅ この旅で「行った」にしたスポット（${visited.length}）</div>`;
@@ -56,7 +57,7 @@ function renderRecord(trip) {
   const settled = settlementComplete(trip);
   h += `<div class="card ${rec.done ? 'ok-card' : ''}"><label class="check big"><input type="checkbox" data-change="recDone" ${rec.done ? 'checked' : ''}> 記録完了</label>
     <div class="muted small">精算の全件完了（${settled ? '✅ 済' : '未'}）と記録完了が揃うと、ホームに「完了にできます」が出ます</div></div>`;
-  setTimeout(() => loadThumbs(document.getElementById('page-record')), 0);
+  setTimeout(() => { loadThumbs(document.getElementById('page-record')); ensureMediaGeo(trip); }, 0);
   return h;
 }
 ACT.dayToggle = (el) => { S.ui.dayClosed = S.ui.dayClosed || {}; S.ui.dayClosed[el.dataset.k] = !S.ui.dayClosed[el.dataset.k]; render(); };

@@ -200,7 +200,7 @@ function openCalculator(input) {
   const keys = ['C', '⌫', '(', ')', '7', '8', '9', '÷', '4', '5', '6', '×', '1', '2', '3', '−', '0', '00', '.', '+'];
   openModal(`<div class="calc">
     <div class="calc-expr" id="calcExpr"></div><div class="calc-res" id="calcRes"></div>
-    <div class="calc-keys">${keys.map(k => `<button class="ck ${/[÷×−+]/.test(k) ? 'op' : ''} ${k === 'C' ? 'clr' : ''}" data-k="${k}">${k}</button>`).join('')}</div>
+    <div class="calc-keys">${keys.map(k => `<button class="ck ${/[÷×−+]/.test(k) ? 'ck-op' : ''} ${k === 'C' ? 'ck-clr' : ''} ${/[()]/.test(k) ? 'ck-paren' : ''}" data-k="${k}">${k}</button>`).join('')}</div>
     <button class="btn primary block" id="calcOk">＝ この金額にする</button></div>`, {
     title: '🧮 電卓', cls: 'calc-modal',
     onMount(body) {
@@ -334,7 +334,7 @@ ACT.pickFilter = (el) => {
   $$('.seg-btn', el.parentNode).forEach(b => b.classList.toggle('on', b === el));
   $('#pkList', topModalBody()).innerHTML = m.data.listHTML();
 };
-ACT.pickReload = async () => { await loadSpots(true); const m = topModal(); if (m && m.data.listHTML) $('#pkList', topModalBody()).innerHTML = m.data.listHTML(); };
+ACT.pickReload = async (el) => { if (el) { el.disabled = true; el.innerHTML = '<span class="spin"></span>'; } await loadSpots(true); if (el) { el.disabled = false; el.textContent = '↻'; } toast(S.spotsState === 'ok' ? 'スポット帳を読み直しました' : 'スポット帳につながりません：' + S.spotsError, { ms: 5000 }); const m = topModal(); if (m && m.data.listHTML) $('#pkList', topModalBody()).innerHTML = m.data.listHTML(); };
 ACT.pickSpot = (el) => {
   const m = topModal(); const { trip, target } = m.data;
   const sp = S.spots[el.dataset.id];

@@ -33,7 +33,7 @@ function renderPlan(trip) {
   const hidden = trip.items.filter(i => i.hiddenTime);
   if (isShiori && hidden.length) h += `<div class="info-box small">🕘 リストモードに切り替えた時の時刻を ${hidden.length}件 保持しています。<button class="btn sm" data-act="restoreAllTimes">すべて元の時刻に戻す</button></div>`;
   if (days.length) {
-    h += `<div class="day-tabs">${days.map((d, i) => `<button class="day-tab ${d === day ? 'on' : ''} ${d === todayStr() ? 'today' : ''}" data-act="pickDay" data-d="${d}">${i + 1}日目<br><span>${fmtDate(d)}</span></button>`).join('')}</div>`;
+    h += `<div class="day-tabs">${days.map((d, i) => `<button class="day-tab ${d === day ? 'on' : ''}" data-act="pickDay" data-d="${d}">${i + 1}日目${d === todayStr() ? '<em class="today-mark">今日</em>' : ''}<br><span>${fmtDate(d)}</span></button>`).join('')}</div>`;
   } else {
     h += `<div class="info-box small">日程が未定です。日付を入れると工程（1日目／2日目）を組めます。 <button class="btn sm" data-act="tripEdit">日程を入れる</button></div>`;
   }
@@ -71,7 +71,12 @@ function renderPlan(trip) {
   if (S.spotsState === 'error') h += `<div class="warn-box small">スポット帳に接続できません（${esc(S.spotsError)}）。名前は追加時点の控えで表示しています。<button class="btn sm" data-act="reloadSpots">再接続</button></div>`;
   return h;
 }
-ACT.reloadSpots = () => loadSpots(true);
+// 再接続：押したことが分かるように進行中を表示し、結果をトーストで知らせる
+ACT.reloadSpots = async (el) => {
+  if (el) { el.disabled = true; el.innerHTML = '<span class="spin"></span> 接続中…'; }
+  await loadSpots(true);
+  toast(S.spotsState === 'ok' ? 'スポット帳につながりました（' + Object.keys(S.spots).length + '件）' : 'まだつながりません：' + S.spotsError, { ms: 6000 });
+};
 ACT.pickDay = (el) => { S.ui.shioriDay[S.curTripId] = el.dataset.d; mapSig = ''; render(); };
 ACT.toggleListZone = () => { S.ui.listCollapsed = !S.ui.listCollapsed; render(); };
 ACT.toggleDoneZone = () => { S.ui.doneCollapsed = !S.ui.doneCollapsed; render(); };

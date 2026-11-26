@@ -32,7 +32,7 @@ function png(w, h, seed) {
   await sleep(600);
   const b = await chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 } });
-  await ctx.addInitScript((u) => { window.__TABICHO_TEST_UPLOAD = u; }, API + '/exec');
+  await ctx.addInitScript((u) => { window.__TABICHO_TEST_UPLOAD = u; window.__TABICHO_STALL_MS = 4000; }, API + '/exec');
   const p = await ctx.newPage();
   const errs = [];
   p.on('pageerror', e => errs.push(e.message));
@@ -92,6 +92,37 @@ function png(w, h, seed) {
     files = await (await fetch(API + '/debug')).json();
     assert.ok(files.some(f => f.md5 === md5(ph3)));
     ok('再読み込み後：ファイル本体は端末に残さず、選び直して送信（M2）');
+
+    // ---- 送信中にアプリを閉じた（再読み込み）→「失敗（中断）」→ 選び直して続きから（B2） ----
+    const big2 = crypto.randomBytes(10 * 1048576 + 77);
+    await fetch(API + '/control?set=' + encodeURIComponent(JSON.stringify({ delayMs: 1500 })));
+    fc = p.waitForEvent('filechooser'); await p.click('[data-act="mediaAdd"]');
+    await (await fc).setFiles([{ name: 'IMG_0005.MOV', mimeType: 'video/quicktime', buffer: big2 }]);
+    await p.click('[data-act="maGo"][data-send="1"]');
+    await p.waitForFunction(() => JSON.parse(localStorage.getItem('tabicho_media_queue_v1') || '[]').some(q => q.name === 'IMG_0005.MOV' && q.state === 'sending' && q.offset > 0), null, { timeout: 30000 });
+    await p.reload(); await p.waitForTimeout(600);
+    await fetch(API + '/control?set=' + encodeURIComponent(JSON.stringify({ delayMs: 0 })));
+    await p.click('.nav-item[data-tab="record"]');
+    const row = await p.textContent('#page-record .mq');
+    assert.match(row, /失敗（中断）/); assert.match(row, /続きを送れます/);
+    fc = p.waitForEvent('filechooser'); await p.click('[data-act="mqRepick"]');
+    await (await fc).setFiles([{ name: 'IMG_0005.MOV', mimeType: 'video/quicktime', buffer: big2 }]);
+    await p.waitForFunction(() => JSON.parse(localStorage.getItem('tabicho_media_queue_v1') || '[]').some(q => q.name === 'IMG_0005.MOV' && q.state === 'done'), null, { timeout: 60000 });
+    files = await (await fetch(API + '/debug')).json();
+    assert.ok(files.some(f => f.md5 === md5(big2)));
+    assert.match(await p.textContent('#page-record .mq'), /完了（直接）/);
+    ok('送信中に閉じた → 「失敗（中断）」表示 → 選び直して続きから完走（B2）・送信経路の表示');
+
+    // ---- 通信がエラーも出さずに止まった（iOS で裏に回した時）→ 見張りが打ち切って続きから（B2） ----
+    const big3 = crypto.randomBytes(9 * 1048576 + 5);
+    await fetch(API + '/control?set=' + encodeURIComponent(JSON.stringify({ hangOnPut: 2 })));
+    fc = p.waitForEvent('filechooser'); await p.click('[data-act="mediaAdd"]');
+    await (await fc).setFiles([{ name: 'IMG_0006.MOV', mimeType: 'video/quicktime', buffer: big3 }]);
+    await p.click('[data-act="maGo"][data-send="1"]');
+    await p.waitForFunction(() => JSON.parse(localStorage.getItem('tabicho_media_queue_v1') || '[]').some(q => q.name === 'IMG_0006.MOV' && q.state === 'done'), null, { timeout: 60000 });
+    files = await (await fetch(API + '/debug')).json();
+    assert.ok(files.some(f => f.md5 === md5(big3)));
+    ok('止まった通信を見張りが打ち切り、受信済み位置から続けて完走（B2）');
 
     // ---- ビューア：代表・お気に入り・日付変更（日程外 → 日付未設定） ----
     await p.click('.mtile >> nth=0');
@@ -176,6 +207,50 @@ function png(w, h, seed) {
     }
     await ctx2.close();
     ok('デモモード：端末で作ったサムネイルの表示、写真入りのビジュアルと書き出し');
+
+    // ---- v2.0.2：場所ごとの振り分け（写真が多い日は自動）・レイアウト（枚数・比率）・表紙の解除 ----
+    const ctx3 = await b.newContext({ viewport: { width: 390, height: 844 } });
+    const p3 = await ctx3.newPage();
+    p3.on('pageerror', e => errs.push(e.message)); p3.on('dialog', d => d.accept());
+    await p3.goto('http://127.0.0.1:8713/'); await p3.waitForTimeout(600);
+    await p3.click('text=＋ 新しい旅'); await p3.fill('#teTitle', '場所テスト');
+    await p3.fill('#teStart', ymd(new Date())); await p3.fill('#teEnd', ymd(new Date())); await p3.click('text=この旅を作る');
+    await p3.click('.nav-item[data-tab="record"]');
+    const geo = [[34.5636, 135.0103], [34.5640, 135.0110], [34.5650, 135.0100], [34.5645, 135.0108], [34.3401, 134.9046], [34.3405, 134.9050], [34.3398, 134.9049]];
+    fc = p3.waitForEvent('filechooser'); await p3.click('[data-act="mediaAdd"]');
+    await (await fc).setFiles(geo.map((g, i) => ({ name: `G${i}@${g[0]},${g[1]}.png`, mimeType: 'image/png', buffer: png(600, 800, i) })).concat([{ name: 'nogps.png', mimeType: 'image/png', buffer: png(600, 600, 9) }]));
+    await p3.click('[data-act="maGo"][data-send="1"]');
+    await p3.waitForFunction(() => JSON.parse(localStorage.getItem('tabicho_media_queue_v1') || '[]').filter(q => q.state === 'done').length === 8, null, { timeout: 30000 });
+    await p3.waitForTimeout(1200);
+    const heads = await p3.$$eval('.place-head', x => x.map(e => e.textContent.replace(/\s+/g, ' ').trim()));
+    assert.strictEqual(heads.length, 3, JSON.stringify(heads));
+    assert.ok(heads.some(h => /4$/.test(h)) && heads.some(h => /3$/.test(h)) && heads.some(h => /位置情報なし\s*1$/.test(h)), JSON.stringify(heads));
+    await p3.click('.place-head >> nth=0'); await p3.waitForTimeout(200);
+    assert.ok(/▶/.test(await p3.textContent('.place-head >> nth=0')), '矢印で閉じる');
+    if (out) await p3.screenshot({ path: path.join(out, 'v12_places.png'), fullPage: true });
+    ok('場所ごとの振り分け：近い写真を1つに、位置情報なしは別、矢印で折りたたみ');
+    // レイアウト：この日を4枚・1:1 にする
+    await p3.click('[data-act="openVisual"]'); await p3.waitForTimeout(600);
+    await p3.click('[data-act="visNext"]'); await p3.waitForTimeout(800);
+    await p3.click('[data-act="visLayout"]');
+    await p3.click('.chip:has(input[value="1:1"])'); await p3.click('.seg-btn[data-name="vlDay"][data-v="4"]');
+    await p3.click('[data-act="vlSave"]'); await p3.waitForTimeout(800);
+    assert.strictEqual(await p3.$$eval('#visStage .vpage.cur .vcell', x => x.length), 4);
+    const sq = await p3.$eval('#visStage .vpage.cur .vimg.fixed', e => { const r = e.getBoundingClientRect(); return Math.abs(r.width - r.height) < 2; });
+    assert.ok(sq, '1:1 の箱');
+    if (out) await p3.screenshot({ path: path.join(out, 'v13_layout4.png') });
+    // 表紙を選んでから解除 → 代表・お気に入りの順に戻る
+    await p3.click('[data-act="visPrev"]'); await p3.waitForTimeout(800);
+    await p3.click('#visStage .vpage.cur [data-act="visPickCover"]'); await p3.click('[data-act="visPicked"] >> nth=2'); await p3.waitForTimeout(400);
+    let tv = await p3.evaluate(() => { const c = JSON.parse(localStorage.getItem('tabicho_cache_v1')); return c.trips[c.curTripId].visual; });
+    assert.ok(tv.coverMediaId);
+    await p3.click('[data-act="visCoverReset"]'); await p3.waitForTimeout(300);
+    tv = await p3.evaluate(() => { const c = JSON.parse(localStorage.getItem('tabicho_cache_v1')); return c.trips[c.curTripId].visual; });
+    assert.strictEqual(tv.coverMediaId, '');
+    await p3.click('[data-act="visMode"][data-v="insta"]'); await p3.waitForTimeout(1200);
+    assert.ok(await p3.$('[data-act="instaExport"][disabled]'), '解除後は代表・お気に入りが無いので書き出し時に選ぶ（V4）');
+    await ctx3.close();
+    ok('レイアウト（この日4枚・1:1）と表紙の選択の解除');
 
     assert.deepStrictEqual(errs, []);
     console.log(`\n${n} checks passed（ページのエラーなし）`);

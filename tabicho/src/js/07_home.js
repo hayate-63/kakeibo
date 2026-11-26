@@ -126,7 +126,7 @@ function openTripEditor(trip, preset) {
     <label>タイトル<span class="req">必須</span></label><input id="teTitle" value="${esc(t.title === '新しい旅' && isNew ? '' : t.title)}" placeholder="例：淡路島ドライブ">
     <label>日程</label><div><div class="row gap"><input type="date" id="teStart" value="${esc(t.startDate || '')}"><span>〜</span><input type="date" id="teEnd" value="${esc(t.endDate || '')}"></div>
       <div class="muted small">未定のままなら「検討中」。日付を入れると「計画中」へ自動で進みます。開始日＝終了日で日帰り</div></div>
-    <label>モード<span class="req">必須</span></label>${segHTML('teMode', [{ v: 'shiori', l: '📒 しおり（工程を決める）' }, { v: 'list', l: '📝 リスト（行きたい所だけ）' }], t.mode, 'segPick')}
+    <label>モード<span class="req">必須</span></label>${segHTML('teMode', [{ v: 'shiori', l: '📒 しおり<small class="seg-sub">（工程を決める）</small>' }, { v: 'list', l: '📝 リスト<small class="seg-sub">（行きたい所だけ）</small>' }], t.mode, 'segPick')}
     <label>メンバー<span class="req">必須</span></label>${membersEditorHTML(t.members)}
     <label>行き先エリア</label><input id="teArea" value="${esc(t.area)}" placeholder="例：淡路島">
     <label>国内／海外</label><div><select id="teRegion"><option value="auto" ${!t.regionManual ? 'selected' : ''}>自動（今は${detectRegion(t) === 'overseas' ? '海外' : '国内'}）</option><option value="domestic" ${t.regionManual && t.region === 'domestic' ? 'selected' : ''}>国内</option><option value="overseas" ${t.regionManual && t.region === 'overseas' ? 'selected' : ''}>海外</option></select>

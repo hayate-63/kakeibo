@@ -50,13 +50,34 @@ function visualCover(trip) {
   return (id && trip.media.find(m => m.id === id)) || coverMedia(trip) || null;   // 代表 → お気に入り → 未設定なら書き出し時に選ぶ（V4）
 }
 // 日別ページの写真：お気に入り → 代表 → 時系列 の優先で自動選出（V3）。手動の差し替えを優先
+// v2.0.2 テンプレートのパラメータ：日別の写真の枚数（1〜4・おまかせ＝最大3）と写真の比率
+const VRATIOS = [['fill', '枠いっぱい'], ['1:1', '1:1'], ['4:5', '4:5'], ['3:4', '3:4'], ['2:3', '2:3'], ['3:2', '3:2'], ['16:9', '16:9']];
+function ratioValue(r) { if (!r || r === 'fill') return null; const [a, b] = r.split(':').map(Number); return a / b; }
+function dayCountSetting(trip, date) { const v = (trip.visual.dayCount || {})[date] || trip.visual.defaultCount || 'auto'; return v; }
+function dayLimit(trip, date) { const v = dayCountSetting(trip, date); return v === 'auto' ? 3 : clamp(Number(v) || 3, 1, 4); }
 function visualDayPicks(trip, date) {
   const dayList = mediaByDay(trip).by[date] || [];
+  const limit = dayLimit(trip, date);
   const manual = (trip.visual.dayPicks[date] || []).map(id => trip.media.find(m => m.id === id)).filter(Boolean);
   const auto = vPhotoPool(dayList.filter(m => m.favorite)).concat(vPhotoPool(dayList.filter(m => m.cover && !m.favorite)), vPhotoPool(mediaSorted(dayList.filter(m => !m.favorite && !m.cover))));
-  const out = manual.slice(0, 3);
-  auto.forEach(m => { if (out.length < 3 && !out.includes(m)) out.push(m); });
+  const out = manual.slice(0, limit);
+  auto.forEach(m => { if (out.length < limit && !out.includes(m)) out.push(m); });
   return out;
+}
+// 写真の置き場所（1枚＝全面、2枚＝上下、3枚＝大1＋小2、4枚＝2×2）
+function layoutCells(n, X, Y, W, H, gap) {
+  if (n <= 1) return [[X, Y, W, H]];
+  if (n === 2) { const h = (H - gap) / 2; return [[X, Y, W, h], [X, Y + h + gap, W, h]]; }
+  if (n === 3) { const h1 = H * 0.6, w2 = (W - gap) / 2, h2 = H - h1 - gap; return [[X, Y, W, h1], [X, Y + h1 + gap, w2, h2], [X + w2 + gap, Y + h1 + gap, w2, h2]]; }
+  const w = (W - gap) / 2, h = (H - gap) / 2; return [[X, Y, w, h], [X + w + gap, Y, w, h], [X, Y + h + gap, w, h], [X + w + gap, Y + h + gap, w, h]];
+}
+// 比率を決めた時は、枠の中にその比率の箱を収めて中央に置く
+function fitRatio(cell, r) {
+  const [x, y, w, h] = cell;
+  if (!r) return cell;
+  let bw = w, bh = w / r;
+  if (bh > h) { bh = h; bw = h * r; }
+  return [x + (w - bw) / 2, y + (h - bh) / 2, bw, bh];
 }
 function dayPlace(trip, date) {
   const names = [];
@@ -99,7 +120,7 @@ ACT.openVisual = async () => {
   renderVisual();
   ensureTitleEn(trip).then(() => { if (VIS.trip === trip) renderVisual(); });
 };
-ACT.closeVisual = () => { const el = document.getElementById('visual'); if (el) el.className = 'vis'; document.body.classList.remove('modal-open'); VIS.trip = null; };
+ACT.closeVisual = () => { const el = document.getElementById('visual'); if (el) { el.className = 'vis'; el.innerHTML = ''; } document.body.classList.remove('modal-open'); VIS.trip = null; };
 ACT.visMode = (el) => { VIS.mode = el.dataset.v; renderVisual(); };
 function renderVisual() {
   const el = document.getElementById('visual'); if (!el || !VIS.trip) return;
@@ -109,6 +130,7 @@ function renderVisual() {
     <button class="icon-btn light" data-act="visTitleEdit" title="英語タイトル">Aa</button></div>
     ${VIS.mode === 'book' ? `<div class="vis-stage" id="visStage">${VIS.pages.map((p, i) => `<div class="vpage ${i === VIS.i ? 'cur' : i < VIS.i ? 'gone' : 'next'}" data-i="${i}">${pageHTML(t, p)}</div>`).join('')}</div>
       <div class="vis-nav"><button class="btn" data-act="visPrev" ${VIS.i === 0 ? 'disabled' : ''}>‹</button><span>${VIS.i + 1} / ${VIS.pages.length}</span><button class="btn" data-act="visNext" ${VIS.i >= VIS.pages.length - 1 ? 'disabled' : ''}>›</button></div>
+      <div class="vis-tools"><button class="btn sm" data-act="visLayout">⚙ レイアウト</button>${t.visual.coverMediaId ? '<button class="btn sm" data-act="visCoverReset">表紙の選択を解除</button>' : ''}</div>
       <div class="vis-hint">写真をタップで差し替え ／ 横にスワイプでページをめくる</div>`
       : instaPanelHTML(t)}`;
   if (VIS.mode === 'book') { bindSwipe(document.getElementById('visStage')); loadVisImages(el); }
@@ -126,9 +148,11 @@ function pageHTML(t, p) {
       <div class="vmeta">${esc(enRange(t))}${t.area ? ' ・ ' + esc(t.area) : ''}</div>${t.record.comment ? `<div class="vline">${esc(String(t.record.comment).split('\n')[0].slice(0, 60))}</div>` : ''}</div></div>`;
   }
   const picks = visualDayPicks(t, p.date);
-  const n = Math.max(1, Math.min(3, picks.length || 1));
+  const want = dayCountSetting(t, p.date);
+  const n = want === 'auto' ? Math.max(1, Math.min(3, picks.length || 1)) : dayLimit(t, p.date);
+  const r = ratioValue(t.visual.ratio);
   return `<div class="vday"><div class="vday-head"><span class="vdaynum">DAY ${p.index}</span><span class="vdate">${esc(enDate(p.date))}</span></div>
-    <div class="vgrid n${n}">${Array.from({ length: n }, (_, k) => vImg(picks[k], 's' + k, `data-act="visPickDay" data-d="${p.date}" data-k="${k}"`)).join('')}</div>
+    <div class="vgrid n${n}">${Array.from({ length: n }, (_, k) => `<div class="vcell s${k}">${vImg(picks[k], r ? 'fixed' : 'fillc', `data-act="visPickDay" data-d="${p.date}" data-k="${k}" ${r ? `style="--r:${r.toFixed(4)}"` : ''}`)}</div>`).join('')}</div>
     <div class="vplace">${esc(dayPlace(t, p.date))}</div><div class="vline">${esc(dayLine(t, p.date))}</div></div>`;
 }
 async function loadVisImages(root) {
@@ -179,6 +203,31 @@ ACT.visPickDay = (el) => {
     commitTrip(t, { silent: true }); renderVisual();
   });
 };
+// 表紙の選択を解除：代表 → お気に入りの先頭 の優先順位に戻す
+ACT.visCoverReset = () => {
+  const t = VIS.trip; t.visual.coverMediaId = ''; commitTrip(t, { silent: true });
+  const c = visualCover(t);
+  toast(c ? '表紙の選択を解除しました（' + (c.cover ? '代表写真' : 'お気に入りの先頭') + 'を使います）' : '表紙の選択を解除しました（代表・お気に入りが無いので書き出し時に選びます）');
+  renderVisual();
+};
+// レイアウト：写真の比率（全ページ共通）、日別の枚数（全日の既定・この日だけ）
+ACT.visLayout = () => {
+  const t = VIS.trip; const p = VIS.pages[VIS.i] || {};
+  const cnt = (cur, name) => `<div class="seg">${[['auto', 'おまかせ'], ['1', '1枚'], ['2', '2枚'], ['3', '3枚'], ['4', '4枚']].map(([v, l]) => `<button class="seg-btn ${String(cur) === v ? 'on' : ''}" data-act="segPick" data-name="${name}" data-v="${v}">${l}</button>`).join('')}</div>`;
+  openModal(`<div class="b">写真の比率</div><div class="chips">${VRATIOS.map(([v, l]) => `<label class="chip"><input type="radio" name="vlRatio" value="${v}" ${t.visual.ratio === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
+    <div class="b mt">日別ページの写真の枚数（全日の既定）</div>${cnt(t.visual.defaultCount || 'auto', 'vlDefault')}
+    ${p.type === 'day' ? `<div class="b mt">この日（${fmtDate(p.date)}）だけの枚数</div>${cnt((t.visual.dayCount || {})[p.date] || '', 'vlDay')}<button class="link-btn" data-act="vlDayClear">この日の指定をやめる（既定に従う）</button>` : ''}
+    <div class="muted small mt">旅帳モードと Instagram 書き出しの両方に使います。写真が足りない枠は「＋ 写真を選ぶ」になります</div>
+    <button class="btn primary block mt" data-act="vlSave">決定</button>`, { title: '⚙ レイアウト', data: { date: p.type === 'day' ? p.date : '' } });
+};
+ACT.vlDayClear = () => { $$('.seg-btn[data-name="vlDay"]', topModalBody()).forEach(b => b.classList.remove('on')); };
+ACT.vlSave = () => {
+  const t = VIS.trip; const b = topModalBody(); const { date } = topModal().data;
+  t.visual.ratio = ($$('input[name="vlRatio"]', b).find(x => x.checked) || {}).value || 'fill';
+  t.visual.defaultCount = segValue(b, 'vlDefault') || 'auto';
+  if (date) { const v = segValue(b, 'vlDay'); t.visual.dayCount = t.visual.dayCount || {}; if (v) t.visual.dayCount[date] = v; else delete t.visual.dayCount[date]; }
+  closeModal(); commitTrip(t, { silent: true }); renderVisual();
+};
 ACT.visTitleEdit = () => {
   const t = VIS.trip;
   openModal(`<div class="form-grid"><label>英語タイトル</label><input id="vtEn" value="${esc(t.titleEn || '')}" placeholder="${esc(displayTitleEn(t))}"></div>
@@ -191,6 +240,7 @@ ACT.vtSave = () => { const t = VIS.trip; t.titleEn = $('#vtEn', topModalBody()).
 function instaPanelHTML(t) {
   const needCover = !visualCover(t);
   return `<div class="insta">${needCover ? `<div class="alert warn">表紙の写真が決まっていません（代表・お気に入りなし）。<button class="btn sm" data-act="visPickCover">表紙を選ぶ</button></div>` : ''}
+    <div class="row gap wrap"><button class="btn sm" data-act="visLayout">⚙ レイアウト</button>${t.visual.coverMediaId ? '<button class="btn sm" data-act="visCoverReset">表紙の選択を解除</button>' : ''}</div>
     <div class="insta-previews">${VIS.pages.map((p, i) => `<canvas class="ipv" width="270" height="480" data-i="${i}"></canvas>`).join('')}</div>
     <button class="btn primary block mt" data-act="instaExport" ${needCover ? 'disabled' : ''}>📤 ${VIS.pages.length}枚を書き出す（1080×1920）</button>
     <div class="muted small">iPhone では共有シートから「画像を保存」で写真アプリに入ります</div><div id="instaOut"></div></div>`;
@@ -247,10 +297,11 @@ async function renderPageCanvas(t, p) {
   const picks = visualDayPicks(t, p.date);
   const imgs = await Promise.all(picks.map(mediaImage));
   const X = 80, Y = 320, Wd = W - 160, Hd = 1180;
+  const want = dayCountSetting(t, p.date);
+  const n = want === 'auto' ? Math.max(1, Math.min(3, imgs.length || 1)) : dayLimit(t, p.date);
+  const r = ratioValue(t.visual.ratio);
   ctx.save();
-  if (imgs.length <= 1) drawCoverFit(ctx, imgs[0], X, Y, Wd, Hd);
-  else if (imgs.length === 2) { drawCoverFit(ctx, imgs[0], X, Y, Wd, Hd / 2 - 12); drawCoverFit(ctx, imgs[1], X, Y + Hd / 2 + 12, Wd, Hd / 2 - 12); }
-  else { drawCoverFit(ctx, imgs[0], X, Y, Wd, Hd * 0.6); const w2 = Wd / 2 - 12; drawCoverFit(ctx, imgs[1], X, Y + Hd * 0.6 + 24, w2, Hd * 0.4 - 24); drawCoverFit(ctx, imgs[2], X + w2 + 24, Y + Hd * 0.6 + 24, w2, Hd * 0.4 - 24); }
+  layoutCells(n, X, Y, Wd, Hd, 24).forEach((cell, k) => { const [x, y, w, h] = fitRatio(cell, r); drawCoverFit(ctx, imgs[k], x, y, w, h); });
   ctx.restore();
   ctx.fillStyle = th.ink; ctx.font = `700 44px ${th.sans}`;
   wrapText(ctx, dayPlace(t, p.date), W - 160).slice(0, 2).forEach((l, i) => ctx.fillText(l, 80, 1600 + i * 58));
@@ -260,13 +311,16 @@ async function renderPageCanvas(t, p) {
   return c;
 }
 function canvasBlob(c) { return new Promise(r => c.toBlob(b => r(b), 'image/jpeg', 0.92)); }
-async function exportCanvases(canvases, baseName) {
+async function exportCanvases(canvases, baseName, fallbackTitle) {
   const files = [];
   for (let i = 0; i < canvases.length; i++) { const b = await canvasBlob(canvases[i]); files.push(new File([b], `${baseName}_${pad2(i + 1)}.jpg`, { type: 'image/jpeg' })); }
   if (navigator.canShare && navigator.canShare({ files })) {
     try { await navigator.share({ files, title: baseName }); return files; } catch (e) { if (e && e.name === 'AbortError') return files; }
   }
-  const out = document.getElementById('instaOut') || topModalBody();
+  // 共有シートが使えない時だけ、画像を並べて保存してもらう
+  let out = document.getElementById('instaOut');
+  if (out && !out.offsetParent) out = null;   // 閉じた画面に残った受け皿は使わない
+  if (!out) { openModal('<div id="instaOut"></div>', { title: fallbackTitle || '書き出した画像' }); out = document.getElementById('instaOut'); }
   if (out) out.innerHTML = '<div class="muted small mt">長押しで保存、またはリンクからダウンロードできます</div>' + files.map(f => { const u = URL.createObjectURL(f); return `<a href="${u}" download="${esc(f.name)}"><img class="iout" src="${u}" alt=""></a>`; }).join('');
   return files;
 }

@@ -227,13 +227,22 @@ const MockServer = (() => {
     },
     async mediaMeta({ ids }) {
       const meta = {};
-      ids.forEach(id => { const f = MockMedia.get(id); meta[id] = f ? { id, name: f.name, mimeType: f.mimeType, size: f.size, takenAt: f.takenAt || '', hasThumbnail: !!f.thumb, videoReady: /^video/.test(f.mimeType), durationMs: /^video/.test(f.mimeType) ? 30000 : null } : { id, hasThumbnail: false }; });
+      ids.forEach(id => {
+        const f = MockMedia.get(id);
+        const g = f && String(f.name).match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);   // デモ用：ファイル名の @緯度,経度 を GPS とみなす
+        meta[id] = f ? { id, name: f.name, mimeType: f.mimeType, size: f.size, takenAt: f.takenAt || '', hasThumbnail: !!f.thumb, videoReady: /^video/.test(f.mimeType), durationMs: /^video/.test(f.mimeType) ? 30000 : null, lat: g ? Number(g[1]) : null, lng: g ? Number(g[2]) : null } : { id, hasThumbnail: false };
+      });
       return { ok: true, meta };
     },
     async mediaThumbs({ ids }) {
       const thumbs = {};
       ids.forEach(id => { const f = MockMedia.get(id); thumbs[id] = { meta: f ? { id, hasThumbnail: !!f.thumb, videoReady: /^video/.test(f.mimeType || ''), durationMs: /^video/.test(f.mimeType || '') ? 30000 : null } : { id }, thumb: f && f.thumb ? f.thumb : '' }; });
       return { ok: true, thumbs };
+    },
+    async placeNames({ points }) {
+      const names = {};
+      (points || []).forEach(p => { names[p.k || (Number(p.lat).toFixed(3) + ',' + Number(p.lng).toFixed(3))] = 'デモ地点（' + Number(p.lat).toFixed(2) + '）'; });
+      return { ok: true, names };
     },
     async mediaTrash({ fileId }) { MockMedia.remove(fileId); return { ok: true }; },
     async translateTitle({ text }) {

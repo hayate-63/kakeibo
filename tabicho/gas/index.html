@@ -105,7 +105,7 @@ a { color: var(--accent); }
 .chip.mem { padding: 3px 4px 3px 4px; } .chip.mem.me { background: var(--accent-l); border-color: var(--accent); }
 .chip-x { border: none; background: none; cursor: pointer; font-size: 12px; padding: 2px 5px; color: var(--sub); }
 .presets { margin-top: 6px; }
-.form-grid { display: grid; grid-template-columns: 96px 1fr; gap: 9px 10px; align-items: center; }
+.form-grid { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 9px 10px; align-items: center; }
 .form-grid > label { font-size: 13px; font-weight: 700; color: #334155; }
 .form-grid .span2 { grid-column: 1 / -1; }
 @media (max-width: 380px) { .form-grid { grid-template-columns: 1fr; gap: 4px; } .form-grid > label { margin-top: 6px; } }
@@ -139,7 +139,6 @@ a { color: var(--accent); }
 .day-tab { flex: 0 0 auto; border: 1px solid var(--border); background: #fff; border-radius: 10px; padding: 6px 14px; font-weight: 800; font-size: 13px; cursor: pointer; line-height: 1.25; }
 .day-tab span { font-size: 11px; font-weight: 600; color: var(--sub); }
 .day-tab.on { background: var(--primary); color: #fff; border-color: var(--primary); } .day-tab.on span { color: #cbd5e1; }
-.day-tab.today { box-shadow: inset 0 -3px 0 #22c55e; }
 .zone-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin: 12px 0 6px; font-weight: 800; font-size: 14px; flex-wrap: wrap; }
 .zone-head select.sm { width: auto; padding: 5px 8px; font-size: 13px; }
 .list-head { border-top: 2px dashed var(--border); padding-top: 12px; }
@@ -256,7 +255,7 @@ a { color: var(--accent); }
 .calc-res { font-size: 32px; font-weight: 900; text-align: right; min-height: 44px; } .calc-res.err { color: #cbd5e1; }
 .calc-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
 .ck { border: none; background: #fff; border-radius: 12px; padding: 14px 0; font-size: 22px; font-weight: 700; box-shadow: 0 1px 2px rgba(0,0,0,.08); cursor: pointer; }
-.ck.op { background: var(--accent-l); color: var(--accent); } .ck.clr { background: var(--ng-bg); color: var(--ng); }
+.ck.ck-op { background: var(--accent-l); color: var(--accent); } .ck.ck-clr { background: var(--ng-bg); color: var(--ng); }
 .pick-list { max-height: 50vh; overflow-y: auto; }
 .pick-row { display: flex; gap: 8px; align-items: center; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
 .pick-row.in { opacity: .55; }
@@ -339,6 +338,7 @@ a { color: var(--accent); }
 .vgrid { flex: 1; display: grid; gap: 8px; margin: 12px 0; min-height: 0; }
 .vgrid.n1 { grid-template-rows: 1fr; } .vgrid.n2 { grid-template-rows: 1fr 1fr; }
 .vgrid.n3 { grid-template-columns: 1fr 1fr; grid-template-rows: 3fr 2fr; } .vgrid.n3 .s0 { grid-column: 1 / 3; }
+.vgrid.n4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
 .vplace { font: 700 13px "Noto Sans JP", sans-serif; } .vday .vline { color: #57534e; }
 .insta { overflow-y: auto; padding: 10px 14px calc(20px + var(--safe-b)); color: var(--text); background: var(--bg); flex: 1; }
 .insta-previews { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
@@ -366,6 +366,39 @@ img.iout { width: 31%; margin: 1%; border-radius: 6px; }
 .mode-banner.demo { background: #fef3c7; color: #78350f; border-bottom: 1px solid #fde68a; }
 .mode-banner.bad { background: #fee2e2; color: #991b1b; border-bottom: 1px solid #fecaca; }
 
+/* v2.0.2 進行中のくるくる */
+.spin { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* v2.0.2 UI 修正 */
+.seg-btn .seg-sub { display: block; font-size: 11px; font-weight: 600; white-space: nowrap; opacity: .85; }
+.members-ed .chips { margin-bottom: 10px; row-gap: 8px; }
+.members-ed > .row.gap { margin-top: 4px; }
+.members-ed .presets { margin-top: 10px; }
+.calc-keys .ck { min-height: 54px; width: 100%; }
+.ck.ck-paren { color: var(--sub); }
+.day-tab { position: relative; }
+.today-mark { display: inline-block; font-style: normal; font-size: 9.5px; font-weight: 800; background: #16a34a; color: #fff; border-radius: 6px; padding: 0 5px; margin-left: 4px; vertical-align: 2px; }
+.pay-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 9px 10px; margin-bottom: 6px; cursor: pointer; }
+.pay-row .grow { display: flex; flex-direction: column; }
+.pay-row .chev { color: var(--sub); font-size: 18px; margin-left: 4px; }
+.mv-img { display: flex; align-items: center; justify-content: center; max-height: 72vh; }
+.mv-img img { max-height: 72vh; width: auto; max-width: 100%; }
+.mv-video { aspect-ratio: auto; max-height: 72vh; width: 100%; }
+
+/* v2.0.2 ビジュアルのレイアウト（比率は枠の中に収めて中央） */
+.vcell { min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; container-type: size; }
+.vcell .vimg.fillc, .vcell .vimg.empty:not(.fixed) { width: 100%; height: 100%; }
+.vcell .vimg.fixed { aspect-ratio: var(--r); width: min(100cqw, calc(100cqh * var(--r))); height: auto; }
+.vis-tools { display: flex; gap: 6px; justify-content: center; }
+.vis-tools .btn { background: transparent; color: #e7e5e4; border-color: #57534e; }
+
+/* v2.0.2 場所ごとのセクション */
+.group-mode { margin: 6px 0; } .group-mode .seg { margin: 0; flex: 1; } .group-mode .seg-btn { padding: 5px 4px; font-size: 12px; }
+.place-sec { margin-top: 8px; }
+.place-head { display: flex; align-items: center; gap: 6px; width: 100%; border: none; background: var(--muted-bg); border-radius: 8px; padding: 7px 9px; font-weight: 700; font-size: 13px; text-align: left; cursor: pointer; }
+.place-head .arrow { color: var(--sub); width: 14px; }
+
 </style>
 </head>
 <body>
@@ -373,7 +406,7 @@ img.iout { width: 31%; margin: 1%; border-radius: 6px; }
 // 本体が起動しなかった時に、原因（エラーの文面と行番号・スクリプトが欠けていないか）を画面に出す。
 // 開発者ツールが無い iPhone でも原因が分かるようにするため
 (function () {
-  var TB = window.__TB = { started: false, errors: [], expectLen: 296495, expectHash: 'a83b84dd', version: '2.0.1', built: '2026-11-26 07:44 JST' };
+  var TB = window.__TB = { started: false, errors: [], expectLen: 311020, expectHash: '2d3ecb9c', version: '2.0.2', built: '2026-11-26 10:00 JST' };
   function fnv(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
   function scriptCheck() {
@@ -476,7 +509,7 @@ img.iout { width: 31%; margin: 1%; border-radius: 6px; }
 // ============================================================================
 // 01 ユーティリティ・定数
 // ============================================================================
-const APP_VERSION = '2.0.1';
+const APP_VERSION = '2.0.2';
 
 const VEHICLES = {
   car:   { label: '車',       icon: '🚗' },
@@ -919,13 +952,22 @@ const MockServer = (() => {
     },
     async mediaMeta({ ids }) {
       const meta = {};
-      ids.forEach(id => { const f = MockMedia.get(id); meta[id] = f ? { id, name: f.name, mimeType: f.mimeType, size: f.size, takenAt: f.takenAt || '', hasThumbnail: !!f.thumb, videoReady: /^video/.test(f.mimeType), durationMs: /^video/.test(f.mimeType) ? 30000 : null } : { id, hasThumbnail: false }; });
+      ids.forEach(id => {
+        const f = MockMedia.get(id);
+        const g = f && String(f.name).match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);   // デモ用：ファイル名の @緯度,経度 を GPS とみなす
+        meta[id] = f ? { id, name: f.name, mimeType: f.mimeType, size: f.size, takenAt: f.takenAt || '', hasThumbnail: !!f.thumb, videoReady: /^video/.test(f.mimeType), durationMs: /^video/.test(f.mimeType) ? 30000 : null, lat: g ? Number(g[1]) : null, lng: g ? Number(g[2]) : null } : { id, hasThumbnail: false };
+      });
       return { ok: true, meta };
     },
     async mediaThumbs({ ids }) {
       const thumbs = {};
       ids.forEach(id => { const f = MockMedia.get(id); thumbs[id] = { meta: f ? { id, hasThumbnail: !!f.thumb, videoReady: /^video/.test(f.mimeType || ''), durationMs: /^video/.test(f.mimeType || '') ? 30000 : null } : { id }, thumb: f && f.thumb ? f.thumb : '' }; });
       return { ok: true, thumbs };
+    },
+    async placeNames({ points }) {
+      const names = {};
+      (points || []).forEach(p => { names[p.k || (Number(p.lat).toFixed(3) + ',' + Number(p.lng).toFixed(3))] = 'デモ地点（' + Number(p.lat).toFixed(2) + '）'; });
+      return { ok: true, names };
     },
     async mediaTrash({ fileId }) { MockMedia.remove(fileId); return { ok: true }; },
     async translateTitle({ text }) {
@@ -1059,7 +1101,7 @@ function newTrip(o) {
     media: [],                // 写真・動画 [{id,fileId,kind,name,size,mimeType,takenAt,date,dateSource,spotId,itemId,favorite,cover,comment,createdAt,...}]
     albums: [],               // 外部アルバム URL（複数・タイトル付き。M6）
     coverLink: '',            // 代表写真のリンク指定（任意）
-    visual: { dayPicks: {}, coverMediaId: '' }
+    visual: { dayPicks: {}, coverMediaId: '', ratio: 'fill', defaultCount: 'auto', dayCount: {} }
   };
   t.region = t.region || detectRegion(t);
   if (!t.members.some(m => m.isMe) && t.members.length) t.members[0].isMe = true;
@@ -1284,6 +1326,9 @@ function migrateTrip(t) {
   if (!t.region) t.region = detectRegion(t);
   if (!t.visual) t.visual = { dayPicks: {}, coverMediaId: '' };
   if (!t.visual.dayPicks) t.visual.dayPicks = {};
+  if (!t.visual.dayCount) t.visual.dayCount = {};
+  if (!t.visual.ratio) t.visual.ratio = 'fill';
+  if (!t.visual.defaultCount) t.visual.defaultCount = 'auto';
   return t;
 }
 
@@ -2177,7 +2222,7 @@ function openCalculator(input) {
   const keys = ['C', '⌫', '(', ')', '7', '8', '9', '÷', '4', '5', '6', '×', '1', '2', '3', '−', '0', '00', '.', '+'];
   openModal(`<div class="calc">
     <div class="calc-expr" id="calcExpr"></div><div class="calc-res" id="calcRes"></div>
-    <div class="calc-keys">${keys.map(k => `<button class="ck ${/[÷×−+]/.test(k) ? 'op' : ''} ${k === 'C' ? 'clr' : ''}" data-k="${k}">${k}</button>`).join('')}</div>
+    <div class="calc-keys">${keys.map(k => `<button class="ck ${/[÷×−+]/.test(k) ? 'ck-op' : ''} ${k === 'C' ? 'ck-clr' : ''} ${/[()]/.test(k) ? 'ck-paren' : ''}" data-k="${k}">${k}</button>`).join('')}</div>
     <button class="btn primary block" id="calcOk">＝ この金額にする</button></div>`, {
     title: '🧮 電卓', cls: 'calc-modal',
     onMount(body) {
@@ -2311,7 +2356,7 @@ ACT.pickFilter = (el) => {
   $$('.seg-btn', el.parentNode).forEach(b => b.classList.toggle('on', b === el));
   $('#pkList', topModalBody()).innerHTML = m.data.listHTML();
 };
-ACT.pickReload = async () => { await loadSpots(true); const m = topModal(); if (m && m.data.listHTML) $('#pkList', topModalBody()).innerHTML = m.data.listHTML(); };
+ACT.pickReload = async (el) => { if (el) { el.disabled = true; el.innerHTML = '<span class="spin"></span>'; } await loadSpots(true); if (el) { el.disabled = false; el.textContent = '↻'; } toast(S.spotsState === 'ok' ? 'スポット帳を読み直しました' : 'スポット帳につながりません：' + S.spotsError, { ms: 5000 }); const m = topModal(); if (m && m.data.listHTML) $('#pkList', topModalBody()).innerHTML = m.data.listHTML(); };
 ACT.pickSpot = (el) => {
   const m = topModal(); const { trip, target } = m.data;
   const sp = S.spots[el.dataset.id];
@@ -2702,7 +2747,7 @@ function openTripEditor(trip, preset) {
     <label>タイトル<span class="req">必須</span></label><input id="teTitle" value="${esc(t.title === '新しい旅' && isNew ? '' : t.title)}" placeholder="例：淡路島ドライブ">
     <label>日程</label><div><div class="row gap"><input type="date" id="teStart" value="${esc(t.startDate || '')}"><span>〜</span><input type="date" id="teEnd" value="${esc(t.endDate || '')}"></div>
       <div class="muted small">未定のままなら「検討中」。日付を入れると「計画中」へ自動で進みます。開始日＝終了日で日帰り</div></div>
-    <label>モード<span class="req">必須</span></label>${segHTML('teMode', [{ v: 'shiori', l: '📒 しおり（工程を決める）' }, { v: 'list', l: '📝 リスト（行きたい所だけ）' }], t.mode, 'segPick')}
+    <label>モード<span class="req">必須</span></label>${segHTML('teMode', [{ v: 'shiori', l: '📒 しおり<small class="seg-sub">（工程を決める）</small>' }, { v: 'list', l: '📝 リスト<small class="seg-sub">（行きたい所だけ）</small>' }], t.mode, 'segPick')}
     <label>メンバー<span class="req">必須</span></label>${membersEditorHTML(t.members)}
     <label>行き先エリア</label><input id="teArea" value="${esc(t.area)}" placeholder="例：淡路島">
     <label>国内／海外</label><div><select id="teRegion"><option value="auto" ${!t.regionManual ? 'selected' : ''}>自動（今は${detectRegion(t) === 'overseas' ? '海外' : '国内'}）</option><option value="domestic" ${t.regionManual && t.region === 'domestic' ? 'selected' : ''}>国内</option><option value="overseas" ${t.regionManual && t.region === 'overseas' ? 'selected' : ''}>海外</option></select>
@@ -2837,7 +2882,7 @@ function renderPlan(trip) {
   const hidden = trip.items.filter(i => i.hiddenTime);
   if (isShiori && hidden.length) h += `<div class="info-box small">🕘 リストモードに切り替えた時の時刻を ${hidden.length}件 保持しています。<button class="btn sm" data-act="restoreAllTimes">すべて元の時刻に戻す</button></div>`;
   if (days.length) {
-    h += `<div class="day-tabs">${days.map((d, i) => `<button class="day-tab ${d === day ? 'on' : ''} ${d === todayStr() ? 'today' : ''}" data-act="pickDay" data-d="${d}">${i + 1}日目<br><span>${fmtDate(d)}</span></button>`).join('')}</div>`;
+    h += `<div class="day-tabs">${days.map((d, i) => `<button class="day-tab ${d === day ? 'on' : ''}" data-act="pickDay" data-d="${d}">${i + 1}日目${d === todayStr() ? '<em class="today-mark">今日</em>' : ''}<br><span>${fmtDate(d)}</span></button>`).join('')}</div>`;
   } else {
     h += `<div class="info-box small">日程が未定です。日付を入れると工程（1日目／2日目）を組めます。 <button class="btn sm" data-act="tripEdit">日程を入れる</button></div>`;
   }
@@ -2875,7 +2920,12 @@ function renderPlan(trip) {
   if (S.spotsState === 'error') h += `<div class="warn-box small">スポット帳に接続できません（${esc(S.spotsError)}）。名前は追加時点の控えで表示しています。<button class="btn sm" data-act="reloadSpots">再接続</button></div>`;
   return h;
 }
-ACT.reloadSpots = () => loadSpots(true);
+// 再接続：押したことが分かるように進行中を表示し、結果をトーストで知らせる
+ACT.reloadSpots = async (el) => {
+  if (el) { el.disabled = true; el.innerHTML = '<span class="spin"></span> 接続中…'; }
+  await loadSpots(true);
+  toast(S.spotsState === 'ok' ? 'スポット帳につながりました（' + Object.keys(S.spots).length + '件）' : 'まだつながりません：' + S.spotsError, { ms: 6000 });
+};
 ACT.pickDay = (el) => { S.ui.shioriDay[S.curTripId] = el.dataset.d; mapSig = ''; render(); };
 ACT.toggleListZone = () => { S.ui.listCollapsed = !S.ui.listCollapsed; render(); };
 ACT.toggleDoneZone = () => { S.ui.doneCollapsed = !S.ui.doneCollapsed; render(); };
@@ -3973,7 +4023,8 @@ function renderRecord(trip) {
     <input type="file" id="mediaPick" accept="image/*,video/*" multiple style="display:none">
     ${albumsHTML(trip)}
     ${trip.driveFolderName ? `<div class="muted small">保存先：Drive「${esc(trip.driveFolderName)}」</div>` : ''}
-    ${queueHTML(trip)}`;
+    ${queueHTML(trip)}
+    ${trip.media.length ? `<div class="row gap group-mode"><span class="muted small">場所ごとに分ける</span>${segHTML('gm', [{ v: 'auto', l: '自動' }, { v: 'on', l: 'する' }, { v: 'off', l: 'しない' }], groupModeOf(trip), 'groupMode')}</div>` : ''}`;
   const { by, unset } = mediaByDay(trip);
   days.forEach((d, i) => {
     const list = by[d];
@@ -3983,13 +4034,13 @@ function renderRecord(trip) {
     h += `<div class="card day-sec"><div class="row between day-head" data-act="dayToggle" data-k="${key}">
         <b>${closed ? '▶' : '▼'} ${i + 1}日目 ${fmtDateFull(d)}</b><span class="muted small">${np ? '📷' + np : ''} ${nv ? '🎬' + nv : ''}</span></div>
       ${closed ? '' : `<textarea rows="3" data-change="recDay" data-d="${d}" placeholder="この日の出来事・感想">${esc(rec.days[d] || '')}</textarea>
-        ${mediaGridHTML(trip, list)}
+        ${mediaSectionHTML(trip, list, d)}
         <button class="btn sm mt" data-act="mediaAdd" data-date="${d}">＋ この日に写真・動画</button>`}</div>`;
   });
   if (unset.length || !days.length) {
     h += `<div class="card day-sec"><div class="row between"><b>📂 日付未設定</b><span class="muted small">${unset.length}件</span></div>
       <div class="muted small">撮影日時が取れない・日程の外のものはここに入ります。タップして日付を変えると日別に移ります</div>
-      ${mediaGridHTML(trip, unset)}</div>`;
+      ${mediaSectionHTML(trip, unset, 'unset')}</div>`;
   }
 
   h += `<div class="section-title">✅ この旅で「行った」にしたスポット（${visited.length}）</div>`;
@@ -4003,7 +4054,7 @@ function renderRecord(trip) {
   const settled = settlementComplete(trip);
   h += `<div class="card ${rec.done ? 'ok-card' : ''}"><label class="check big"><input type="checkbox" data-change="recDone" ${rec.done ? 'checked' : ''}> 記録完了</label>
     <div class="muted small">精算の全件完了（${settled ? '✅ 済' : '未'}）と記録完了が揃うと、ホームに「完了にできます」が出ます</div></div>`;
-  setTimeout(() => loadThumbs(document.getElementById('page-record')), 0);
+  setTimeout(() => { loadThumbs(document.getElementById('page-record')); ensureMediaGeo(trip); }, 0);
   return h;
 }
 ACT.dayToggle = (el) => { S.ui.dayClosed = S.ui.dayClosed || {}; S.ui.dayClosed[el.dataset.k] = !S.ui.dayClosed[el.dataset.k]; render(); };
@@ -4021,6 +4072,7 @@ ON_CHANGE.recDone = (el) => {
 // ============================================================================
 ACT.openSettings = () => {
   const st = S.settings;
+  PAY_EDIT = null;   // 開くたびに保存済みの内容から編集を始める
   openModal(`<div class="set-sec"><div class="b">👤 基本</div><div class="form-grid">
       <label>自分の名前</label><input id="stMe" value="${esc(st.myName)}">
       <label>自宅（出発地）</label><input id="stHomeName" value="${esc(st.home.name)}">
@@ -4030,7 +4082,7 @@ ACT.openSettings = () => {
     </div></div>
     <div class="set-sec"><div class="b">👥 メンバーのプリセット</div><div id="stPresets">${(st.memberPresets || []).map(presetRowHTML).join('')}</div>
       <button class="btn sm" data-act="stPresetAdd">＋ プリセット</button><div class="muted small">名前は「、」区切り</div></div>
-    <div class="set-sec"><div class="b">💳 支払方法と家計簿のカテゴリー</div><div id="stPays">${(st.payMethods || []).map(payRowHTML).join('')}</div>
+    <div class="set-sec"><div class="b">💳 支払方法と家計簿のカテゴリー</div><div id="stPays">${payListHTML()}</div>
       <button class="btn sm" data-act="stPayAdd">＋ 支払方法</button>
       <div class="muted small">「カード」にした支払方法は、家計簿へ引落額（全額）＋割り勘分の収入の2本で送ります。カテゴリーは家計簿アプリの「カテゴリー」名と同じにしてください</div></div>
     <div class="set-sec"><div class="b">📒 家計簿連携</div><div class="form-grid">
@@ -4060,11 +4112,47 @@ ACT.openSettings = () => {
     { title: '⚙️ 設定', full: true });
 };
 function presetRowHTML(p) { return `<div class="row gap set-row" data-pid="${esc(p.id)}"><input class="pr-name" value="${esc(p.name)}" placeholder="名前（例：家族）"><input class="pr-mem grow" value="${esc((p.members || []).join('、'))}" placeholder="メンバー"><button class="op" data-act="stRowDel">✕</button></div>`; }
+// 誤タップで消えないよう、一覧には削除ボタンを置かない（行をタップ → 編集画面 → 削除は確認つき）
+let PAY_EDIT = null;
+function payListHTML() {
+  PAY_EDIT = PAY_EDIT || clone(S.settings.payMethods || []);
+  return PAY_EDIT.map((p, i) => `<button class="pay-row" data-act="payEdit" data-i="${i}">
+    <span class="grow"><b>${esc(p.name || '（名前なし）')}</b><span class="muted small">家計簿：${esc(p.kakeiboCategory || '未設定')}</span></span>
+    ${p.isCard ? '<span class="tag">カード</span>' : ''}${p.id === 'cash' || p.isCash ? '<span class="tag gray">現金</span>' : ''}<span class="chev">›</span></button>`).join('');
+}
+ACT.payEdit = (el) => openPayEditor(Number(el.dataset.i));
+function openPayEditor(i) {
+  const isNew = i < 0;
+  const p = isNew ? { id: uid('pm'), name: '', kakeiboCategory: '', isCard: false, isCash: false } : PAY_EDIT[i];
+  openModal(`<div class="form-grid">
+      <label>支払方法</label><input id="peName" value="${esc(p.name)}" placeholder="例：三井住友ゴールド(NL)">
+      <label>家計簿カテゴリー</label><input id="peCat" value="${esc(p.kakeiboCategory)}" placeholder="家計簿アプリのカテゴリー名">
+      <label>種類</label><div class="row gap wrap"><label class="check"><input type="checkbox" id="peCard" ${p.isCard ? 'checked' : ''}> カード（引落額＋割り勘分の2本で送る）</label>
+        <label class="check"><input type="checkbox" id="peCash" ${p.id === 'cash' || p.isCash ? 'checked' : ''} ${p.id === 'cash' ? 'disabled' : ''}> 現金</label></div>
+    </div>
+    <button class="btn primary block mt" data-act="peSave">決定</button>
+    ${!isNew && p.id !== 'cash' ? '<button class="btn danger block mt" data-act="peDel">この支払方法を削除…</button>' : ''}
+    <div class="muted small mt">ここでの変更は、設定画面の［設定を保存］で確定します</div>`, { title: isNew ? '＋ 支払方法' : '💳 支払方法の編集', data: { i, p, isNew } });
+}
+ACT.peSave = () => {
+  const b = topModalBody(); const { i, p, isNew } = topModal().data;
+  const name = $('#peName', b).value.trim();
+  if (!name) return toast('支払方法の名前を入れてください');
+  Object.assign(p, { name, kakeiboCategory: $('#peCat', b).value.trim(), isCard: $('#peCard', b).checked, isCash: p.id === 'cash' || $('#peCash', b).checked });
+  if (isNew) PAY_EDIT.push(p);
+  closeModal(); $('#stPays').innerHTML = payListHTML();
+};
+ACT.peDel = async () => {
+  const { i, p } = topModal().data;
+  if (!(await confirmDialog('支払方法「' + p.name + '」を削除しますか？\n（設定画面の［設定を保存］を押すまでは確定しません）'))) return;
+  PAY_EDIT.splice(i, 1);
+  closeModal(); $('#stPays').innerHTML = payListHTML();
+};
 function payRowHTML(p) { return `<div class="row gap set-row wrap" data-payid="${esc(p.id)}"><input class="pm-name" value="${esc(p.name)}" placeholder="支払方法"><input class="pm-cat grow" value="${esc(p.kakeiboCategory)}" placeholder="家計簿カテゴリー"><label class="check"><input type="checkbox" class="pm-card" ${p.isCard ? 'checked' : ''}>カード</label><label class="check"><input type="checkbox" class="pm-cash" ${p.id === 'cash' || p.isCash ? 'checked' : ''} ${p.id === 'cash' ? 'disabled' : ''}>現金</label>${p.id === 'cash' ? '' : '<button class="op" data-act="stRowDel">✕</button>'}</div>`; }
 function packTmplRowHTML(p) { return `<div class="row gap set-row"><select class="pt-cat">${PACK_CATS.map(c => `<option ${c === p.cat ? 'selected' : ''}>${c}</option>`).join('')}</select><input class="pt-name grow" value="${esc(p.name)}"><select class="pt-when">${[['all', 'いつも'], ['stay', '泊まり'], ['multi', '2泊以上'], ['car', '車旅'], ['train', '電車'], ['plane', '飛行機'], ['ferry', 'フェリー']].map(([v, l]) => `<option value="${v}" ${p.when === v ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="op" data-act="stRowDel">✕</button></div>`; }
 ACT.stRowDel = (el) => el.closest('.set-row').remove();
 ACT.stPresetAdd = () => $('#stPresets').insertAdjacentHTML('beforeend', presetRowHTML({ id: uid('pr'), name: '', members: [S.settings.myName] }));
-ACT.stPayAdd = () => $('#stPays').insertAdjacentHTML('beforeend', payRowHTML({ id: uid('pm'), name: '', kakeiboCategory: '', isCard: false }));
+ACT.stPayAdd = () => openPayEditor(-1);
 ACT.stPackAdd = () => $('#stPack').insertAdjacentHTML('beforeend', packTmplRowHTML({ cat: 'その他', name: '', when: 'all' }));
 ACT.stHomeHere = () => { if (!S.geo) return toast('現在地を取得できていません'); $('#stHomeLat').value = S.geo.lat.toFixed(6); $('#stHomeLng').value = S.geo.lng.toFixed(6); };
 ACT.stSave = () => {
@@ -4075,7 +4163,8 @@ ACT.stSave = () => {
   st.dayStart = $('#stDayStart', b).value || '09:00';
   st.departMarginMin = num($('#stMargin', b).value, 10);
   st.memberPresets = $$('#stPresets .set-row', b).map(r => ({ id: r.dataset.pid, name: $('.pr-name', r).value.trim(), members: $('.pr-mem', r).value.split(/[、,，\s]+/).map(s => s.trim()).filter(Boolean) })).filter(p => p.name && p.members.length);
-  st.payMethods = $$('#stPays .set-row', b).map(r => ({ id: r.dataset.payid, name: $('.pm-name', r).value.trim(), kakeiboCategory: $('.pm-cat', r).value.trim(), isCard: $('.pm-card', r).checked, isCash: $('.pm-cash', r).checked })).filter(p => p.name);
+  st.payMethods = clone(PAY_EDIT || st.payMethods).filter(p => p.name);
+  PAY_EDIT = null;
   if (!st.payMethods.some(p => p.id === 'cash')) st.payMethods.unshift({ id: 'cash', name: '現金', kakeiboCategory: 'その他（支出）', isCard: false, isCash: true });
   st.kakeiboUsage = $('#stKkUsage', b).value.trim();
   st.kakeiboBudget = $('#stKkBudget', b).value.trim();
@@ -4316,20 +4405,24 @@ ACT.sgCreate = (el) => {
 //   ・ファイル本体は端末に抱えない（M2）。再読み込み後はファイルを選び直して途中から再開
 // ============================================================================
 const MQ_KEY = 'tabicho_media_queue_v1';
-const MQ = { items: [], files: new Map(), running: false, wake: null };
+const MQ = { items: [], files: new Map(), running: false, wake: null, xhr: null, lastProgress: 0, lastSave: 0 };
 const MQ_LABEL = { held: '保留中', waiting: '送信待ち', sending: '送信中', failed: '失敗', done: '完了' };
+function mqLabel(q) { return q.state === 'failed' && q.interrupted ? '失敗（中断）' : q.state === 'done' ? (q.viaGas ? '完了（GAS 経由）' : '完了（直接）') : MQ_LABEL[q.state]; }
 
 function mqLoad() {
   try { MQ.items = JSON.parse(localStorage.getItem(MQ_KEY) || '[]'); } catch (e) { MQ.items = []; }
   // 前回「送信中」のまま閉じたもの＝エラーによる中断（意図的な保留とは分ける）
   MQ.items.forEach(q => {
-    if (q.state === 'sending' || q.state === 'waiting') { q.state = 'failed'; q.error = '中断されました（画面を閉じた・スリープなど）。ファイルを選び直すと途中から再開します'; }
+    if (q.state === 'sending' || q.state === 'waiting') { q.state = 'failed'; q.interrupted = true; q.error = '中断されました（アプリを閉じた・再読み込みなど）。［ファイルを選び直す］で' + (q.offset ? fmtBytes(q.offset) + 'から' : '') + '続きを送れます'; }
   });
   const dayAgo = Date.now() - 24 * 3600e3;
   MQ.items = MQ.items.filter(q => !(q.state === 'done' && q.doneAt < dayAgo));
   mqSave();
 }
-function mqSave() { try { localStorage.setItem(MQ_KEY, JSON.stringify(MQ.items)); } catch (e) {} }
+function mqSave() { MQ.lastSave = Date.now(); try { localStorage.setItem(MQ_KEY, JSON.stringify(MQ.items)); } catch (e) {} }
+// 画面を離れる時に保存（iOS はアプリ終了の合図をくれないことがあるため、送信中は進み具合もこまめに保存する）
+window.addEventListener('pagehide', mqSave);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') mqSave(); });
 function mqCounts(tripId) {
   const c = { held: 0, waiting: 0, sending: 0, failed: 0, done: 0 };
   MQ.items.filter(q => !tripId || q.tripId === tripId).forEach(q => { c[q.state] = (c[q.state] || 0) + 1; });
@@ -4425,9 +4518,22 @@ function xhrPutMedia(uri, body, contentRange, onProgress) {
     x.onerror = () => done('network');
     x.ontimeout = () => done('timeout');
     x.onabort = () => done('abort');
+    MQ.xhr = x; MQ.lastProgress = Date.now();
     x.send(body);
   });
 }
+// 止まった送信の見張り：iOS は裏に回したアプリの通信を、エラーも出さずに止めたままにすることがある。
+// 画面に出ている間に一定時間進まなければ打ち切り、受信済み位置を確かめて続きから送る
+const STALL_MS = window.__TABICHO_STALL_MS || 45000;  // テストでだけ短くできる
+setInterval(() => {
+  if (!MQ.xhr || document.visibilityState !== 'visible') return;
+  if (Date.now() - MQ.lastProgress > STALL_MS) { const x = MQ.xhr; MQ.xhr = null; try { x.abort(); } catch (e) {} }
+}, 5000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !MQ.xhr) return;
+  // 戻ってきた時点で、少しでも止まっていれば打ち切って確かめ直す
+  if (Date.now() - MQ.lastProgress > 8000) { const x = MQ.xhr; MQ.xhr = null; try { x.abort(); } catch (e) {} }
+});
 function rangeEnd(r) { const m = String(r || '').match(/bytes=0-(\d+)/); return m ? Number(m[1]) + 1 : 0; }
 async function blobB64(blob) {
   const buf = new Uint8Array(await blob.arrayBuffer());
@@ -4465,7 +4571,11 @@ async function uploadOne(q, file) {
     while (!fileObj) {
       const start = q.offset, end = Math.min(start + chunk, file.size) - 1;
       const r = isMockUri(q.sessionUri) ? await mockPut(q, file, start, end)
-        : await xhrPutMedia(q.sessionUri, file.slice(start, end + 1), `bytes ${start}-${end}/${file.size}`, (n) => { q.progress = (start + n) / file.size; updateQueueRow(q); });
+        : await xhrPutMedia(q.sessionUri, file.slice(start, end + 1), `bytes ${start}-${end}/${file.size}`, (n) => {
+          q.progress = (start + n) / file.size; MQ.lastProgress = Date.now(); updateQueueRow(q);
+          if (Date.now() - MQ.lastSave > 2000) mqSave();
+        });
+      MQ.xhr = null;
       if (r.status === 308) {
         q.offset = r.range ? rangeEnd(r.range) : (await queryUploaded(q, file)).offset;
         q.progress = q.offset / file.size; retries = 0; mqUpdate(q);
@@ -4476,7 +4586,7 @@ async function uploadOne(q, file) {
         const res = await api('mediaSmallUpload', { folder: tripFolderInfo(trip), name: file.name, mimeType: file.type || 'image/jpeg', b64: await blobB64(file) });
         rememberFolder(trip, res); fileObj = res.file; q.viaGas = true;
       } else {
-        if (++retries > 6) throw new Error('送信できませんでした（' + (r.error || 'HTTP ' + r.status) + '）');
+        if (++retries > 6) throw new Error('送信できませんでした（' + (r.error || 'HTTP ' + r.status) + '）。［再試行］で続きから送れます');
         q.error = `通信が切れました。再開を待っています（${retries}回目）`; mqUpdate(q);
         await sleepWake(Math.min(30000, 1500 * Math.pow(2, retries)));
         q.offset = (await queryUploaded(q, file)).offset;
@@ -4504,8 +4614,9 @@ async function registerMedia(trip, q, fileObj) {
   const m = {
     id: uid('md'), fileId: fileObj.id, kind: q.kind, name: fileObj.name || q.name, size: Number(fileObj.size) || q.size,
     mimeType: fileObj.mimeType || q.type, takenAt: taken, date, dateSource: q.date ? 'manual' : taken ? 'exif' : 'upload',
-    spotId: q.spotId || '', itemId: q.itemId || '', favorite: false, cover: false, comment: '', createdAt: new Date().toISOString(),
-    width: meta.width || null, height: meta.height || null, durationMs: meta.durationMs || null, hasThumbnail: !!meta.hasThumbnail, videoReady: !!meta.videoReady
+    spotId: q.spotId || '', itemId: q.itemId || '', favorite: false, cover: false, comment: '', createdAt: new Date().toISOString(), via: q.viaGas ? 'gas' : 'direct',
+    width: meta.width || null, height: meta.height || null, durationMs: meta.durationMs || null, hasThumbnail: !!meta.hasThumbnail, videoReady: !!meta.videoReady,
+    lat: meta.lat != null ? meta.lat : null, lng: meta.lng != null ? meta.lng : null, geoChecked: true
   };
   const t = S.trips[trip.id] || trip;
   t.media.push(m);
@@ -4532,6 +4643,14 @@ function coverMedia(trip) {
 function coverOrFirst(trip) { return coverMedia(trip) || mediaSorted(trip.media.filter(m => m.kind === 'photo'))[0] || null; }
 function isImageUrl(u) { return /^https?:\/\/\S+\.(jpe?g|png|webp|gif|heic)(\?|$)/i.test(u || '') || /googleusercontent\.com\//.test(u || ''); }
 function driveUrl(m) { return 'https://drive.google.com/file/d/' + encodeURIComponent(m.fileId) + '/view'; }
+// 実比率：Drive の幅・高さがあればそれ、無ければ（読み込み後の画像なら自然な比率に任せる）
+function mediaAspectStyle(m, fallback) {
+  const w = Number(m.width), h = Number(m.height);
+  const r = w > 0 && h > 0 ? w / h : fallback;
+  if (!r) return '';
+  // 縦長でも画面からはみ出さないよう、高さの上限（72vh）から幅を決める
+  return `aspect-ratio:${r};width:min(100%, calc(72vh * ${r.toFixed(4)}));margin:0 auto;display:block;`;
+}
 function previewState(m) {
   if (m.kind !== 'video') return 'ok';
   if (m.videoReady) return 'ok';
@@ -4565,7 +4684,7 @@ function mediaTileInner(m, size) {
 // サムネイルが取れない時の代替表示（メディア自体は残す）
 function mediaFallback(m) {
   const p = previewState(m);
-  if (m.kind === 'video') return `<div class="mt-fb">🎬<small>${p === 'none' ? 'プレビュー不可' : p === 'processing' ? 'Drive で処理中' : ''}${m.durationMs ? ' ' + fmtDurMs(m.durationMs) : ''}</small><small>${esc(m.name)}</small></div>`;
+  if (m.kind === 'video') return `<div class="mt-fb">🎬<small>${p === 'none' ? 'プレビューなし' : p === 'processing' ? 'Drive で処理中' : ''}${m.durationMs ? ' ' + fmtDurMs(m.durationMs) : ''}</small><small>${esc(m.name)}</small></div>`;
   return `<div class="mt-fb">📷<small>${esc(m.name)}</small></div>`;
 }
 let thumbLoading = false;
@@ -4620,7 +4739,7 @@ function updateMediaMeta(fileId, meta) {
     const m = (t.media || []).find(x => x.fileId === fileId);
     if (!m) continue;
     let ch = false;
-    [['durationMs', meta.durationMs], ['videoReady', meta.videoReady], ['hasThumbnail', meta.hasThumbnail], ['width', meta.width], ['height', meta.height]].forEach(([k, v]) => {
+    [['durationMs', meta.durationMs], ['videoReady', meta.videoReady], ['hasThumbnail', meta.hasThumbnail], ['width', meta.width], ['height', meta.height], ['lat', meta.lat], ['lng', meta.lng]].forEach(([k, v]) => {
       if (v != null && m[k] !== v) { m[k] = v; ch = true; }
     });
     if (meta.missing && !m.missing) { m.missing = true; ch = true; }
@@ -4679,22 +4798,29 @@ ACT.albumSave = () => {
   closeModal(); commitTrip(t);
 };
 
+function otherTripsQueueHTML(trip) {
+  const others = {};
+  MQ.items.filter(q => q.tripId !== trip.id && q.state !== 'done' && S.trips[q.tripId]).forEach(q => { (others[q.tripId] = others[q.tripId] || []).push(q); });
+  const ids = Object.keys(others);
+  if (!ids.length) return '';
+  return `<div class="alert warn small">ほかの旅にも未送信・失敗があります：${ids.map(id => `<button class="chip-btn" data-act="tripSelect" data-id="${id}">${esc(S.trips[id].title)}（${others[id].length}）</button>`).join('')}</div>`;
+}
 function queueHTML(trip) {
   const list = MQ.items.filter(q => q.tripId === trip.id);
-  if (!list.length) return '';
+  if (!list.length) return otherTripsQueueHTML(trip);
   const c = mqCounts(trip.id);
   const sendable = list.filter(q => q.state === 'held' || q.state === 'failed');
   return `<div class="card mq"><b>📤 アップロード</b><div class="muted small">保留 ${c.held}・送信待ち ${c.waiting}・送信中 ${c.sending}・失敗 ${c.failed}・完了 ${c.done}</div>
     ${list.map(queueRowHTML).join('')}
     <div class="row gap wrap mt">${sendable.length ? `<button class="btn sm primary" data-act="mqSendAll">保留・失敗をすべて送る（${sendable.length}）</button>` : ''}
     ${c.done ? '<button class="btn sm ghost" data-act="mqClearDone">完了を消す</button>' : ''}</div>
-    <input type="file" id="mqRepick" style="display:none"></div>`;
+    <input type="file" id="mqRepick" style="display:none"></div>` + otherTripsQueueHTML(trip);
 }
 function queueRowHTML(q) {
   const need = (q.state === 'held' || q.state === 'failed') && !MQ.files.has(q.qid);
   const pct = Math.round((q.progress || 0) * 100);
   return `<div class="mq-row st-${q.state}" id="mq-${q.qid}">
-    <div class="row between"><span class="grow">${q.kind === 'video' ? '🎬' : '📷'} ${esc(q.name)} <span class="muted small">${fmtBytes(q.size)}</span></span><span class="mq-st">${MQ_LABEL[q.state]}</span></div>
+    <div class="row between"><span class="grow">${q.kind === 'video' ? '🎬' : '📷'} ${esc(q.name)} <span class="muted small">${fmtBytes(q.size)}</span></span><span class="mq-st">${mqLabel(q)}</span></div>
     ${q.state === 'sending' || (q.state === 'failed' && q.offset) ? `<div class="progress"><div style="width:${pct}%"></div></div>` : ''}
     ${q.error ? `<div class="small ${q.state === 'failed' ? 'ng' : 'warn'}">${esc(q.error)}</div>` : ''}
     ${q.state === 'held' ? '<div class="muted small">意図的に保留しています（送るボタンで送信）</div>' : ''}
@@ -4708,7 +4834,7 @@ function updateQueueRow(q) {
   if (!el) return;
   const pct = Math.round((q.progress || 0) * 100);
   const bar = el.querySelector('.progress > div');
-  if (bar && q.state === 'sending') { bar.style.width = pct + '%'; const st = el.querySelector('.mq-st'); if (st) st.textContent = MQ_LABEL[q.state] + ' ' + pct + '%'; return; }
+  if (bar && q.state === 'sending') { bar.style.width = pct + '%'; const st = el.querySelector('.mq-st'); if (st) st.textContent = mqLabel(q) + ' ' + pct + '%'; return; }
   el.outerHTML = queueRowHTML(q);
 }
 ACT.mqSendAll = () => { const t = curTrip(); mqSend(MQ.items.filter(q => q.tripId === t.id).map(q => q.qid)); };
@@ -4766,6 +4892,78 @@ function mediaSpotName(trip, m) {
   return '';
 }
 
+// ---------------------------------------------------------------------------
+// v2.0.2 場所ごとに振り分け（写真の位置情報＝GPS。写真が多い日は自動で、記録タブの切替で常に／しないも選べる）
+// ---------------------------------------------------------------------------
+const PLACE_RADIUS_KM = 0.7;
+function placeClusters(list) {
+  const cl = [];
+  list.forEach(m => {
+    if (m.lat == null || m.lng == null) return;
+    let best = null, bd = 1e9;
+    cl.forEach(c => { const d = haversineKm(c, m); if (d < bd) { bd = d; best = c; } });
+    if (best && bd <= PLACE_RADIUS_KM) { best.items.push(m); best.lat = sum(best.items, x => x.lat) / best.items.length; best.lng = sum(best.items, x => x.lng) / best.items.length; }
+    else cl.push({ lat: m.lat, lng: m.lng, items: [m] });
+  });
+  return cl;
+}
+function placeKey(c) { return c.lat.toFixed(3) + ',' + c.lng.toFixed(3); }
+// 場所の名前：近く（1km 以内）の工程・スポット → 逆ジオコーディングの名前 → 座標
+function placeLabel(trip, c) {
+  let best = null, bd = 1.0;
+  trip.items.forEach(it => { const p = itemPoint(trip, it); if (!p) return; const d = haversineKm(p, c); if (d < bd) { bd = d; best = p.name; } });
+  if (best) return best;
+  const n = (trip.placeNames || {})[placeKey(c)];
+  return n || ('緯度 ' + c.lat.toFixed(3) + '・経度 ' + c.lng.toFixed(3) + ' 付近');
+}
+function groupModeOf(trip) { return (trip.record && trip.record.groupByPlace) || 'auto'; }
+function shouldGroup(trip, list) {
+  const mode = groupModeOf(trip);
+  if (mode === 'off') return false;
+  const hasGeo = list.some(m => m.lat != null);
+  if (!hasGeo) return false;
+  return mode === 'on' || list.length >= 7;
+}
+function mediaSectionHTML(trip, list, dayKey) {
+  if (!shouldGroup(trip, list)) return mediaGridHTML(trip, list);
+  const cl = placeClusters(list).sort((a, b) => ((a.items[0].takenAt || '') < (b.items[0].takenAt || '') ? -1 : 1));
+  const noGeo = list.filter(m => m.lat == null || m.lng == null);
+  S.ui.placeClosed = S.ui.placeClosed || {};
+  const sec = (key, title, items) => {
+    const k = dayKey + '|' + key; const closed = S.ui.placeClosed[k];
+    return `<div class="place-sec"><button class="place-head" data-act="placeToggle" data-k="${esc(k)}"><span class="arrow">${closed ? '▶' : '▼'}</span><span class="grow">${title}</span><span class="muted small">${items.length}</span></button>${closed ? '' : mediaGridHTML(trip, items)}</div>`;
+  };
+  return cl.map(c => sec(placeKey(c), '📍 ' + esc(placeLabel(trip, c)), mediaSorted(c.items))).join('') + (noGeo.length ? sec('nogeo', '📷 位置情報なし', noGeo) : '');
+}
+ACT.placeToggle = (el) => { S.ui.placeClosed = S.ui.placeClosed || {}; S.ui.placeClosed[el.dataset.k] = !S.ui.placeClosed[el.dataset.k]; render(); };
+ACT.groupMode = (el) => { const t = curTrip(); t.record.groupByPlace = el.dataset.v; commitTrip(t); };
+// 位置情報の取り込み（v2.0.1 以前に入れた写真は後から読む）と、場所の名前の取得
+let geoLoading = false;
+async function ensureMediaGeo(trip) {
+  if (geoLoading || !trip) return;
+  geoLoading = true;
+  try {
+    const need = trip.media.filter(m => m.kind === 'photo' && !m.geoChecked && !m.missing).slice(0, 30);
+    if (need.length) {
+      const r = await api('mediaMeta', { ids: need.map(m => m.fileId) });
+      need.forEach(m => { const x = (r.meta || {})[m.fileId] || {}; m.geoChecked = true; if (x.lat != null) { m.lat = x.lat; m.lng = x.lng; } });
+      commitTrip(trip, { silent: true });
+    }
+    trip.placeNames = trip.placeNames || {};
+    const { by, unset } = mediaByDay(trip);
+    const all = Object.values(by).concat([unset]);
+    const unnamed = [];
+    all.forEach(list => { if (!shouldGroup(trip, list)) return; placeClusters(list).forEach(c => { const k = placeKey(c); if (trip.placeNames[k] == null && placeLabel(trip, c).startsWith('緯度')) unnamed.push({ k, lat: c.lat, lng: c.lng }); }); });
+    if (unnamed.length) {
+      const r = await api('placeNames', { points: unnamed.slice(0, 20) });
+      Object.keys(r.names || {}).forEach(k => { trip.placeNames[k] = r.names[k]; });
+      commitTrip(trip, { silent: true });
+    }
+    if (need.length || unnamed.length) render();
+  } catch (e) { /* 位置情報は任意 */ }
+  geoLoading = false;
+}
+
 function mediaGridHTML(trip, list) {
   if (!list.length) return '';
   return `<div class="mgrid">${list.map(m => `<button class="mtile ${m.kind}" data-act="mediaOpen" data-id="${m.id}">
@@ -4783,9 +4981,9 @@ function openMediaViewer(trip, id) {
   if (!m) return;
   const p = previewState(m);
   const stage = m.kind === 'video'
-    ? (p === 'ok' ? `<iframe class="mv-video" src="https://drive.google.com/file/d/${encodeURIComponent(m.fileId)}/preview" allow="autoplay; fullscreen" allowfullscreen></iframe>`
-      : `<div class="mv-none">🎬<div>${p === 'none' ? 'この形式は Drive でプレビューできません（ProRes など）' : 'Drive で動画を処理中です。しばらくすると再生できます'}</div><a class="btn" href="${driveUrl(m)}" target="_blank" rel="noopener">Drive で開く</a></div>`)
-    : `<div class="mv-img" id="mvImg"><div class="muted">読み込み中…</div></div>`;
+    ? (p === 'ok' ? `<iframe class="mv-video" style="${mediaAspectStyle(m, 16 / 9)}" src="https://drive.google.com/file/d/${encodeURIComponent(m.fileId)}/preview" allow="autoplay; fullscreen" allowfullscreen></iframe>`
+      : `<div class="mv-none">🎬<div>${p === 'none' ? 'アプリ内でのプレビューが用意されていません。ProRes など Drive が変換しない形式の可能性があります。Drive で開くと再生できることがあります' : 'Drive で動画を処理中です。しばらくすると再生できます'}</div><a class="btn" href="${driveUrl(m)}" target="_blank" rel="noopener">Drive で開く</a></div>`)
+    : `<div class="mv-img" id="mvImg" style="${mediaAspectStyle(m)}"><div class="muted">読み込み中…</div></div>`;
   openModal(`${stage}
     <div class="row gap wrap mt">
       <button class="btn sm ${m.favorite ? 'primary' : ''}" data-act="mvFav">${m.favorite ? '★ お気に入り' : '☆ お気に入り'}</button>
@@ -4797,7 +4995,7 @@ function openMediaViewer(trip, id) {
       <label>スポット</label><select id="mvSpot">${spotOptionsHTML(trip, mediaSpotValue(m))}</select>
       <label>コメント</label><textarea id="mvComment" rows="2">${esc(m.comment || '')}</textarea>
     </div>
-    <div class="muted small">${esc(m.name)}・${fmtBytes(m.size)}${m.width ? '・' + m.width + '×' + m.height : ''}${m.durationMs ? '・' + fmtDurMs(m.durationMs) : ''}</div>
+    <div class="muted small">${esc(m.name)}・${fmtBytes(m.size)}${m.width ? '・' + m.width + '×' + m.height : ''}${m.durationMs ? '・' + fmtDurMs(m.durationMs) : ''}${m.via ? '・送信：' + (m.via === 'gas' ? 'GAS 経由' : '直接') : ''}</div>
     <button class="btn primary block mt" data-act="mvSave">保存</button>`,
     { title: (m.kind === 'video' ? '🎬 ' : '📷 ') + esc(m.name), full: true, data: { trip, m },
       onMount: async (body) => {
@@ -4918,13 +5116,34 @@ function visualCover(trip) {
   return (id && trip.media.find(m => m.id === id)) || coverMedia(trip) || null;   // 代表 → お気に入り → 未設定なら書き出し時に選ぶ（V4）
 }
 // 日別ページの写真：お気に入り → 代表 → 時系列 の優先で自動選出（V3）。手動の差し替えを優先
+// v2.0.2 テンプレートのパラメータ：日別の写真の枚数（1〜4・おまかせ＝最大3）と写真の比率
+const VRATIOS = [['fill', '枠いっぱい'], ['1:1', '1:1'], ['4:5', '4:5'], ['3:4', '3:4'], ['2:3', '2:3'], ['3:2', '3:2'], ['16:9', '16:9']];
+function ratioValue(r) { if (!r || r === 'fill') return null; const [a, b] = r.split(':').map(Number); return a / b; }
+function dayCountSetting(trip, date) { const v = (trip.visual.dayCount || {})[date] || trip.visual.defaultCount || 'auto'; return v; }
+function dayLimit(trip, date) { const v = dayCountSetting(trip, date); return v === 'auto' ? 3 : clamp(Number(v) || 3, 1, 4); }
 function visualDayPicks(trip, date) {
   const dayList = mediaByDay(trip).by[date] || [];
+  const limit = dayLimit(trip, date);
   const manual = (trip.visual.dayPicks[date] || []).map(id => trip.media.find(m => m.id === id)).filter(Boolean);
   const auto = vPhotoPool(dayList.filter(m => m.favorite)).concat(vPhotoPool(dayList.filter(m => m.cover && !m.favorite)), vPhotoPool(mediaSorted(dayList.filter(m => !m.favorite && !m.cover))));
-  const out = manual.slice(0, 3);
-  auto.forEach(m => { if (out.length < 3 && !out.includes(m)) out.push(m); });
+  const out = manual.slice(0, limit);
+  auto.forEach(m => { if (out.length < limit && !out.includes(m)) out.push(m); });
   return out;
+}
+// 写真の置き場所（1枚＝全面、2枚＝上下、3枚＝大1＋小2、4枚＝2×2）
+function layoutCells(n, X, Y, W, H, gap) {
+  if (n <= 1) return [[X, Y, W, H]];
+  if (n === 2) { const h = (H - gap) / 2; return [[X, Y, W, h], [X, Y + h + gap, W, h]]; }
+  if (n === 3) { const h1 = H * 0.6, w2 = (W - gap) / 2, h2 = H - h1 - gap; return [[X, Y, W, h1], [X, Y + h1 + gap, w2, h2], [X + w2 + gap, Y + h1 + gap, w2, h2]]; }
+  const w = (W - gap) / 2, h = (H - gap) / 2; return [[X, Y, w, h], [X + w + gap, Y, w, h], [X, Y + h + gap, w, h], [X + w + gap, Y + h + gap, w, h]];
+}
+// 比率を決めた時は、枠の中にその比率の箱を収めて中央に置く
+function fitRatio(cell, r) {
+  const [x, y, w, h] = cell;
+  if (!r) return cell;
+  let bw = w, bh = w / r;
+  if (bh > h) { bh = h; bw = h * r; }
+  return [x + (w - bw) / 2, y + (h - bh) / 2, bw, bh];
 }
 function dayPlace(trip, date) {
   const names = [];
@@ -4967,7 +5186,7 @@ ACT.openVisual = async () => {
   renderVisual();
   ensureTitleEn(trip).then(() => { if (VIS.trip === trip) renderVisual(); });
 };
-ACT.closeVisual = () => { const el = document.getElementById('visual'); if (el) el.className = 'vis'; document.body.classList.remove('modal-open'); VIS.trip = null; };
+ACT.closeVisual = () => { const el = document.getElementById('visual'); if (el) { el.className = 'vis'; el.innerHTML = ''; } document.body.classList.remove('modal-open'); VIS.trip = null; };
 ACT.visMode = (el) => { VIS.mode = el.dataset.v; renderVisual(); };
 function renderVisual() {
   const el = document.getElementById('visual'); if (!el || !VIS.trip) return;
@@ -4977,6 +5196,7 @@ function renderVisual() {
     <button class="icon-btn light" data-act="visTitleEdit" title="英語タイトル">Aa</button></div>
     ${VIS.mode === 'book' ? `<div class="vis-stage" id="visStage">${VIS.pages.map((p, i) => `<div class="vpage ${i === VIS.i ? 'cur' : i < VIS.i ? 'gone' : 'next'}" data-i="${i}">${pageHTML(t, p)}</div>`).join('')}</div>
       <div class="vis-nav"><button class="btn" data-act="visPrev" ${VIS.i === 0 ? 'disabled' : ''}>‹</button><span>${VIS.i + 1} / ${VIS.pages.length}</span><button class="btn" data-act="visNext" ${VIS.i >= VIS.pages.length - 1 ? 'disabled' : ''}>›</button></div>
+      <div class="vis-tools"><button class="btn sm" data-act="visLayout">⚙ レイアウト</button>${t.visual.coverMediaId ? '<button class="btn sm" data-act="visCoverReset">表紙の選択を解除</button>' : ''}</div>
       <div class="vis-hint">写真をタップで差し替え ／ 横にスワイプでページをめくる</div>`
       : instaPanelHTML(t)}`;
   if (VIS.mode === 'book') { bindSwipe(document.getElementById('visStage')); loadVisImages(el); }
@@ -4994,9 +5214,11 @@ function pageHTML(t, p) {
       <div class="vmeta">${esc(enRange(t))}${t.area ? ' ・ ' + esc(t.area) : ''}</div>${t.record.comment ? `<div class="vline">${esc(String(t.record.comment).split('\n')[0].slice(0, 60))}</div>` : ''}</div></div>`;
   }
   const picks = visualDayPicks(t, p.date);
-  const n = Math.max(1, Math.min(3, picks.length || 1));
+  const want = dayCountSetting(t, p.date);
+  const n = want === 'auto' ? Math.max(1, Math.min(3, picks.length || 1)) : dayLimit(t, p.date);
+  const r = ratioValue(t.visual.ratio);
   return `<div class="vday"><div class="vday-head"><span class="vdaynum">DAY ${p.index}</span><span class="vdate">${esc(enDate(p.date))}</span></div>
-    <div class="vgrid n${n}">${Array.from({ length: n }, (_, k) => vImg(picks[k], 's' + k, `data-act="visPickDay" data-d="${p.date}" data-k="${k}"`)).join('')}</div>
+    <div class="vgrid n${n}">${Array.from({ length: n }, (_, k) => `<div class="vcell s${k}">${vImg(picks[k], r ? 'fixed' : 'fillc', `data-act="visPickDay" data-d="${p.date}" data-k="${k}" ${r ? `style="--r:${r.toFixed(4)}"` : ''}`)}</div>`).join('')}</div>
     <div class="vplace">${esc(dayPlace(t, p.date))}</div><div class="vline">${esc(dayLine(t, p.date))}</div></div>`;
 }
 async function loadVisImages(root) {
@@ -5047,6 +5269,31 @@ ACT.visPickDay = (el) => {
     commitTrip(t, { silent: true }); renderVisual();
   });
 };
+// 表紙の選択を解除：代表 → お気に入りの先頭 の優先順位に戻す
+ACT.visCoverReset = () => {
+  const t = VIS.trip; t.visual.coverMediaId = ''; commitTrip(t, { silent: true });
+  const c = visualCover(t);
+  toast(c ? '表紙の選択を解除しました（' + (c.cover ? '代表写真' : 'お気に入りの先頭') + 'を使います）' : '表紙の選択を解除しました（代表・お気に入りが無いので書き出し時に選びます）');
+  renderVisual();
+};
+// レイアウト：写真の比率（全ページ共通）、日別の枚数（全日の既定・この日だけ）
+ACT.visLayout = () => {
+  const t = VIS.trip; const p = VIS.pages[VIS.i] || {};
+  const cnt = (cur, name) => `<div class="seg">${[['auto', 'おまかせ'], ['1', '1枚'], ['2', '2枚'], ['3', '3枚'], ['4', '4枚']].map(([v, l]) => `<button class="seg-btn ${String(cur) === v ? 'on' : ''}" data-act="segPick" data-name="${name}" data-v="${v}">${l}</button>`).join('')}</div>`;
+  openModal(`<div class="b">写真の比率</div><div class="chips">${VRATIOS.map(([v, l]) => `<label class="chip"><input type="radio" name="vlRatio" value="${v}" ${t.visual.ratio === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
+    <div class="b mt">日別ページの写真の枚数（全日の既定）</div>${cnt(t.visual.defaultCount || 'auto', 'vlDefault')}
+    ${p.type === 'day' ? `<div class="b mt">この日（${fmtDate(p.date)}）だけの枚数</div>${cnt((t.visual.dayCount || {})[p.date] || '', 'vlDay')}<button class="link-btn" data-act="vlDayClear">この日の指定をやめる（既定に従う）</button>` : ''}
+    <div class="muted small mt">旅帳モードと Instagram 書き出しの両方に使います。写真が足りない枠は「＋ 写真を選ぶ」になります</div>
+    <button class="btn primary block mt" data-act="vlSave">決定</button>`, { title: '⚙ レイアウト', data: { date: p.type === 'day' ? p.date : '' } });
+};
+ACT.vlDayClear = () => { $$('.seg-btn[data-name="vlDay"]', topModalBody()).forEach(b => b.classList.remove('on')); };
+ACT.vlSave = () => {
+  const t = VIS.trip; const b = topModalBody(); const { date } = topModal().data;
+  t.visual.ratio = ($$('input[name="vlRatio"]', b).find(x => x.checked) || {}).value || 'fill';
+  t.visual.defaultCount = segValue(b, 'vlDefault') || 'auto';
+  if (date) { const v = segValue(b, 'vlDay'); t.visual.dayCount = t.visual.dayCount || {}; if (v) t.visual.dayCount[date] = v; else delete t.visual.dayCount[date]; }
+  closeModal(); commitTrip(t, { silent: true }); renderVisual();
+};
 ACT.visTitleEdit = () => {
   const t = VIS.trip;
   openModal(`<div class="form-grid"><label>英語タイトル</label><input id="vtEn" value="${esc(t.titleEn || '')}" placeholder="${esc(displayTitleEn(t))}"></div>
@@ -5059,6 +5306,7 @@ ACT.vtSave = () => { const t = VIS.trip; t.titleEn = $('#vtEn', topModalBody()).
 function instaPanelHTML(t) {
   const needCover = !visualCover(t);
   return `<div class="insta">${needCover ? `<div class="alert warn">表紙の写真が決まっていません（代表・お気に入りなし）。<button class="btn sm" data-act="visPickCover">表紙を選ぶ</button></div>` : ''}
+    <div class="row gap wrap"><button class="btn sm" data-act="visLayout">⚙ レイアウト</button>${t.visual.coverMediaId ? '<button class="btn sm" data-act="visCoverReset">表紙の選択を解除</button>' : ''}</div>
     <div class="insta-previews">${VIS.pages.map((p, i) => `<canvas class="ipv" width="270" height="480" data-i="${i}"></canvas>`).join('')}</div>
     <button class="btn primary block mt" data-act="instaExport" ${needCover ? 'disabled' : ''}>📤 ${VIS.pages.length}枚を書き出す（1080×1920）</button>
     <div class="muted small">iPhone では共有シートから「画像を保存」で写真アプリに入ります</div><div id="instaOut"></div></div>`;
@@ -5115,10 +5363,11 @@ async function renderPageCanvas(t, p) {
   const picks = visualDayPicks(t, p.date);
   const imgs = await Promise.all(picks.map(mediaImage));
   const X = 80, Y = 320, Wd = W - 160, Hd = 1180;
+  const want = dayCountSetting(t, p.date);
+  const n = want === 'auto' ? Math.max(1, Math.min(3, imgs.length || 1)) : dayLimit(t, p.date);
+  const r = ratioValue(t.visual.ratio);
   ctx.save();
-  if (imgs.length <= 1) drawCoverFit(ctx, imgs[0], X, Y, Wd, Hd);
-  else if (imgs.length === 2) { drawCoverFit(ctx, imgs[0], X, Y, Wd, Hd / 2 - 12); drawCoverFit(ctx, imgs[1], X, Y + Hd / 2 + 12, Wd, Hd / 2 - 12); }
-  else { drawCoverFit(ctx, imgs[0], X, Y, Wd, Hd * 0.6); const w2 = Wd / 2 - 12; drawCoverFit(ctx, imgs[1], X, Y + Hd * 0.6 + 24, w2, Hd * 0.4 - 24); drawCoverFit(ctx, imgs[2], X + w2 + 24, Y + Hd * 0.6 + 24, w2, Hd * 0.4 - 24); }
+  layoutCells(n, X, Y, Wd, Hd, 24).forEach((cell, k) => { const [x, y, w, h] = fitRatio(cell, r); drawCoverFit(ctx, imgs[k], x, y, w, h); });
   ctx.restore();
   ctx.fillStyle = th.ink; ctx.font = `700 44px ${th.sans}`;
   wrapText(ctx, dayPlace(t, p.date), W - 160).slice(0, 2).forEach((l, i) => ctx.fillText(l, 80, 1600 + i * 58));
@@ -5128,13 +5377,16 @@ async function renderPageCanvas(t, p) {
   return c;
 }
 function canvasBlob(c) { return new Promise(r => c.toBlob(b => r(b), 'image/jpeg', 0.92)); }
-async function exportCanvases(canvases, baseName) {
+async function exportCanvases(canvases, baseName, fallbackTitle) {
   const files = [];
   for (let i = 0; i < canvases.length; i++) { const b = await canvasBlob(canvases[i]); files.push(new File([b], `${baseName}_${pad2(i + 1)}.jpg`, { type: 'image/jpeg' })); }
   if (navigator.canShare && navigator.canShare({ files })) {
     try { await navigator.share({ files, title: baseName }); return files; } catch (e) { if (e && e.name === 'AbortError') return files; }
   }
-  const out = document.getElementById('instaOut') || topModalBody();
+  // 共有シートが使えない時だけ、画像を並べて保存してもらう
+  let out = document.getElementById('instaOut');
+  if (out && !out.offsetParent) out = null;   // 閉じた画面に残った受け皿は使わない
+  if (!out) { openModal('<div id="instaOut"></div>', { title: fallbackTitle || '書き出した画像' }); out = document.getElementById('instaOut'); }
   if (out) out.innerHTML = '<div class="muted small mt">長押しで保存、またはリンクからダウンロードできます</div>' + files.map(f => { const u = URL.createObjectURL(f); return `<a href="${u}" download="${esc(f.name)}"><img class="iout" src="${u}" alt=""></a>`; }).join('');
   return files;
 }
@@ -5288,8 +5540,7 @@ ACT.yearExport = async (el) => {
   try {
     await ensureFonts();
     const c = await renderYearCanvas(el.dataset.y);
-    openModal(`<div id="instaOut"></div>`, { title: el.dataset.y + ' 年別レポート' });
-    await exportCanvases([c], 'TABICHO_' + el.dataset.y);
+    await exportCanvases([c], 'TABICHO_' + el.dataset.y, el.dataset.y + ' 年別レポート');
   } catch (e) { toast('書き出しに失敗：' + e.message); }
   el.disabled = false;
 };

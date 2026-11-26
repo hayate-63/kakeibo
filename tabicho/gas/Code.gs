@@ -1,5 +1,5 @@
 /**
- * 旅帳 サーバ（Google Apps Script） v2.0
+ * 旅帳 サーバ（Google Apps Script） v2.0.2
  * v2.0：写真・動画の Drive 保存（メディア）、ビジュアルモード、コレクション
  *
  * ウェブアプリとしてデプロイ：実行ユーザー＝自分／アクセス＝自分のみ（推奨）
@@ -164,17 +164,51 @@ API.saveSettings = function (a) {
 // ---------------------------------------------------------------------------
 // スポット帳 GAS v3.1 の API をそのまま使う（スポット帳側の変更は不要）
 //   POST { action, pin, ... } → { status: 'ok', ... } / { status: 'error', code, message }
+// ---------------------------------------------------------------------------
+// v2.0.2：ほかの GAS ウェブアプリ（スポット帳・家計簿）を呼ぶ共通部品
+//  ・URL が GAS の /exec か確かめる（アプリの画面の URL や /dev を入れた時に原因をはっきり出す）
+//  ・同じ Google アカウントの GAS へは旅帳の OAuth トークンを付けて呼ぶ
+//    （相手のデプロイが「全員」でなくても、持ち主が同じなら通るように。トークンは script.google.com にだけ送る）
+//  ・JSON でない応答（ログイン画面・GAS のエラー画面・別のサイト）を見分けて、何が返ってきたかを伝える
+// ---------------------------------------------------------------------------
+function checkExecUrl_(label, prop, url) {
+  var u = String(url || '').trim();
+  if (!u) throw new Error(label + 'の URL（' + prop + '）が未設定です');
+  if (!/^https:\/\/script\.google\.com\/(a\/macros\/[^\/]+|macros)\/s\/[\w-]+\/(exec|dev)(\?.*)?$/.test(u)) {
+    throw new Error(prop + ' が ' + label + ' GAS のウェブアプリ URL ではありません（今の値：' + u.slice(0, 60) + (u.length > 60 ? '…' : '') +
+      '）。GAS エディタの「デプロイ → デプロイを管理」に出る https://script.google.com/macros/s/…/exec を入れてください');
+  }
+  if (/\/dev(\?|$)/.test(u)) throw new Error(prop + ' がテスト用の URL（…/dev）です。「デプロイを管理」の …/exec の URL を入れてください');
+  return u;
+}
+function describeNonJson_(label, res) {
+  var code = res.getResponseCode();
+  var text = String(res.getContentText() || '');
+  var h = res.getAllHeaders ? res.getAllHeaders() : {};
+  var ctype = String(h['Content-Type'] || h['content-type'] || '');
+  var title = (text.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '';
+  var plain = text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  var why;
+  if (/accounts\.google\.com|ServiceLogin|Sign in|ログイン/i.test(text)) why = 'Google のログイン画面が返りました。' + label + ' GAS のデプロイの「アクセスできるユーザー」が「全員」になっていないか、別の Google アカウントのものです';
+  else if (/Script function not found|スクリプト関数が見つかりません/i.test(text)) why = label + ' GAS に doPost がありません（URL が別のプロジェクトのもの？）';
+  else if (/need permission|権限が必要|アクセス権がありません|You need access/i.test(text)) why = label + ' GAS へのアクセス権がありません（デプロイの「アクセスできるユーザー」を確認）';
+  else if (/^(エラー|Error)$/i.test(title.trim()) || /TypeError|ReferenceError|SyntaxError|Exception:/.test(plain)) why = label + ' GAS の中でエラーが起きました：' + plain.slice(0, 160);
+  else why = label + ' が JSON ではない応答を返しました' + (title ? '（ページの題名：' + title.trim().slice(0, 60) + '）' : '');
+  return why + '［HTTP ' + code + (ctype ? '・' + ctype.split(';')[0] : '') + '・先頭：' + plain.slice(0, 80) + '］';
+}
+function webAppFetch_(label, url, opt) {
+  var o = Object.assign({ muteHttpExceptions: true, followRedirects: true }, opt || {});
+  o.headers = Object.assign({}, o.headers || {});
+  if (/^https:\/\/script\.google\.com\//.test(url)) o.headers.Authorization = 'Bearer ' + ScriptApp.getOAuthToken();
+  var res = UrlFetchApp.fetch(url, o);
+  try { return JSON.parse(res.getContentText()); }
+  catch (e) { throw new Error(describeNonJson_(label, res)); }
+}
 function spotcho_(action, payload) {
-  var url = prop_('SPOTCHO_URL');
-  if (!url) throw new Error('スポット帳のURL（SPOTCHO_URL）が未設定です');
+  var url = checkExecUrl_('スポット帳', 'SPOTCHO_URL', prop_('SPOTCHO_URL'));
   var body = { action: action, pin: prop_('SPOTCHO_PIN', '') };
   for (var k in payload) body[k] = payload[k];
-  var res = UrlFetchApp.fetch(url, {
-    method: 'post', contentType: 'text/plain;charset=utf-8', payload: JSON.stringify(body),
-    muteHttpExceptions: true, followRedirects: true
-  });
-  var j;
-  try { j = JSON.parse(res.getContentText()); } catch (e) { throw new Error('スポット帳の応答がJSONではありません（HTTP ' + res.getResponseCode() + '）。URLとデプロイのアクセス権を確認してください'); }
+  var j = webAppFetch_('スポット帳', url, { method: 'post', contentType: 'text/plain;charset=utf-8', payload: JSON.stringify(body) });
   if (j.status !== 'ok') {
     if (j.code === 'AUTH') throw new Error('スポット帳のPINが一致しません（SPOTCHO_PIN をスポット帳GASの SECRET_PIN と同じにしてください）');
     var err = new Error(j.message || ('スポット帳：' + (j.code || j.status)));
@@ -323,15 +357,12 @@ API.placeHours = function (a) {
 //      別の端末が先に保存していたら（conflict）読み直してやり直す
 // ---------------------------------------------------------------------------
 function kakeiboCfg_() {
-  var url = prop_('KAKEIBO_URL'), pin = prop_('KAKEIBO_PIN');
-  if (!url) throw new Error('家計簿のURL（KAKEIBO_URL）が未設定です');
+  var url = checkExecUrl_('家計簿', 'KAKEIBO_URL', prop_('KAKEIBO_URL')), pin = prop_('KAKEIBO_PIN');
   if (!pin) throw new Error('家計簿のPIN（KAKEIBO_PIN）が未設定です');
   return { url: url, pin: pin };
 }
 function kakeiboFetch_(url, opt) {
-  var res = UrlFetchApp.fetch(url, Object.assign({ muteHttpExceptions: true, followRedirects: true }, opt || {}));
-  var j;
-  try { j = JSON.parse(res.getContentText()); } catch (e) { throw new Error('家計簿の応答がJSONではありません（HTTP ' + res.getResponseCode() + '）。URLとデプロイのアクセス権を確認してください'); }
+  var j = webAppFetch_('家計簿', url, opt);
   if (j.status === 'unauthorized') throw new Error('家計簿のPINが一致しません（KAKEIBO_PIN を家計簿GASの SECRET_PIN と同じにしてください）');
   return j;
 }
@@ -701,7 +732,7 @@ API.testConnections = function () {
 var MEDIA_ROOT = '旅帳';
 var DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files';
 var DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files/';
-var MEDIA_FIELDS = 'id,name,mimeType,size,createdTime,hasThumbnail,trashed,imageMediaMetadata(time,width,height,rotation),videoMediaMetadata(width,height,durationMillis)';
+var MEDIA_FIELDS = 'id,name,mimeType,size,createdTime,hasThumbnail,trashed,imageMediaMetadata(time,width,height,rotation,location),videoMediaMetadata(width,height,durationMillis)';
 
 function childFolder_(parent, name) {
   var it = parent.getFoldersByName(name);
@@ -784,7 +815,9 @@ function mediaMetaOut_(j) {
     id: j.id, name: j.name, mimeType: j.mimeType, size: Number(j.size) || 0, createdTime: j.createdTime || '',
     takenAt: exifTime_(im.time), width: im.width || vm.width || null, height: im.height || vm.height || null,
     durationMs: vm.durationMillis ? Number(vm.durationMillis) : null, hasThumbnail: !!j.hasThumbnail,
-    videoReady: !!j.videoMediaMetadata, trashed: !!j.trashed
+    videoReady: !!j.videoMediaMetadata, trashed: !!j.trashed,
+    lat: im.location && im.location.latitude != null ? Number(im.location.latitude) : null,
+    lng: im.location && im.location.longitude != null ? Number(im.location.longitude) : null
   };
 }
 // メタ情報（撮影日時＝EXIF、動画の長さ、サムネイルの有無）
@@ -835,6 +868,36 @@ API.mediaThumbs = function (a) {
     if (out[id] && out[id].thumb) { try { cache.put('th:' + id + ':' + size, JSON.stringify(out[id]), 6 * 3600); } catch (e) { /* 100KB 超は入れない */ } }
   });
   return { ok: true, thumbs: out };
+};
+
+// v2.0.2：写真の場所の名前（逆ジオコーディング。例「洲本市 小路谷」）。同じ場所はキャッシュ
+API.placeNames = function (a) {
+  var cache = CacheService.getScriptCache();
+  var out = {};
+  (a.points || []).slice(0, 20).forEach(function (p) {
+    var key = Number(p.lat).toFixed(3) + ',' + Number(p.lng).toFixed(3);
+    var c = cache.get('pn:' + key);
+    if (c != null) { out[key] = c; return; }
+    var name = '';
+    try {
+      var r = Maps.newGeocoder().setLanguage('ja').reverseGeocode(Number(p.lat), Number(p.lng));
+      if (r.status === 'OK' && r.results.length) {
+        var pick = function (types) {
+          for (var i = 0; i < r.results.length; i++) {
+            var cs = r.results[i].address_components || [];
+            for (var j = 0; j < cs.length; j++) if (types.some(function (t) { return cs[j].types.indexOf(t) >= 0; })) return cs[j].long_name;
+          }
+          return '';
+        };
+        var poi = r.results.filter(function (x) { return (x.types || []).some(function (t) { return t === 'point_of_interest' || t === 'establishment' || t === 'tourist_attraction'; }); })[0];
+        name = poi ? (poi.address_components[0] || {}).long_name || '' : '';
+        if (!name) name = [pick(['locality']), pick(['sublocality_level_1', 'sublocality_level_2', 'neighborhood'])].filter(String).join(' ') || pick(['administrative_area_level_1', 'country']);
+      }
+    } catch (e) { name = ''; }
+    out[key] = name;
+    cache.put('pn:' + key, name, 21600);
+  });
+  return { ok: true, names: out };
 };
 
 // 旅帳でメディアを消したら Drive のファイルもゴミ箱へ（M4）

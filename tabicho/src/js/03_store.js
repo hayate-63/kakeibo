@@ -105,7 +105,7 @@ function newTrip(o) {
     media: [],                // 写真・動画 [{id,fileId,kind,name,size,mimeType,takenAt,date,dateSource,spotId,itemId,favorite,cover,comment,createdAt,...}]
     albums: [],               // 外部アルバム URL（複数・タイトル付き。M6）
     coverLink: '',            // 代表写真のリンク指定（任意）
-    visual: { dayPicks: {}, coverMediaId: '' }
+    visual: { dayPicks: {}, coverMediaId: '', ratio: 'fill', defaultCount: 'auto', dayCount: {} }
   };
   t.region = t.region || detectRegion(t);
   if (!t.members.some(m => m.isMe) && t.members.length) t.members[0].isMe = true;
@@ -330,6 +330,9 @@ function migrateTrip(t) {
   if (!t.region) t.region = detectRegion(t);
   if (!t.visual) t.visual = { dayPicks: {}, coverMediaId: '' };
   if (!t.visual.dayPicks) t.visual.dayPicks = {};
+  if (!t.visual.dayCount) t.visual.dayCount = {};
+  if (!t.visual.ratio) t.visual.ratio = 'fill';
+  if (!t.visual.defaultCount) t.visual.defaultCount = 'auto';
   return t;
 }
 

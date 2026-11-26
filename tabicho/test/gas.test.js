@@ -29,7 +29,7 @@ const ctx = {
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null, setProperty: (k, v) => { props[k] = v; } }) },
   SpreadsheetApp: { create: () => ss, openById: () => ss },
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-  HtmlService: {}, CacheService: {}, Utilities: {}, Maps: {}, UrlFetchApp: {}, CalendarApp: {}, ContentService: {}
+  HtmlService: {}, CacheService: {}, Utilities: {}, Maps: {}, UrlFetchApp: {}, CalendarApp: {}, ContentService: {}, ScriptApp: { getOAuthToken: () => 'TOKEN' }
 };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'gas', 'Code.gs'), 'utf8'), ctx);
@@ -65,7 +65,7 @@ const kk = { rev: 5, logs: [{ id: 100, amount: -500, date: '2026-11-01', memo: '
     { name: 'イオンカード', mode: '支出', bigCat: '支出（クレカ）', closeDay: 10, payMonthOffset: 1, payDay: 2, active: 0 },
     { name: '割り勘', mode: '収入', bigCat: '精算・移動', closeDay: 0, payMonthOffset: 0, payDay: 0, active: 1 }
   ], holidays: ['2026-11-03', '2026-11-23'] };
-props.KAKEIBO_URL = 'https://kakeibo/exec'; props.KAKEIBO_PIN = '9999';
+props.KAKEIBO_URL = 'https://script.google.com/macros/s/KAKEIBO_ID/exec'; props.KAKEIBO_PIN = '9999';
 ctx.Utilities.sleep = () => {};
 ctx.UrlFetchApp.fetch = (url, opt) => {
   const reply = (o) => ({ getContentText: () => JSON.stringify(o), getResponseCode: () => 200 });
@@ -126,7 +126,7 @@ const sp = {
   ],
   visits: [], seq: 0, calls: []
 };
-props.SPOTCHO_URL = 'https://spotcho/exec'; props.SPOTCHO_PIN = 'Abc!9';
+props.SPOTCHO_URL = 'https://script.google.com/macros/s/SPOTCHO_ID/exec'; props.SPOTCHO_PIN = 'Abc!9';
 const spotStatus = (id) => { const s = sp.spots.find(x => x.id === id); s.status = sp.visits.some(v => v.spot_id === id) ? '行った' : '行きたい'; return s; };
 ctx.UrlFetchApp.fetch = (url, opt) => {
   const reply = (o) => ({ getContentText: () => JSON.stringify(o), getResponseCode: () => 200 });
@@ -202,6 +202,26 @@ assert.deepStrictEqual(h.hours.SP0001[0], [['18:00', '26:00']]);
 assert.ok(!('SP0002' in h.hours));
 props.SPOTCHO_PIN = 'bad';
 assert.ok(/PINが一致しません/.test(call('spotList', {}).error));
+// v2.0.2：URL の確認と、JSON でない応答の見分け
+props.SPOTCHO_PIN = 'Abc!9';
+const realFetch = ctx.UrlFetchApp.fetch;
+let lastHeaders = null;
+ctx.UrlFetchApp.fetch = (url, opt) => { lastHeaders = (opt || {}).headers || {}; return realFetch(url, opt); };
+call('spotList', {});
+assert.strictEqual(lastHeaders.Authorization, 'Bearer TOKEN', 'script.google.com へはトークンを付ける');
+props.SPOTCHO_URL = 'https://spot-book.netlify.app/';
+assert.ok(/ウェブアプリ URL ではありません.*netlify/.test(call('spotList', {}).error), 'アプリの画面の URL を入れた時');
+props.SPOTCHO_URL = 'https://script.google.com/macros/s/SPOTCHO_ID/dev';
+assert.ok(/テスト用の URL/.test(call('spotList', {}).error));
+props.SPOTCHO_URL = 'https://script.google.com/macros/s/SPOTCHO_ID/exec';
+const html = (body, title) => ({ getResponseCode: () => 200, getContentText: () => `<html><head><title>${title || ''}</title></head><body>${body}</body></html>`, getAllHeaders: () => ({ 'Content-Type': 'text/html; charset=utf-8' }) });
+ctx.UrlFetchApp.fetch = () => html('<a href="https://accounts.google.com/ServiceLogin">ログイン</a>', 'Google ドライブ');
+assert.ok(/ログイン画面.*全員/.test(call('spotList', {}).error), 'ログイン画面');
+ctx.UrlFetchApp.fetch = () => html('<div>TypeError: Cannot read properties of undefined (reading \'getRange\')</div>', 'エラー');
+assert.ok(/GAS の中でエラー.*TypeError/.test(call('spotList', {}).error), 'GAS のエラー画面');
+ctx.UrlFetchApp.fetch = () => html('<div>Script function not found: doPost</div>', 'Error');
+assert.ok(/doPost がありません/.test(call('spotList', {}).error));
+ctx.UrlFetchApp.fetch = realFetch;
 console.log('spotcho integration tests passed');
 
 // ---- v2.0 メディア：偽の Drive で フォルダ作成・セッション発行・サムネイル・ゴミ箱・英題 ----
@@ -238,7 +258,7 @@ console.log('spotcho integration tests passed');
       if (/^https:\/\/lh3/.test(r.url)) return { getResponseCode: () => 200, getBlob: () => ({ getContentType: () => 'image/jpeg', getBytes: () => [1, 2, 3] }) };
       const id = r.url.match(/files\/([^?]+)/)[1];
       if (id === 'GONE') return { getResponseCode: () => 404, getContentText: () => '' };
-      return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ id, name: 'IMG.HEIC', mimeType: 'image/heic', size: '100', hasThumbnail: true, thumbnailLink: 'https://lh3/thumb=s220', imageMediaMetadata: { time: '2026:11:24 10:23:11', width: 4032, height: 3024 } }) };
+      return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ id, name: 'IMG.HEIC', mimeType: 'image/heic', size: '100', hasThumbnail: true, thumbnailLink: 'https://lh3/thumb=s220', imageMediaMetadata: { time: '2026:11:24 10:23:11', width: 4032, height: 3024, location: { latitude: 34.5636, longitude: 135.0103 } } }) };
     })
   };
   props.SPOTCHO_PIN = props.SPOTCHO_PIN || 'x';
@@ -272,5 +292,9 @@ console.log('spotcho integration tests passed');
   assert.strictEqual(call('translateTitle', { text: '北海道旅行' }).text, 'Hokkaido trip');
   const sm = call('mediaSmallUpload', { folder, name: 's.jpg', mimeType: 'image/jpeg', b64: Buffer.from('abc').toString('base64') });
   assert.strictEqual(sm.file.id, 'SMALL1'); assert.strictEqual(sm.folderId, s1.folderId);
+  assert.strictEqual(mm.meta.F1.lat, 34.5636); assert.strictEqual(mm.meta.F1.lng, 135.0103);
+  ctx.Maps = { newGeocoder: () => ({ setLanguage() { return this; }, reverseGeocode: () => ({ status: 'OK', results: [{ types: ['street_address'], address_components: [{ long_name: '夢舞台', types: ['sublocality_level_1'] }, { long_name: '淡路市', types: ['locality'] }] }] }) }) };
+  const pn = call('placeNames', { points: [{ lat: 34.5636, lng: 135.0103 }] });
+  assert.strictEqual(pn.names['34.564,135.010'], '淡路市 夢舞台');
   console.log('media API tests passed');
 })();

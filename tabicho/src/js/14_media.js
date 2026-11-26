@@ -6,20 +6,24 @@
 //   ・ファイル本体は端末に抱えない（M2）。再読み込み後はファイルを選び直して途中から再開
 // ============================================================================
 const MQ_KEY = 'tabicho_media_queue_v1';
-const MQ = { items: [], files: new Map(), running: false, wake: null };
+const MQ = { items: [], files: new Map(), running: false, wake: null, xhr: null, lastProgress: 0, lastSave: 0 };
 const MQ_LABEL = { held: '保留中', waiting: '送信待ち', sending: '送信中', failed: '失敗', done: '完了' };
+function mqLabel(q) { return q.state === 'failed' && q.interrupted ? '失敗（中断）' : q.state === 'done' ? (q.viaGas ? '完了（GAS 経由）' : '完了（直接）') : MQ_LABEL[q.state]; }
 
 function mqLoad() {
   try { MQ.items = JSON.parse(localStorage.getItem(MQ_KEY) || '[]'); } catch (e) { MQ.items = []; }
   // 前回「送信中」のまま閉じたもの＝エラーによる中断（意図的な保留とは分ける）
   MQ.items.forEach(q => {
-    if (q.state === 'sending' || q.state === 'waiting') { q.state = 'failed'; q.error = '中断されました（画面を閉じた・スリープなど）。ファイルを選び直すと途中から再開します'; }
+    if (q.state === 'sending' || q.state === 'waiting') { q.state = 'failed'; q.interrupted = true; q.error = '中断されました（アプリを閉じた・再読み込みなど）。［ファイルを選び直す］で' + (q.offset ? fmtBytes(q.offset) + 'から' : '') + '続きを送れます'; }
   });
   const dayAgo = Date.now() - 24 * 3600e3;
   MQ.items = MQ.items.filter(q => !(q.state === 'done' && q.doneAt < dayAgo));
   mqSave();
 }
-function mqSave() { try { localStorage.setItem(MQ_KEY, JSON.stringify(MQ.items)); } catch (e) {} }
+function mqSave() { MQ.lastSave = Date.now(); try { localStorage.setItem(MQ_KEY, JSON.stringify(MQ.items)); } catch (e) {} }
+// 画面を離れる時に保存（iOS はアプリ終了の合図をくれないことがあるため、送信中は進み具合もこまめに保存する）
+window.addEventListener('pagehide', mqSave);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') mqSave(); });
 function mqCounts(tripId) {
   const c = { held: 0, waiting: 0, sending: 0, failed: 0, done: 0 };
   MQ.items.filter(q => !tripId || q.tripId === tripId).forEach(q => { c[q.state] = (c[q.state] || 0) + 1; });
@@ -115,9 +119,22 @@ function xhrPutMedia(uri, body, contentRange, onProgress) {
     x.onerror = () => done('network');
     x.ontimeout = () => done('timeout');
     x.onabort = () => done('abort');
+    MQ.xhr = x; MQ.lastProgress = Date.now();
     x.send(body);
   });
 }
+// 止まった送信の見張り：iOS は裏に回したアプリの通信を、エラーも出さずに止めたままにすることがある。
+// 画面に出ている間に一定時間進まなければ打ち切り、受信済み位置を確かめて続きから送る
+const STALL_MS = window.__TABICHO_STALL_MS || 45000;  // テストでだけ短くできる
+setInterval(() => {
+  if (!MQ.xhr || document.visibilityState !== 'visible') return;
+  if (Date.now() - MQ.lastProgress > STALL_MS) { const x = MQ.xhr; MQ.xhr = null; try { x.abort(); } catch (e) {} }
+}, 5000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !MQ.xhr) return;
+  // 戻ってきた時点で、少しでも止まっていれば打ち切って確かめ直す
+  if (Date.now() - MQ.lastProgress > 8000) { const x = MQ.xhr; MQ.xhr = null; try { x.abort(); } catch (e) {} }
+});
 function rangeEnd(r) { const m = String(r || '').match(/bytes=0-(\d+)/); return m ? Number(m[1]) + 1 : 0; }
 async function blobB64(blob) {
   const buf = new Uint8Array(await blob.arrayBuffer());
@@ -155,7 +172,11 @@ async function uploadOne(q, file) {
     while (!fileObj) {
       const start = q.offset, end = Math.min(start + chunk, file.size) - 1;
       const r = isMockUri(q.sessionUri) ? await mockPut(q, file, start, end)
-        : await xhrPutMedia(q.sessionUri, file.slice(start, end + 1), `bytes ${start}-${end}/${file.size}`, (n) => { q.progress = (start + n) / file.size; updateQueueRow(q); });
+        : await xhrPutMedia(q.sessionUri, file.slice(start, end + 1), `bytes ${start}-${end}/${file.size}`, (n) => {
+          q.progress = (start + n) / file.size; MQ.lastProgress = Date.now(); updateQueueRow(q);
+          if (Date.now() - MQ.lastSave > 2000) mqSave();
+        });
+      MQ.xhr = null;
       if (r.status === 308) {
         q.offset = r.range ? rangeEnd(r.range) : (await queryUploaded(q, file)).offset;
         q.progress = q.offset / file.size; retries = 0; mqUpdate(q);
@@ -166,7 +187,7 @@ async function uploadOne(q, file) {
         const res = await api('mediaSmallUpload', { folder: tripFolderInfo(trip), name: file.name, mimeType: file.type || 'image/jpeg', b64: await blobB64(file) });
         rememberFolder(trip, res); fileObj = res.file; q.viaGas = true;
       } else {
-        if (++retries > 6) throw new Error('送信できませんでした（' + (r.error || 'HTTP ' + r.status) + '）');
+        if (++retries > 6) throw new Error('送信できませんでした（' + (r.error || 'HTTP ' + r.status) + '）。［再試行］で続きから送れます');
         q.error = `通信が切れました。再開を待っています（${retries}回目）`; mqUpdate(q);
         await sleepWake(Math.min(30000, 1500 * Math.pow(2, retries)));
         q.offset = (await queryUploaded(q, file)).offset;
@@ -194,8 +215,9 @@ async function registerMedia(trip, q, fileObj) {
   const m = {
     id: uid('md'), fileId: fileObj.id, kind: q.kind, name: fileObj.name || q.name, size: Number(fileObj.size) || q.size,
     mimeType: fileObj.mimeType || q.type, takenAt: taken, date, dateSource: q.date ? 'manual' : taken ? 'exif' : 'upload',
-    spotId: q.spotId || '', itemId: q.itemId || '', favorite: false, cover: false, comment: '', createdAt: new Date().toISOString(),
-    width: meta.width || null, height: meta.height || null, durationMs: meta.durationMs || null, hasThumbnail: !!meta.hasThumbnail, videoReady: !!meta.videoReady
+    spotId: q.spotId || '', itemId: q.itemId || '', favorite: false, cover: false, comment: '', createdAt: new Date().toISOString(), via: q.viaGas ? 'gas' : 'direct',
+    width: meta.width || null, height: meta.height || null, durationMs: meta.durationMs || null, hasThumbnail: !!meta.hasThumbnail, videoReady: !!meta.videoReady,
+    lat: meta.lat != null ? meta.lat : null, lng: meta.lng != null ? meta.lng : null, geoChecked: true
   };
   const t = S.trips[trip.id] || trip;
   t.media.push(m);
@@ -222,6 +244,14 @@ function coverMedia(trip) {
 function coverOrFirst(trip) { return coverMedia(trip) || mediaSorted(trip.media.filter(m => m.kind === 'photo'))[0] || null; }
 function isImageUrl(u) { return /^https?:\/\/\S+\.(jpe?g|png|webp|gif|heic)(\?|$)/i.test(u || '') || /googleusercontent\.com\//.test(u || ''); }
 function driveUrl(m) { return 'https://drive.google.com/file/d/' + encodeURIComponent(m.fileId) + '/view'; }
+// 実比率：Drive の幅・高さがあればそれ、無ければ（読み込み後の画像なら自然な比率に任せる）
+function mediaAspectStyle(m, fallback) {
+  const w = Number(m.width), h = Number(m.height);
+  const r = w > 0 && h > 0 ? w / h : fallback;
+  if (!r) return '';
+  // 縦長でも画面からはみ出さないよう、高さの上限（72vh）から幅を決める
+  return `aspect-ratio:${r};width:min(100%, calc(72vh * ${r.toFixed(4)}));margin:0 auto;display:block;`;
+}
 function previewState(m) {
   if (m.kind !== 'video') return 'ok';
   if (m.videoReady) return 'ok';
@@ -255,7 +285,7 @@ function mediaTileInner(m, size) {
 // サムネイルが取れない時の代替表示（メディア自体は残す）
 function mediaFallback(m) {
   const p = previewState(m);
-  if (m.kind === 'video') return `<div class="mt-fb">🎬<small>${p === 'none' ? 'プレビュー不可' : p === 'processing' ? 'Drive で処理中' : ''}${m.durationMs ? ' ' + fmtDurMs(m.durationMs) : ''}</small><small>${esc(m.name)}</small></div>`;
+  if (m.kind === 'video') return `<div class="mt-fb">🎬<small>${p === 'none' ? 'プレビューなし' : p === 'processing' ? 'Drive で処理中' : ''}${m.durationMs ? ' ' + fmtDurMs(m.durationMs) : ''}</small><small>${esc(m.name)}</small></div>`;
   return `<div class="mt-fb">📷<small>${esc(m.name)}</small></div>`;
 }
 let thumbLoading = false;
@@ -310,7 +340,7 @@ function updateMediaMeta(fileId, meta) {
     const m = (t.media || []).find(x => x.fileId === fileId);
     if (!m) continue;
     let ch = false;
-    [['durationMs', meta.durationMs], ['videoReady', meta.videoReady], ['hasThumbnail', meta.hasThumbnail], ['width', meta.width], ['height', meta.height]].forEach(([k, v]) => {
+    [['durationMs', meta.durationMs], ['videoReady', meta.videoReady], ['hasThumbnail', meta.hasThumbnail], ['width', meta.width], ['height', meta.height], ['lat', meta.lat], ['lng', meta.lng]].forEach(([k, v]) => {
       if (v != null && m[k] !== v) { m[k] = v; ch = true; }
     });
     if (meta.missing && !m.missing) { m.missing = true; ch = true; }
@@ -369,22 +399,29 @@ ACT.albumSave = () => {
   closeModal(); commitTrip(t);
 };
 
+function otherTripsQueueHTML(trip) {
+  const others = {};
+  MQ.items.filter(q => q.tripId !== trip.id && q.state !== 'done' && S.trips[q.tripId]).forEach(q => { (others[q.tripId] = others[q.tripId] || []).push(q); });
+  const ids = Object.keys(others);
+  if (!ids.length) return '';
+  return `<div class="alert warn small">ほかの旅にも未送信・失敗があります：${ids.map(id => `<button class="chip-btn" data-act="tripSelect" data-id="${id}">${esc(S.trips[id].title)}（${others[id].length}）</button>`).join('')}</div>`;
+}
 function queueHTML(trip) {
   const list = MQ.items.filter(q => q.tripId === trip.id);
-  if (!list.length) return '';
+  if (!list.length) return otherTripsQueueHTML(trip);
   const c = mqCounts(trip.id);
   const sendable = list.filter(q => q.state === 'held' || q.state === 'failed');
   return `<div class="card mq"><b>📤 アップロード</b><div class="muted small">保留 ${c.held}・送信待ち ${c.waiting}・送信中 ${c.sending}・失敗 ${c.failed}・完了 ${c.done}</div>
     ${list.map(queueRowHTML).join('')}
     <div class="row gap wrap mt">${sendable.length ? `<button class="btn sm primary" data-act="mqSendAll">保留・失敗をすべて送る（${sendable.length}）</button>` : ''}
     ${c.done ? '<button class="btn sm ghost" data-act="mqClearDone">完了を消す</button>' : ''}</div>
-    <input type="file" id="mqRepick" style="display:none"></div>`;
+    <input type="file" id="mqRepick" style="display:none"></div>` + otherTripsQueueHTML(trip);
 }
 function queueRowHTML(q) {
   const need = (q.state === 'held' || q.state === 'failed') && !MQ.files.has(q.qid);
   const pct = Math.round((q.progress || 0) * 100);
   return `<div class="mq-row st-${q.state}" id="mq-${q.qid}">
-    <div class="row between"><span class="grow">${q.kind === 'video' ? '🎬' : '📷'} ${esc(q.name)} <span class="muted small">${fmtBytes(q.size)}</span></span><span class="mq-st">${MQ_LABEL[q.state]}</span></div>
+    <div class="row between"><span class="grow">${q.kind === 'video' ? '🎬' : '📷'} ${esc(q.name)} <span class="muted small">${fmtBytes(q.size)}</span></span><span class="mq-st">${mqLabel(q)}</span></div>
     ${q.state === 'sending' || (q.state === 'failed' && q.offset) ? `<div class="progress"><div style="width:${pct}%"></div></div>` : ''}
     ${q.error ? `<div class="small ${q.state === 'failed' ? 'ng' : 'warn'}">${esc(q.error)}</div>` : ''}
     ${q.state === 'held' ? '<div class="muted small">意図的に保留しています（送るボタンで送信）</div>' : ''}
@@ -398,7 +435,7 @@ function updateQueueRow(q) {
   if (!el) return;
   const pct = Math.round((q.progress || 0) * 100);
   const bar = el.querySelector('.progress > div');
-  if (bar && q.state === 'sending') { bar.style.width = pct + '%'; const st = el.querySelector('.mq-st'); if (st) st.textContent = MQ_LABEL[q.state] + ' ' + pct + '%'; return; }
+  if (bar && q.state === 'sending') { bar.style.width = pct + '%'; const st = el.querySelector('.mq-st'); if (st) st.textContent = mqLabel(q) + ' ' + pct + '%'; return; }
   el.outerHTML = queueRowHTML(q);
 }
 ACT.mqSendAll = () => { const t = curTrip(); mqSend(MQ.items.filter(q => q.tripId === t.id).map(q => q.qid)); };
@@ -456,6 +493,78 @@ function mediaSpotName(trip, m) {
   return '';
 }
 
+// ---------------------------------------------------------------------------
+// v2.0.2 場所ごとに振り分け（写真の位置情報＝GPS。写真が多い日は自動で、記録タブの切替で常に／しないも選べる）
+// ---------------------------------------------------------------------------
+const PLACE_RADIUS_KM = 0.7;
+function placeClusters(list) {
+  const cl = [];
+  list.forEach(m => {
+    if (m.lat == null || m.lng == null) return;
+    let best = null, bd = 1e9;
+    cl.forEach(c => { const d = haversineKm(c, m); if (d < bd) { bd = d; best = c; } });
+    if (best && bd <= PLACE_RADIUS_KM) { best.items.push(m); best.lat = sum(best.items, x => x.lat) / best.items.length; best.lng = sum(best.items, x => x.lng) / best.items.length; }
+    else cl.push({ lat: m.lat, lng: m.lng, items: [m] });
+  });
+  return cl;
+}
+function placeKey(c) { return c.lat.toFixed(3) + ',' + c.lng.toFixed(3); }
+// 場所の名前：近く（1km 以内）の工程・スポット → 逆ジオコーディングの名前 → 座標
+function placeLabel(trip, c) {
+  let best = null, bd = 1.0;
+  trip.items.forEach(it => { const p = itemPoint(trip, it); if (!p) return; const d = haversineKm(p, c); if (d < bd) { bd = d; best = p.name; } });
+  if (best) return best;
+  const n = (trip.placeNames || {})[placeKey(c)];
+  return n || ('緯度 ' + c.lat.toFixed(3) + '・経度 ' + c.lng.toFixed(3) + ' 付近');
+}
+function groupModeOf(trip) { return (trip.record && trip.record.groupByPlace) || 'auto'; }
+function shouldGroup(trip, list) {
+  const mode = groupModeOf(trip);
+  if (mode === 'off') return false;
+  const hasGeo = list.some(m => m.lat != null);
+  if (!hasGeo) return false;
+  return mode === 'on' || list.length >= 7;
+}
+function mediaSectionHTML(trip, list, dayKey) {
+  if (!shouldGroup(trip, list)) return mediaGridHTML(trip, list);
+  const cl = placeClusters(list).sort((a, b) => ((a.items[0].takenAt || '') < (b.items[0].takenAt || '') ? -1 : 1));
+  const noGeo = list.filter(m => m.lat == null || m.lng == null);
+  S.ui.placeClosed = S.ui.placeClosed || {};
+  const sec = (key, title, items) => {
+    const k = dayKey + '|' + key; const closed = S.ui.placeClosed[k];
+    return `<div class="place-sec"><button class="place-head" data-act="placeToggle" data-k="${esc(k)}"><span class="arrow">${closed ? '▶' : '▼'}</span><span class="grow">${title}</span><span class="muted small">${items.length}</span></button>${closed ? '' : mediaGridHTML(trip, items)}</div>`;
+  };
+  return cl.map(c => sec(placeKey(c), '📍 ' + esc(placeLabel(trip, c)), mediaSorted(c.items))).join('') + (noGeo.length ? sec('nogeo', '📷 位置情報なし', noGeo) : '');
+}
+ACT.placeToggle = (el) => { S.ui.placeClosed = S.ui.placeClosed || {}; S.ui.placeClosed[el.dataset.k] = !S.ui.placeClosed[el.dataset.k]; render(); };
+ACT.groupMode = (el) => { const t = curTrip(); t.record.groupByPlace = el.dataset.v; commitTrip(t); };
+// 位置情報の取り込み（v2.0.1 以前に入れた写真は後から読む）と、場所の名前の取得
+let geoLoading = false;
+async function ensureMediaGeo(trip) {
+  if (geoLoading || !trip) return;
+  geoLoading = true;
+  try {
+    const need = trip.media.filter(m => m.kind === 'photo' && !m.geoChecked && !m.missing).slice(0, 30);
+    if (need.length) {
+      const r = await api('mediaMeta', { ids: need.map(m => m.fileId) });
+      need.forEach(m => { const x = (r.meta || {})[m.fileId] || {}; m.geoChecked = true; if (x.lat != null) { m.lat = x.lat; m.lng = x.lng; } });
+      commitTrip(trip, { silent: true });
+    }
+    trip.placeNames = trip.placeNames || {};
+    const { by, unset } = mediaByDay(trip);
+    const all = Object.values(by).concat([unset]);
+    const unnamed = [];
+    all.forEach(list => { if (!shouldGroup(trip, list)) return; placeClusters(list).forEach(c => { const k = placeKey(c); if (trip.placeNames[k] == null && placeLabel(trip, c).startsWith('緯度')) unnamed.push({ k, lat: c.lat, lng: c.lng }); }); });
+    if (unnamed.length) {
+      const r = await api('placeNames', { points: unnamed.slice(0, 20) });
+      Object.keys(r.names || {}).forEach(k => { trip.placeNames[k] = r.names[k]; });
+      commitTrip(trip, { silent: true });
+    }
+    if (need.length || unnamed.length) render();
+  } catch (e) { /* 位置情報は任意 */ }
+  geoLoading = false;
+}
+
 function mediaGridHTML(trip, list) {
   if (!list.length) return '';
   return `<div class="mgrid">${list.map(m => `<button class="mtile ${m.kind}" data-act="mediaOpen" data-id="${m.id}">
@@ -473,9 +582,9 @@ function openMediaViewer(trip, id) {
   if (!m) return;
   const p = previewState(m);
   const stage = m.kind === 'video'
-    ? (p === 'ok' ? `<iframe class="mv-video" src="https://drive.google.com/file/d/${encodeURIComponent(m.fileId)}/preview" allow="autoplay; fullscreen" allowfullscreen></iframe>`
-      : `<div class="mv-none">🎬<div>${p === 'none' ? 'この形式は Drive でプレビューできません（ProRes など）' : 'Drive で動画を処理中です。しばらくすると再生できます'}</div><a class="btn" href="${driveUrl(m)}" target="_blank" rel="noopener">Drive で開く</a></div>`)
-    : `<div class="mv-img" id="mvImg"><div class="muted">読み込み中…</div></div>`;
+    ? (p === 'ok' ? `<iframe class="mv-video" style="${mediaAspectStyle(m, 16 / 9)}" src="https://drive.google.com/file/d/${encodeURIComponent(m.fileId)}/preview" allow="autoplay; fullscreen" allowfullscreen></iframe>`
+      : `<div class="mv-none">🎬<div>${p === 'none' ? 'アプリ内でのプレビューが用意されていません。ProRes など Drive が変換しない形式の可能性があります。Drive で開くと再生できることがあります' : 'Drive で動画を処理中です。しばらくすると再生できます'}</div><a class="btn" href="${driveUrl(m)}" target="_blank" rel="noopener">Drive で開く</a></div>`)
+    : `<div class="mv-img" id="mvImg" style="${mediaAspectStyle(m)}"><div class="muted">読み込み中…</div></div>`;
   openModal(`${stage}
     <div class="row gap wrap mt">
       <button class="btn sm ${m.favorite ? 'primary' : ''}" data-act="mvFav">${m.favorite ? '★ お気に入り' : '☆ お気に入り'}</button>
@@ -487,7 +596,7 @@ function openMediaViewer(trip, id) {
       <label>スポット</label><select id="mvSpot">${spotOptionsHTML(trip, mediaSpotValue(m))}</select>
       <label>コメント</label><textarea id="mvComment" rows="2">${esc(m.comment || '')}</textarea>
     </div>
-    <div class="muted small">${esc(m.name)}・${fmtBytes(m.size)}${m.width ? '・' + m.width + '×' + m.height : ''}${m.durationMs ? '・' + fmtDurMs(m.durationMs) : ''}</div>
+    <div class="muted small">${esc(m.name)}・${fmtBytes(m.size)}${m.width ? '・' + m.width + '×' + m.height : ''}${m.durationMs ? '・' + fmtDurMs(m.durationMs) : ''}${m.via ? '・送信：' + (m.via === 'gas' ? 'GAS 経由' : '直接') : ''}</div>
     <button class="btn primary block mt" data-act="mvSave">保存</button>`,
     { title: (m.kind === 'video' ? '🎬 ' : '📷 ') + esc(m.name), full: true, data: { trip, m },
       onMount: async (body) => {

@@ -11,7 +11,7 @@ const API_PORT = Number(process.argv[3] || 8702);
 const PIN = '1234';
 const API = `http://127.0.0.1:${API_PORT}`;
 
-const state = { sessions: {}, files: {}, seq: 0, failOnPut: 0, putCount: 0, exposeRange: true, delayMs: 0 };
+const state = { sessions: {}, files: {}, seq: 0, failOnPut: 0, hangOnPut: 0, putCount: 0, exposeRange: true, delayMs: 0 };
 
 function send(res, code, body, headers) {
   res.writeHead(code, Object.assign({ 'Content-Type': 'application/json' }, headers || {}));
@@ -112,6 +112,7 @@ http.createServer(async (req, res) => {
     if ((mm = cr.match(/^bytes \*\/(\d+)$/))) r = sessionStatus(s);
     else if ((mm = cr.match(/^bytes (\d+)-(\d+)\/(\d+)$/))) {
       state.putCount++;
+      if (state.hangOnPut && state.putCount === state.hangOnPut) { state.hangOnPut = 0; return; } // 応答を返さず止める（iOS で裏に回した時の通信の止まり方を真似る）
       if (state.failOnPut && state.putCount === state.failOnPut) { state.failOnPut = 0; return send(res, 503, { error: 'backendError' }, cors); } // 一時的なサーバエラーを1回だけ起こす
       r = applyChunk(s, Number(mm[1]), body, Number(mm[3]));
     } else r = { code: 400, body: 'Content-Range が不正' };

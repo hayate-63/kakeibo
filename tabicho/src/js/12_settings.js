@@ -3,6 +3,7 @@
 // ============================================================================
 ACT.openSettings = () => {
   const st = S.settings;
+  PAY_EDIT = null;   // 開くたびに保存済みの内容から編集を始める
   openModal(`<div class="set-sec"><div class="b">👤 基本</div><div class="form-grid">
       <label>自分の名前</label><input id="stMe" value="${esc(st.myName)}">
       <label>自宅（出発地）</label><input id="stHomeName" value="${esc(st.home.name)}">
@@ -12,7 +13,7 @@ ACT.openSettings = () => {
     </div></div>
     <div class="set-sec"><div class="b">👥 メンバーのプリセット</div><div id="stPresets">${(st.memberPresets || []).map(presetRowHTML).join('')}</div>
       <button class="btn sm" data-act="stPresetAdd">＋ プリセット</button><div class="muted small">名前は「、」区切り</div></div>
-    <div class="set-sec"><div class="b">💳 支払方法と家計簿のカテゴリー</div><div id="stPays">${(st.payMethods || []).map(payRowHTML).join('')}</div>
+    <div class="set-sec"><div class="b">💳 支払方法と家計簿のカテゴリー</div><div id="stPays">${payListHTML()}</div>
       <button class="btn sm" data-act="stPayAdd">＋ 支払方法</button>
       <div class="muted small">「カード」にした支払方法は、家計簿へ引落額（全額）＋割り勘分の収入の2本で送ります。カテゴリーは家計簿アプリの「カテゴリー」名と同じにしてください</div></div>
     <div class="set-sec"><div class="b">📒 家計簿連携</div><div class="form-grid">
@@ -42,11 +43,47 @@ ACT.openSettings = () => {
     { title: '⚙️ 設定', full: true });
 };
 function presetRowHTML(p) { return `<div class="row gap set-row" data-pid="${esc(p.id)}"><input class="pr-name" value="${esc(p.name)}" placeholder="名前（例：家族）"><input class="pr-mem grow" value="${esc((p.members || []).join('、'))}" placeholder="メンバー"><button class="op" data-act="stRowDel">✕</button></div>`; }
+// 誤タップで消えないよう、一覧には削除ボタンを置かない（行をタップ → 編集画面 → 削除は確認つき）
+let PAY_EDIT = null;
+function payListHTML() {
+  PAY_EDIT = PAY_EDIT || clone(S.settings.payMethods || []);
+  return PAY_EDIT.map((p, i) => `<button class="pay-row" data-act="payEdit" data-i="${i}">
+    <span class="grow"><b>${esc(p.name || '（名前なし）')}</b><span class="muted small">家計簿：${esc(p.kakeiboCategory || '未設定')}</span></span>
+    ${p.isCard ? '<span class="tag">カード</span>' : ''}${p.id === 'cash' || p.isCash ? '<span class="tag gray">現金</span>' : ''}<span class="chev">›</span></button>`).join('');
+}
+ACT.payEdit = (el) => openPayEditor(Number(el.dataset.i));
+function openPayEditor(i) {
+  const isNew = i < 0;
+  const p = isNew ? { id: uid('pm'), name: '', kakeiboCategory: '', isCard: false, isCash: false } : PAY_EDIT[i];
+  openModal(`<div class="form-grid">
+      <label>支払方法</label><input id="peName" value="${esc(p.name)}" placeholder="例：三井住友ゴールド(NL)">
+      <label>家計簿カテゴリー</label><input id="peCat" value="${esc(p.kakeiboCategory)}" placeholder="家計簿アプリのカテゴリー名">
+      <label>種類</label><div class="row gap wrap"><label class="check"><input type="checkbox" id="peCard" ${p.isCard ? 'checked' : ''}> カード（引落額＋割り勘分の2本で送る）</label>
+        <label class="check"><input type="checkbox" id="peCash" ${p.id === 'cash' || p.isCash ? 'checked' : ''} ${p.id === 'cash' ? 'disabled' : ''}> 現金</label></div>
+    </div>
+    <button class="btn primary block mt" data-act="peSave">決定</button>
+    ${!isNew && p.id !== 'cash' ? '<button class="btn danger block mt" data-act="peDel">この支払方法を削除…</button>' : ''}
+    <div class="muted small mt">ここでの変更は、設定画面の［設定を保存］で確定します</div>`, { title: isNew ? '＋ 支払方法' : '💳 支払方法の編集', data: { i, p, isNew } });
+}
+ACT.peSave = () => {
+  const b = topModalBody(); const { i, p, isNew } = topModal().data;
+  const name = $('#peName', b).value.trim();
+  if (!name) return toast('支払方法の名前を入れてください');
+  Object.assign(p, { name, kakeiboCategory: $('#peCat', b).value.trim(), isCard: $('#peCard', b).checked, isCash: p.id === 'cash' || $('#peCash', b).checked });
+  if (isNew) PAY_EDIT.push(p);
+  closeModal(); $('#stPays').innerHTML = payListHTML();
+};
+ACT.peDel = async () => {
+  const { i, p } = topModal().data;
+  if (!(await confirmDialog('支払方法「' + p.name + '」を削除しますか？\n（設定画面の［設定を保存］を押すまでは確定しません）'))) return;
+  PAY_EDIT.splice(i, 1);
+  closeModal(); $('#stPays').innerHTML = payListHTML();
+};
 function payRowHTML(p) { return `<div class="row gap set-row wrap" data-payid="${esc(p.id)}"><input class="pm-name" value="${esc(p.name)}" placeholder="支払方法"><input class="pm-cat grow" value="${esc(p.kakeiboCategory)}" placeholder="家計簿カテゴリー"><label class="check"><input type="checkbox" class="pm-card" ${p.isCard ? 'checked' : ''}>カード</label><label class="check"><input type="checkbox" class="pm-cash" ${p.id === 'cash' || p.isCash ? 'checked' : ''} ${p.id === 'cash' ? 'disabled' : ''}>現金</label>${p.id === 'cash' ? '' : '<button class="op" data-act="stRowDel">✕</button>'}</div>`; }
 function packTmplRowHTML(p) { return `<div class="row gap set-row"><select class="pt-cat">${PACK_CATS.map(c => `<option ${c === p.cat ? 'selected' : ''}>${c}</option>`).join('')}</select><input class="pt-name grow" value="${esc(p.name)}"><select class="pt-when">${[['all', 'いつも'], ['stay', '泊まり'], ['multi', '2泊以上'], ['car', '車旅'], ['train', '電車'], ['plane', '飛行機'], ['ferry', 'フェリー']].map(([v, l]) => `<option value="${v}" ${p.when === v ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="op" data-act="stRowDel">✕</button></div>`; }
 ACT.stRowDel = (el) => el.closest('.set-row').remove();
 ACT.stPresetAdd = () => $('#stPresets').insertAdjacentHTML('beforeend', presetRowHTML({ id: uid('pr'), name: '', members: [S.settings.myName] }));
-ACT.stPayAdd = () => $('#stPays').insertAdjacentHTML('beforeend', payRowHTML({ id: uid('pm'), name: '', kakeiboCategory: '', isCard: false }));
+ACT.stPayAdd = () => openPayEditor(-1);
 ACT.stPackAdd = () => $('#stPack').insertAdjacentHTML('beforeend', packTmplRowHTML({ cat: 'その他', name: '', when: 'all' }));
 ACT.stHomeHere = () => { if (!S.geo) return toast('現在地を取得できていません'); $('#stHomeLat').value = S.geo.lat.toFixed(6); $('#stHomeLng').value = S.geo.lng.toFixed(6); };
 ACT.stSave = () => {
@@ -57,7 +94,8 @@ ACT.stSave = () => {
   st.dayStart = $('#stDayStart', b).value || '09:00';
   st.departMarginMin = num($('#stMargin', b).value, 10);
   st.memberPresets = $$('#stPresets .set-row', b).map(r => ({ id: r.dataset.pid, name: $('.pr-name', r).value.trim(), members: $('.pr-mem', r).value.split(/[、,，\s]+/).map(s => s.trim()).filter(Boolean) })).filter(p => p.name && p.members.length);
-  st.payMethods = $$('#stPays .set-row', b).map(r => ({ id: r.dataset.payid, name: $('.pm-name', r).value.trim(), kakeiboCategory: $('.pm-cat', r).value.trim(), isCard: $('.pm-card', r).checked, isCash: $('.pm-cash', r).checked })).filter(p => p.name);
+  st.payMethods = clone(PAY_EDIT || st.payMethods).filter(p => p.name);
+  PAY_EDIT = null;
   if (!st.payMethods.some(p => p.id === 'cash')) st.payMethods.unshift({ id: 'cash', name: '現金', kakeiboCategory: 'その他（支出）', isCard: false, isCash: true });
   st.kakeiboUsage = $('#stKkUsage', b).value.trim();
   st.kakeiboBudget = $('#stKkBudget', b).value.trim();
