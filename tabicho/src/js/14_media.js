@@ -206,15 +206,29 @@ async function uploadOne(q, file) {
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && MQ.wake) { const w = MQ.wake; MQ.wake = null; w(); } });
 window.addEventListener('online', () => { if (MQ.wake) { const w = MQ.wake; MQ.wake = null; w(); } processQueue(); });
 
+// ファイルの更新日時（ミリ秒）→ 旅の現地の「YYYY-MM-DDTHH:mm:ss」。無効なら ''
+function fileTimeInTrip(trip, ms) {
+  const n = Number(ms);
+  if (!(n > 0) || !isFinite(n)) return '';
+  const p = tzParts(tripTz(trip), new Date(n));
+  if (!p.year) return '';
+  return p.year + '-' + p.month + '-' + p.day + 'T' + p.hour + ':' + p.minute + ':' + p.second;
+}
 // 撮影日時は Drive のメタデータ（EXIF）を優先、無ければアップロード日（M3）。日程外・不明は「日付未設定」へ
 async function registerMedia(trip, q, fileObj) {
   let meta = {};
   try { const r = await api('mediaMeta', { ids: [fileObj.id] }); meta = (r.meta || {})[fileObj.id] || {}; } catch (e) {}
-  const taken = meta.takenAt || '';
-  const date = q.date || (taken ? taken.slice(0, 10) : tripToday(trip));   // アップロード日も旅の現地の日付で
+  // v2.0.4（K-4）：日付の決め方  1 手動 → 2 撮影日時（EXIF）→ 3 動画はファイルの更新日時（旅の現地の時刻に直す）→ 4 アップロード日（現地）
+  let taken = meta.takenAt || '';
+  let source = q.date ? 'manual' : taken ? 'exif' : 'upload';
+  if (!q.date && !taken && q.kind === 'video') {
+    const fileAt = fileTimeInTrip(trip, q.lastModified);
+    if (fileAt) { taken = fileAt; source = 'file'; }
+  }
+  const date = q.date || (taken ? taken.slice(0, 10) : tripToday(trip));
   const m = {
     id: uid('md'), fileId: fileObj.id, kind: q.kind, name: fileObj.name || q.name, size: Number(fileObj.size) || q.size,
-    mimeType: fileObj.mimeType || q.type, takenAt: taken, date, dateSource: q.date ? 'manual' : taken ? 'exif' : 'upload',
+    mimeType: fileObj.mimeType || q.type, takenAt: taken, date, dateSource: source,
     spotId: q.spotId || '', itemId: q.itemId || '', favorite: false, cover: false, comment: '', createdAt: new Date().toISOString(), via: q.viaGas ? 'gas' : 'direct',
     width: meta.width || null, height: meta.height || null, durationMs: meta.durationMs || null, hasThumbnail: !!meta.hasThumbnail, videoReady: !!meta.videoReady,
     lat: meta.lat != null ? meta.lat : null, lng: meta.lng != null ? meta.lng : null, geoChecked: true
@@ -629,7 +643,7 @@ function openMediaViewer(trip, id) {
       <a class="btn sm" href="${driveUrl(m)}" target="_blank" rel="noopener">Drive で開く</a>
       <button class="btn sm danger" data-act="mvDel">削除</button></div>
     <div class="form-grid mt">
-      <label>日付</label><div class="row gap"><input type="date" id="mvDate" value="${esc(m.date || '')}"><span class="muted small">${m.dateSource === 'exif' ? '撮影日時（EXIF）' : m.dateSource === 'manual' ? '手動' : 'アップロード日'}${m.takenAt ? ' ' + esc(m.takenAt.replace('T', ' ').slice(0, 16)) : ''}</span></div>
+      <label>日付</label><div class="row gap"><input type="date" id="mvDate" value="${esc(m.date || '')}"><span class="muted small">${m.dateSource === 'exif' ? '撮影日時（EXIF）' : m.dateSource === 'manual' ? '手動' : m.dateSource === 'file' ? 'ファイル更新日時（変更できます）' : 'アップロード日'}${m.takenAt ? ' ' + esc(m.takenAt.replace('T', ' ').slice(0, 16)) : ''}</span></div>
       <label>スポット</label><select id="mvSpot">${spotOptionsHTML(trip, mediaSpotValue(m))}</select>
       <label>コメント</label><textarea id="mvComment" rows="2">${esc(m.comment || '')}</textarea>
     </div>

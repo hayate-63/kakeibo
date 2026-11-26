@@ -38,9 +38,15 @@ function render() {
 // v2.0.3：天気・経路・営業時間・現在地など「後から届く」情報での描き直し。
 // 文字を入力中に画面を作り直すと、入力途中の文字やカーソルが消えるので、入力欄から離れるまで待つ
 let renderDeferred = false;
+// v2.0.4：「文字や値を入力中の欄」の判定を1か所に（softRender・focusout・isTyping で同じ条件）。
+// チェックボックス・ラジオ・ボタン類は押した時点で確定するので入力中に数えない
+function isEditingInput(el) {
+  if (!el || !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return false;
+  return !/^(checkbox|radio|button|submit|reset|file|range|color)$/.test(el.type || '');
+}
 function softRender() {
   const a = document.activeElement;
-  if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && !(a.type === 'checkbox' || a.type === 'radio' || a.type === 'button')) {
+  if (isEditingInput(a)) {
     renderDeferred = true;
     return false;
   }
@@ -51,8 +57,7 @@ document.addEventListener('focusout', () => {
   if (!renderDeferred) return;
   setTimeout(() => {   // 次の入力欄へ移っただけなら、まだ待つ
     if (!renderDeferred) return;
-    const a = document.activeElement;
-    if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return;
+    if (isEditingInput(document.activeElement)) return;
     renderDeferred = false; render();
   }, 300);
 });
@@ -109,7 +114,7 @@ document.addEventListener('change', (e) => {
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modalStack.length) closeModal(); });
 
-function isTyping() { const a = document.activeElement; return a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && !modalStack.length; }
+function isTyping() { return isEditingInput(document.activeElement) && !modalStack.length; }
 // ホーム・ドライブは時刻で表示が変わるので定期的に描き直す
 setInterval(() => { if (!modalStack.length && !isTyping() && (S.tab === 'home' || S.tab === 'drive')) render(); }, 60000);
 document.addEventListener('visibilitychange', () => {
@@ -117,7 +122,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // 画面テスト用の入口（デモモードの時だけ。本番の GAS では出さない）
-if (IS_DEMO) window.__TABICHO_T = { softRender, saveCache, loadImg, imageExportSafe, thumbIdb, tripTz, tripToday, curTrip, S };
+if (IS_DEMO) window.__TABICHO_T = { softRender, isEditingInput, registerMedia, saveCache, loadImg, imageExportSafe, thumbIdb, tripTz, tripToday, curTrip, S };
 // 起動の各段階を個別に守る（どこかで失敗しても画面は出し、原因を起動ガードに残す）
 function bootStep(name, fn) {
   try { return fn(); }
@@ -138,7 +143,7 @@ async function init() {
   await bootstrapFromServer();
   Object.values(S.trips).forEach(t => { if (syncBookingItems(t)) commitTrip(t, { silent: true }); });
   pickDefaultTrip();
-  render();
+  softRender();   // v2.0.4：キャッシュの表示のあと入力を始めていたら、サーバの内容での描き直しは入力が終わってから
   await loadSpots(true);
   retryVisitWrites();
 }

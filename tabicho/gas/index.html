@@ -406,7 +406,7 @@ img.iout { width: 31%; margin: 1%; border-radius: 6px; }
 // 本体が起動しなかった時に、原因（エラーの文面と行番号・スクリプトが欠けていないか）を画面に出す。
 // 開発者ツールが無い iPhone でも原因が分かるようにするため
 (function () {
-  var TB = window.__TB = { started: false, errors: [], expectLen: 320090, expectHash: '47ed9069', version: '2.0.3', built: '2026-11-26 18:00 JST' };
+  var TB = window.__TB = { started: false, errors: [], expectLen: 321501, expectHash: '491a7a98', version: '2.0.4', built: '2026-11-26 22:24 JST' };
   function fnv(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
   function scriptCheck() {
@@ -509,7 +509,7 @@ img.iout { width: 31%; margin: 1%; border-radius: 6px; }
 // ============================================================================
 // 01 ユーティリティ・定数
 // ============================================================================
-const APP_VERSION = '2.0.3';
+const APP_VERSION = '2.0.4';
 
 const VEHICLES = {
   car:   { label: '車',       icon: '🚗' },
@@ -925,7 +925,7 @@ const MockServer = (() => {
       for (const p of points) {
         const k = p.lat.toFixed(1) + ',' + p.lng.toFixed(1);
         try {
-          const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${p.lat}&longitude=${p.lng}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=16`);
+          const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${p.lat}&longitude=${p.lng}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=16`);   // v2.0.4：地点の現地の日付
           const j = await r.json();
           out[k] = j.daily.time.map((d, i) => ({ date: d, code: j.daily.weather_code[i], tmax: j.daily.temperature_2m_max[i], tmin: j.daily.temperature_2m_min[i], pop: j.daily.precipitation_probability_max[i] }));
         } catch (e) {
@@ -3557,10 +3557,14 @@ function renderPacking(trip) {
         <label class="check grow"><input type="checkbox" data-change="packToggle" data-id="${p.id}" ${p.done ? 'checked' : ''}> ${esc(p.name)}</label>
         <select class="owner" data-change="packOwner" data-id="${p.id}"><option value="">誰の？</option>${trip.members.map(m => `<option value="${m.id}" ${p.owner === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}<option value="all" ${p.owner === 'all' ? 'selected' : ''}>共用</option></select>
         <button class="op" data-act="packDel" data-id="${p.id}">✕</button></div>`).join('')}
-      <div class="row gap"><input class="grow pack-new" data-cat="${cat}" placeholder="＋ 追加"><button class="btn sm" data-act="packAdd" data-cat="${cat}">追加</button></div></div>`;
+      <div class="row gap"><input class="grow pack-new" data-cat="${cat}" data-input="packDraft" value="${esc(packDraftGet(trip, cat))}" placeholder="＋ 追加"><button class="btn sm" data-act="packAdd" data-cat="${cat}">追加</button></div></div>`;
   });
   return h;
 }
+// v2.0.4：持ち物の追加欄の下書き。描き直しで入力途中の文字が消えないよう、旅ID＋カテゴリーごとに覚える（端末の保存はしない）
+function packDraftKey(trip, cat) { return (trip ? trip.id : '') + '|' + cat; }
+function packDraftGet(trip, cat) { return ((S.ui.packDraft || {})[packDraftKey(trip, cat)]) || ''; }
+ON_INPUT.packDraft = (el) => { S.ui.packDraft = S.ui.packDraft || {}; S.ui.packDraft[packDraftKey(curTrip(), el.dataset.cat)] = el.value; };
 ACT.packGen = () => { const t = curTrip(); const n = generatePacking(t, $('#pkKind').value, $('#pkCar').checked); commitTrip(t); toast(n + '件追加しました'); };
 ACT.packReset = async () => { const t = curTrip(); if (await confirmDialog('チェックを全部外しますか？')) { t.packing.forEach(p => p.done = false); commitTrip(t); } };
 ON_CHANGE.packToggle = (el) => { const t = curTrip(); const p = t.packing.find(x => x.id === el.dataset.id); p.done = el.checked; commitTrip(t); };
@@ -3570,6 +3574,7 @@ ACT.packAdd = (el) => {
   const t = curTrip(); const inp = $(`.pack-new[data-cat="${el.dataset.cat}"]`);
   const name = inp.value.trim(); if (!name) return;
   t.packing.push({ id: uid('pk'), cat: el.dataset.cat, name, done: false, owner: '' });
+  if (S.ui.packDraft) delete S.ui.packDraft[packDraftKey(t, el.dataset.cat)];
   commitTrip(t);
 };
 
@@ -3778,7 +3783,7 @@ function fxCalcCardHTML(trip, inModal) {
   st.cur = cur;
   const rate = marketToJpy(cur);
   const amt = num(st.amount, 0);
-  if (!S.fx) ensureFx().then(() => render());
+  if (!S.fx) ensureFx().then(() => softRender());   // v2.0.4：入力中なら描き直しを待つ
   return `<div class="card fxcalc ${inModal ? 'in-modal' : ''}">
     <div class="row between"><b>💱 為替計算機</b><span class="muted small">${st.detected ? '📍' + esc(st.detected) : ''}${S.fx ? ' レート：' + esc(S.fx.at || '') : ' 取得中…'}</span></div>
     <div class="fx-row">
@@ -4683,15 +4688,29 @@ async function uploadOne(q, file) {
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && MQ.wake) { const w = MQ.wake; MQ.wake = null; w(); } });
 window.addEventListener('online', () => { if (MQ.wake) { const w = MQ.wake; MQ.wake = null; w(); } processQueue(); });
 
+// ファイルの更新日時（ミリ秒）→ 旅の現地の「YYYY-MM-DDTHH:mm:ss」。無効なら ''
+function fileTimeInTrip(trip, ms) {
+  const n = Number(ms);
+  if (!(n > 0) || !isFinite(n)) return '';
+  const p = tzParts(tripTz(trip), new Date(n));
+  if (!p.year) return '';
+  return p.year + '-' + p.month + '-' + p.day + 'T' + p.hour + ':' + p.minute + ':' + p.second;
+}
 // 撮影日時は Drive のメタデータ（EXIF）を優先、無ければアップロード日（M3）。日程外・不明は「日付未設定」へ
 async function registerMedia(trip, q, fileObj) {
   let meta = {};
   try { const r = await api('mediaMeta', { ids: [fileObj.id] }); meta = (r.meta || {})[fileObj.id] || {}; } catch (e) {}
-  const taken = meta.takenAt || '';
-  const date = q.date || (taken ? taken.slice(0, 10) : tripToday(trip));   // アップロード日も旅の現地の日付で
+  // v2.0.4（K-4）：日付の決め方  1 手動 → 2 撮影日時（EXIF）→ 3 動画はファイルの更新日時（旅の現地の時刻に直す）→ 4 アップロード日（現地）
+  let taken = meta.takenAt || '';
+  let source = q.date ? 'manual' : taken ? 'exif' : 'upload';
+  if (!q.date && !taken && q.kind === 'video') {
+    const fileAt = fileTimeInTrip(trip, q.lastModified);
+    if (fileAt) { taken = fileAt; source = 'file'; }
+  }
+  const date = q.date || (taken ? taken.slice(0, 10) : tripToday(trip));
   const m = {
     id: uid('md'), fileId: fileObj.id, kind: q.kind, name: fileObj.name || q.name, size: Number(fileObj.size) || q.size,
-    mimeType: fileObj.mimeType || q.type, takenAt: taken, date, dateSource: q.date ? 'manual' : taken ? 'exif' : 'upload',
+    mimeType: fileObj.mimeType || q.type, takenAt: taken, date, dateSource: source,
     spotId: q.spotId || '', itemId: q.itemId || '', favorite: false, cover: false, comment: '', createdAt: new Date().toISOString(), via: q.viaGas ? 'gas' : 'direct',
     width: meta.width || null, height: meta.height || null, durationMs: meta.durationMs || null, hasThumbnail: !!meta.hasThumbnail, videoReady: !!meta.videoReady,
     lat: meta.lat != null ? meta.lat : null, lng: meta.lng != null ? meta.lng : null, geoChecked: true
@@ -5106,7 +5125,7 @@ function openMediaViewer(trip, id) {
       <a class="btn sm" href="${driveUrl(m)}" target="_blank" rel="noopener">Drive で開く</a>
       <button class="btn sm danger" data-act="mvDel">削除</button></div>
     <div class="form-grid mt">
-      <label>日付</label><div class="row gap"><input type="date" id="mvDate" value="${esc(m.date || '')}"><span class="muted small">${m.dateSource === 'exif' ? '撮影日時（EXIF）' : m.dateSource === 'manual' ? '手動' : 'アップロード日'}${m.takenAt ? ' ' + esc(m.takenAt.replace('T', ' ').slice(0, 16)) : ''}</span></div>
+      <label>日付</label><div class="row gap"><input type="date" id="mvDate" value="${esc(m.date || '')}"><span class="muted small">${m.dateSource === 'exif' ? '撮影日時（EXIF）' : m.dateSource === 'manual' ? '手動' : m.dateSource === 'file' ? 'ファイル更新日時（変更できます）' : 'アップロード日'}${m.takenAt ? ' ' + esc(m.takenAt.replace('T', ' ').slice(0, 16)) : ''}</span></div>
       <label>スポット</label><select id="mvSpot">${spotOptionsHTML(trip, mediaSpotValue(m))}</select>
       <label>コメント</label><textarea id="mvComment" rows="2">${esc(m.comment || '')}</textarea>
     </div>
@@ -5719,9 +5738,15 @@ function render() {
 // v2.0.3：天気・経路・営業時間・現在地など「後から届く」情報での描き直し。
 // 文字を入力中に画面を作り直すと、入力途中の文字やカーソルが消えるので、入力欄から離れるまで待つ
 let renderDeferred = false;
+// v2.0.4：「文字や値を入力中の欄」の判定を1か所に（softRender・focusout・isTyping で同じ条件）。
+// チェックボックス・ラジオ・ボタン類は押した時点で確定するので入力中に数えない
+function isEditingInput(el) {
+  if (!el || !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return false;
+  return !/^(checkbox|radio|button|submit|reset|file|range|color)$/.test(el.type || '');
+}
 function softRender() {
   const a = document.activeElement;
-  if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && !(a.type === 'checkbox' || a.type === 'radio' || a.type === 'button')) {
+  if (isEditingInput(a)) {
     renderDeferred = true;
     return false;
   }
@@ -5732,8 +5757,7 @@ document.addEventListener('focusout', () => {
   if (!renderDeferred) return;
   setTimeout(() => {   // 次の入力欄へ移っただけなら、まだ待つ
     if (!renderDeferred) return;
-    const a = document.activeElement;
-    if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return;
+    if (isEditingInput(document.activeElement)) return;
     renderDeferred = false; render();
   }, 300);
 });
@@ -5790,7 +5814,7 @@ document.addEventListener('change', (e) => {
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modalStack.length) closeModal(); });
 
-function isTyping() { const a = document.activeElement; return a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && !modalStack.length; }
+function isTyping() { return isEditingInput(document.activeElement) && !modalStack.length; }
 // ホーム・ドライブは時刻で表示が変わるので定期的に描き直す
 setInterval(() => { if (!modalStack.length && !isTyping() && (S.tab === 'home' || S.tab === 'drive')) render(); }, 60000);
 document.addEventListener('visibilitychange', () => {
@@ -5798,7 +5822,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // 画面テスト用の入口（デモモードの時だけ。本番の GAS では出さない）
-if (IS_DEMO) window.__TABICHO_T = { softRender, saveCache, loadImg, imageExportSafe, thumbIdb, tripTz, tripToday, curTrip, S };
+if (IS_DEMO) window.__TABICHO_T = { softRender, isEditingInput, registerMedia, saveCache, loadImg, imageExportSafe, thumbIdb, tripTz, tripToday, curTrip, S };
 // 起動の各段階を個別に守る（どこかで失敗しても画面は出し、原因を起動ガードに残す）
 function bootStep(name, fn) {
   try { return fn(); }
@@ -5819,7 +5843,7 @@ async function init() {
   await bootstrapFromServer();
   Object.values(S.trips).forEach(t => { if (syncBookingItems(t)) commitTrip(t, { silent: true }); });
   pickDefaultTrip();
-  render();
+  softRender();   // v2.0.4：キャッシュの表示のあと入力を始めていたら、サーバの内容での描き直しは入力が終わってから
   await loadSpots(true);
   retryVisitWrites();
 }

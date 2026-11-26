@@ -22,7 +22,7 @@ function fxCalcCardHTML(trip, inModal) {
   st.cur = cur;
   const rate = marketToJpy(cur);
   const amt = num(st.amount, 0);
-  if (!S.fx) ensureFx().then(() => render());
+  if (!S.fx) ensureFx().then(() => softRender());   // v2.0.4：入力中なら描き直しを待つ
   return `<div class="card fxcalc ${inModal ? 'in-modal' : ''}">
     <div class="row between"><b>💱 為替計算機</b><span class="muted small">${st.detected ? '📍' + esc(st.detected) : ''}${S.fx ? ' レート：' + esc(S.fx.at || '') : ' 取得中…'}</span></div>
     <div class="fx-row">

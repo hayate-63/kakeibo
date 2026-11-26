@@ -5,7 +5,7 @@
   "scripts": {
     "build": "node tabicho/build.js",
     "test:unit": "node tabicho/test/logic.test.js && node tabicho/test/gas.test.js",
-    "test:e2e": "node tabicho/test/boot.e2e.js && node tabicho/test/smoke.e2e.js && node tabicho/test/v2.e2e.js && node tabicho/test/v203.e2e.js",
+    "test:e2e": "node tabicho/test/boot.e2e.js && node tabicho/test/smoke.e2e.js && node tabicho/test/v2.e2e.js && node tabicho/test/v203.e2e.js && node tabicho/test/v204.e2e.js",
     "test": "npm run build && npm run test:unit && npm run test:e2e"
   },
   "devDependencies": {

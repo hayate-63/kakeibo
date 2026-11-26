@@ -1,5 +1,5 @@
 /**
- * 旅帳 サーバ（Google Apps Script） v2.0.3
+ * 旅帳 サーバ（Google Apps Script） v2.0.4
  * v2.0：写真・動画の Drive 保存（メディア）、ビジュアルモード、コレクション
  *
  * ウェブアプリとしてデプロイ：実行ユーザー＝自分／アクセス＝自分のみ（推奨）
@@ -583,19 +583,19 @@ API.weather = function (a) {
   var out = {}, need = [];
   (a.points || []).slice(0, 20).forEach(function (p) {
     var k = Number(p.lat).toFixed(1) + ',' + Number(p.lng).toFixed(1);
-    var c = cache.get('wx:' + k);
+    var c = cache.get('wx2:' + k);   // v2.0.4：日付の基準を変えたので、前の版のキャッシュ（wx:）は使わない
     if (c) out[k] = JSON.parse(c); else need.push({ k: k, p: p });
   });
   if (need.length) {
     var reqs = need.map(function (n) {
-      return { url: 'https://api.open-meteo.com/v1/forecast?latitude=' + n.p.lat + '&longitude=' + n.p.lng + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=16', muteHttpExceptions: true };
+      return { url: 'https://api.open-meteo.com/v1/forecast?latitude=' + n.p.lat + '&longitude=' + n.p.lng + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=16', muteHttpExceptions: true };   // v2.0.4：日付は地点の現地の日付（旅のタイムゾーンとそろう）
     });
     UrlFetchApp.fetchAll(reqs).forEach(function (res, i) {
       try {
         var j = JSON.parse(res.getContentText());
         var arr = j.daily.time.map(function (d, k) { return { date: d, code: j.daily.weather_code[k], tmax: j.daily.temperature_2m_max[k], tmin: j.daily.temperature_2m_min[k], pop: j.daily.precipitation_probability_max[k] }; });
         out[need[i].k] = arr;
-        cache.put('wx:' + need[i].k, JSON.stringify(arr), 3600);
+        cache.put('wx2:' + need[i].k, JSON.stringify(arr), 3600);
       } catch (e) {}
     });
   }

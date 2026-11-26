@@ -335,3 +335,22 @@ console.log('spotcho integration tests passed');
   assert.strictEqual(seen[3][1], 'Asia/Tokyo', '不正なタイムゾーンは日本で登録');
   console.log('calendar timezone tests passed');
 }
+
+// ---- v2.0.4 天気：timezone=auto（地点の現地の日付）。画面側の模擬も同じ URL の形 ----
+{
+  const urls = [];
+  const store = {};
+  ctx.CacheService = { getScriptCache: () => ({ get: k => store[k] || null, put: (k, v) => { store[k] = v; } }) };
+  store['wx:21.3,-157.8'] = JSON.stringify([{ date: '2026-11-27', code: 0 }]);   // 前の版（日本の日付）のキャッシュは使わない
+  // Open-Meteo の timezone=auto はハワイの地点ならハワイの日付で返す
+  ctx.UrlFetchApp.fetchAll = (reqs) => reqs.map(r => { urls.push(r.url); return { getContentText: () => JSON.stringify({ timezone: 'Pacific/Honolulu', daily: { time: ['2026-11-26', '2026-11-27'], weather_code: [1, 2], temperature_2m_max: [28, 27], temperature_2m_min: [21, 20], precipitation_probability_max: [10, 30] } }) }; });
+  const w = call('weather', { points: [{ lat: 21.28, lng: -157.83 }] });
+  assert.ok(/[?&]timezone=auto(&|$)/.test(urls[0]) && !/Asia%2FTokyo/.test(urls[0]), 'GAS の URL は timezone=auto: ' + urls[0]);
+  assert.deepStrictEqual(w.weather['21.3,-157.8'].map(x => x.date), ['2026-11-26', '2026-11-27'], '地点の現地の日付のまま返す');
+  assert.ok(store['wx2:21.3,-157.8'], '新しいキャッシュ（wx2:）に入れる');
+  const mock = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', '02_api.js'), 'utf8');
+  const mu = mock.match(/api\.open-meteo\.com\/v1\/forecast\?[^`]*/)[0];
+  assert.ok(/timezone=auto/.test(mu) && !/Asia%2FTokyo/.test(mu), '画面側の模擬も timezone=auto');
+  assert.strictEqual(mu.replace(/\$\{p\.lat\}|\$\{p\.lng\}/g, 'X'), urls[0].replace(/https:\/\//, '').replace(/latitude=[^&]+/, 'latitude=X').replace(/longitude=[^&]+/, 'longitude=X'), 'GAS と画面側の模擬で URL の形が同じ');
+  console.log('weather timezone tests passed');
+}

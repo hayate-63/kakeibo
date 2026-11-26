@@ -632,10 +632,14 @@ function renderPacking(trip) {
         <label class="check grow"><input type="checkbox" data-change="packToggle" data-id="${p.id}" ${p.done ? 'checked' : ''}> ${esc(p.name)}</label>
         <select class="owner" data-change="packOwner" data-id="${p.id}"><option value="">誰の？</option>${trip.members.map(m => `<option value="${m.id}" ${p.owner === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}<option value="all" ${p.owner === 'all' ? 'selected' : ''}>共用</option></select>
         <button class="op" data-act="packDel" data-id="${p.id}">✕</button></div>`).join('')}
-      <div class="row gap"><input class="grow pack-new" data-cat="${cat}" placeholder="＋ 追加"><button class="btn sm" data-act="packAdd" data-cat="${cat}">追加</button></div></div>`;
+      <div class="row gap"><input class="grow pack-new" data-cat="${cat}" data-input="packDraft" value="${esc(packDraftGet(trip, cat))}" placeholder="＋ 追加"><button class="btn sm" data-act="packAdd" data-cat="${cat}">追加</button></div></div>`;
   });
   return h;
 }
+// v2.0.4：持ち物の追加欄の下書き。描き直しで入力途中の文字が消えないよう、旅ID＋カテゴリーごとに覚える（端末の保存はしない）
+function packDraftKey(trip, cat) { return (trip ? trip.id : '') + '|' + cat; }
+function packDraftGet(trip, cat) { return ((S.ui.packDraft || {})[packDraftKey(trip, cat)]) || ''; }
+ON_INPUT.packDraft = (el) => { S.ui.packDraft = S.ui.packDraft || {}; S.ui.packDraft[packDraftKey(curTrip(), el.dataset.cat)] = el.value; };
 ACT.packGen = () => { const t = curTrip(); const n = generatePacking(t, $('#pkKind').value, $('#pkCar').checked); commitTrip(t); toast(n + '件追加しました'); };
 ACT.packReset = async () => { const t = curTrip(); if (await confirmDialog('チェックを全部外しますか？')) { t.packing.forEach(p => p.done = false); commitTrip(t); } };
 ON_CHANGE.packToggle = (el) => { const t = curTrip(); const p = t.packing.find(x => x.id === el.dataset.id); p.done = el.checked; commitTrip(t); };
@@ -645,5 +649,6 @@ ACT.packAdd = (el) => {
   const t = curTrip(); const inp = $(`.pack-new[data-cat="${el.dataset.cat}"]`);
   const name = inp.value.trim(); if (!name) return;
   t.packing.push({ id: uid('pk'), cat: el.dataset.cat, name, done: false, owner: '' });
+  if (S.ui.packDraft) delete S.ui.packDraft[packDraftKey(t, el.dataset.cat)];
   commitTrip(t);
 };

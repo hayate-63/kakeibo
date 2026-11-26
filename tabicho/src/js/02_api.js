@@ -158,7 +158,7 @@ const MockServer = (() => {
       for (const p of points) {
         const k = p.lat.toFixed(1) + ',' + p.lng.toFixed(1);
         try {
-          const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${p.lat}&longitude=${p.lng}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=16`);
+          const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${p.lat}&longitude=${p.lng}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=16`);   // v2.0.4：地点の現地の日付
           const j = await r.json();
           out[k] = j.daily.time.map((d, i) => ({ date: d, code: j.daily.weather_code[i], tmax: j.daily.temperature_2m_max[i], tmin: j.daily.temperature_2m_min[i], pop: j.daily.precipitation_probability_max[i] }));
         } catch (e) {
